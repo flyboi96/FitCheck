@@ -7,14 +7,12 @@ struct OutfitBuilderView: View {
     @Query private var stylePreferences: [StylePreference]
 
     @AppStorage("fitcheckWeatherFallbackName") private var fallbackName = WeatherLookupFallback.default.name
-    @AppStorage("fitcheckWeatherFallbackLatitude") private var fallbackLatitude = WeatherLookupFallback.default.latitude
-    @AppStorage("fitcheckWeatherFallbackLongitude") private var fallbackLongitude = WeatherLookupFallback.default.longitude
 
     @StateObject private var weatherLookup = WeatherLookupController()
     @State private var manualLocationQuery = ""
     @State private var selectedItemID: UUID?
-    @State private var occasion = "casual"
-    @State private var activity = "walking around city"
+    @State private var occasion = OccasionOption.casual.rawValue
+    @State private var activity = ActivityOption.walkingAroundCity.rawValue
     @State private var recommendations: [OutfitRecommendation] = []
 
     private let engine = OutfitRecommendationEngine()
@@ -50,10 +48,16 @@ struct OutfitBuilderView: View {
             }
 
             Section("Context") {
-                TextField("Occasion", text: $occasion)
-                    .textInputAutocapitalization(.words)
-                TextField("Activity", text: $activity)
-                    .textInputAutocapitalization(.sentences)
+                Picker("Occasion", selection: $occasion) {
+                    ForEach(OccasionOption.allCases) { option in
+                        Text(option.displayName).tag(option.rawValue)
+                    }
+                }
+                Picker("Activity", selection: $activity) {
+                    ForEach(ActivityOption.allCases) { option in
+                        Text(option.displayName).tag(option.rawValue)
+                    }
+                }
                 Button {
                     generate()
                 } label: {
@@ -112,12 +116,8 @@ struct OutfitBuilderView: View {
         }
     }
 
-    private var fallback: WeatherLookupFallback {
-        WeatherLookupFallback(name: fallbackName, latitude: fallbackLatitude, longitude: fallbackLongitude)
-    }
-
     private func refreshWeather() {
-        weatherLookup.refresh(fallback: fallback)
+        weatherLookup.refresh(defaultLocationName: fallbackName)
     }
 
     private func lookupManualWeather() {

@@ -28,7 +28,7 @@ struct RecommendationCard: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(item.name)
                             .font(.subheadline.weight(.semibold))
-                        Text([item.color, item.pattern, item.category.displayName].filter { !$0.isEmpty }.joined(separator: " • "))
+                        Text(item.category.displayName)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

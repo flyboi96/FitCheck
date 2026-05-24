@@ -42,26 +42,48 @@ private struct StylePreferenceForm: View {
 
     var body: some View {
         Form {
-            Section("Style") {
-                TextEditor(text: $preference.styleDescription)
-                    .frame(minHeight: 96)
-                TextEditor(text: $preference.favoriteLooks)
-                    .frame(minHeight: 96)
+            Section("Overall Style") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Style summary")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: $preference.styleDescription)
+                        .frame(minHeight: 96)
+                }
             }
 
-            Section("Preferences") {
+            Section("Likes") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Favorite looks")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: $preference.favoriteLooks)
+                        .frame(minHeight: 96)
+                }
                 TextField("Preferred colors", text: $preference.preferredColors)
                     .textInputAutocapitalization(.sentences)
-                Stepper("Boldness \(preference.boldness)", value: $preference.boldness, in: 1...5)
                 TextField("Preferred fit", text: $preference.preferredFit)
                     .textInputAutocapitalization(.sentences)
             }
 
+            Section("Avoid") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Disliked combinations")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: $preference.dislikedCombinations)
+                        .frame(minHeight: 96)
+                }
+            }
+
             Section("Rules") {
-                TextEditor(text: $preference.rules)
-                    .frame(minHeight: 96)
-                TextEditor(text: $preference.dislikedCombinations)
-                    .frame(minHeight: 96)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Personal rules")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: $preference.rules)
+                        .frame(minHeight: 96)
+                }
             }
         }
         .toolbar {

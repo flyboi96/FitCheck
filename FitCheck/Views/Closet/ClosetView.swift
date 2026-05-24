@@ -113,9 +113,7 @@ private struct ClosetItemRow: View {
 
     private var detailText: String {
         [
-            item.color,
-            item.pattern,
-            "Formality \(item.formalityLevel)",
+            item.category.displayName,
             item.lastWornAt.map { "Last \(Self.dateFormatter.string(from: $0))" }
         ]
         .compactMap { $0 }

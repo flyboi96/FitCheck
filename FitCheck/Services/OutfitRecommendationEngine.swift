@@ -1,5 +1,224 @@
 import Foundation
 
+enum OccasionOption: String, CaseIterable, Identifiable {
+    case casual
+    case dateNight = "date night"
+    case work
+    case travelDay = "travel day"
+    case dinner
+    case gym
+    case walkingAroundCity = "walking around city"
+    case wedding
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .casual: "Casual"
+        case .dateNight: "Date Night"
+        case .work: "Work"
+        case .travelDay: "Travel Day"
+        case .dinner: "Dinner"
+        case .gym: "Gym"
+        case .walkingAroundCity: "Walking Around City"
+        case .wedding: "Wedding"
+        }
+    }
+}
+
+enum ActivityOption: String, CaseIterable, Identifiable {
+    case walkingAroundCity = "walking around city"
+    case office
+    case dinner
+    case gym
+    case travel
+    case errands
+    case outdoors
+    case formalEvent = "formal event"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .walkingAroundCity: "Walking Around City"
+        case .office: "Office"
+        case .dinner: "Dinner"
+        case .gym: "Gym"
+        case .travel: "Travel"
+        case .errands: "Errands"
+        case .outdoors: "Outdoors"
+        case .formalEvent: "Formal Event"
+        }
+    }
+}
+
+struct ClothingInference {
+    struct Metadata {
+        var color: String
+        var pattern: String
+        var formalityLevel: Int
+        var weatherSuitability: String
+        var occasionSuitability: String
+        var activitySuitability: String
+    }
+
+    static func metadata(name: String, category: ClothingCategory) -> Metadata {
+        Metadata(
+            color: color(from: name),
+            pattern: pattern(from: name),
+            formalityLevel: formalityLevel(name: name, category: category),
+            weatherSuitability: weatherTags(name: name, category: category).joined(separator: ", "),
+            occasionSuitability: occasionTags(name: name, category: category).joined(separator: ", "),
+            activitySuitability: activityTags(name: name, category: category).joined(separator: ", ")
+        )
+    }
+
+    static func color(for item: ClothingItem) -> String {
+        let inferred = color(from: item.name)
+        return inferred.isEmpty ? item.color.lowercased() : inferred
+    }
+
+    static func pattern(for item: ClothingItem) -> String {
+        let inferred = pattern(from: item.name)
+        return inferred.isEmpty ? item.pattern.lowercased() : inferred
+    }
+
+    static func weatherTags(for item: ClothingItem) -> [String] {
+        mergedTags(item.weatherSuitability, inferred: weatherTags(name: item.name, category: item.category))
+    }
+
+    static func occasionTags(for item: ClothingItem) -> [String] {
+        mergedTags(item.occasionSuitability, inferred: occasionTags(name: item.name, category: item.category))
+    }
+
+    static func activityTags(for item: ClothingItem) -> [String] {
+        mergedTags(item.activitySuitability, inferred: activityTags(name: item.name, category: item.category))
+    }
+
+    static func formalityLevel(for item: ClothingItem) -> Int {
+        formalityLevel(name: item.name, category: item.category)
+    }
+
+    private static func color(from name: String) -> String {
+        let text = normalized(name)
+        let colors = [
+            "black", "white", "gray", "grey", "navy", "blue", "denim", "green", "olive", "red",
+            "burgundy", "pink", "purple", "orange", "yellow", "cream", "beige", "tan", "brown",
+            "khaki", "charcoal", "silver", "gold"
+        ]
+        return colors.first { text.contains($0) } ?? ""
+    }
+
+    private static func pattern(from name: String) -> String {
+        let text = normalized(name)
+        let patterns = ["striped", "stripe", "plaid", "checked", "check", "floral", "solid", "herringbone", "graphic"]
+        return patterns.first { text.contains($0) } ?? ""
+    }
+
+    private static func weatherTags(name: String, category: ClothingCategory) -> [String] {
+        let text = normalized(name)
+        var tags = Set(["mild"])
+
+        if text.containsAny(["linen", "seersucker", "short sleeve", "t-shirt", "tee", "shorts", "lightweight"]) {
+            tags.insert("hot")
+        }
+        if text.containsAny(["wool", "merino", "cashmere", "fleece", "flannel", "puffer", "coat", "sweater", "hoodie"]) {
+            tags.insert("cold")
+        }
+        if text.containsAny(["rain", "waterproof", "shell", "gore-tex", "boots"]) {
+            tags.insert("rain")
+            tags.insert("wind")
+        }
+        if text.contains("suede") {
+            tags.insert("suede")
+        }
+        if category == .jacket {
+            tags.insert("cold")
+            tags.insert("wind")
+        }
+        if category == .shorts {
+            tags.insert("hot")
+        }
+
+        return tags.sorted()
+    }
+
+    private static func occasionTags(name: String, category: ClothingCategory) -> [String] {
+        let text = normalized(name)
+        var tags = Set(["casual"])
+
+        if text.containsAny(["button-down", "button down", "oxford", "chino", "loafer", "blazer", "dress", "merino"]) {
+            tags.formUnion(["dinner", "date night", "work"])
+        }
+        if text.containsAny(["suit", "tie", "formal"]) {
+            tags.formUnion(["wedding", "formal event"])
+        }
+        if text.containsAny(["tee", "t-shirt", "hoodie", "sneaker", "shorts", "jeans"]) {
+            tags.formUnion(["travel day", "walking around city"])
+        }
+        if text.containsAny(["gym", "running", "trainer", "athletic", "performance"]) {
+            tags.insert("gym")
+        }
+        if category == .bag || category == .shoes {
+            tags.insert("travel day")
+        }
+
+        return tags.sorted()
+    }
+
+    private static func activityTags(name: String, category: ClothingCategory) -> [String] {
+        let text = normalized(name)
+        var tags = Set(["errands", "walking around city"])
+
+        if text.containsAny(["button-down", "button down", "oxford", "blazer", "chino", "dress"]) {
+            tags.formUnion(["office", "dinner"])
+        }
+        if text.containsAny(["gym", "running", "trainer", "athletic", "performance"]) {
+            tags.insert("gym")
+        }
+        if text.containsAny(["boots", "shell", "waterproof", "jacket", "bag"]) {
+            tags.formUnion(["travel", "outdoors"])
+        }
+        if category == .bag {
+            tags.insert("travel")
+        }
+
+        return tags.sorted()
+    }
+
+    private static func formalityLevel(name: String, category: ClothingCategory) -> Int {
+        let text = normalized(name)
+        if text.containsAny(["suit", "tie", "tux", "formal"]) {
+            return 5
+        }
+        if text.containsAny(["blazer", "dress", "loafer", "oxford", "button-down", "button down"]) {
+            return 4
+        }
+        if text.containsAny(["merino", "chino", "polo", "boot"]) {
+            return 3
+        }
+        if text.containsAny(["gym", "running", "athletic", "hoodie", "shorts", "sneaker"]) {
+            return 2
+        }
+        switch category {
+        case .watch, .belt:
+            return 3
+        case .jacket, .sweater:
+            return 3
+        default:
+            return 2
+        }
+    }
+
+    private static func mergedTags(_ stored: String, inferred: [String]) -> [String] {
+        Set(stored.fitcheckTags + inferred).sorted()
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
 struct WeatherInput: Equatable {
     var temperatureF: Double
     var isRaining: Bool
@@ -163,7 +382,7 @@ struct OutfitRecommendationEngine {
             .filter { categories.contains($0.category) }
             .filter { item in
                 if item.category == .jacket {
-                    return weather.temperatureF <= 68 || weather.isRaining || item.weatherSuitability.fitcheckContainsTag("rain")
+                    return weather.temperatureF <= 68 || weather.isRaining || ClothingInference.weatherTags(for: item).contains("rain")
                 }
                 return true
             }
@@ -214,14 +433,14 @@ struct OutfitRecommendationEngine {
         var notes: [String] = []
 
         value += weatherScore(item, weather: request.weather)
-        value += tagScore(item.occasionSuitability, target: request.occasion, matchedNote: "\(item.name) fits \(request.occasion)")
-        value += tagScore(item.activitySuitability, target: request.activity, matchedNote: "\(item.name) fits \(request.activity)")
+        value += tagScore(ClothingInference.occasionTags(for: item), target: request.occasion, matchedNote: "\(item.name) fits \(request.occasion)")
+        value += tagScore(ClothingInference.activityTags(for: item), target: request.activity, matchedNote: "\(item.name) fits \(request.activity)")
 
         let targetFormality = targetFormality(for: request.occasion)
-        let formalityDistance = abs(item.formalityLevel - targetFormality)
+        let formalityDistance = abs(ClothingInference.formalityLevel(for: item) - targetFormality)
         value -= Double(formalityDistance * 4)
         if formalityDistance == 0 {
-            notes.append("Formality matches")
+            notes.append("Inferred dressiness matches")
         }
 
         if let lastWornAt = item.lastWornAt {
@@ -243,9 +462,10 @@ struct OutfitRecommendationEngine {
         }
 
         if let stylePreference {
-            if stylePreference.preferredColors.fitcheckContainsTag(item.color) {
+            let inferredColor = ClothingInference.color(for: item)
+            if stylePreference.preferredColors.fitcheckContainsTag(inferredColor) {
                 value += 12
-                notes.append("\(item.color) is preferred")
+                notes.append("\(inferredColor) is preferred")
             }
             if stylePreference.dislikedCombinations.localizedCaseInsensitiveContains(item.name) {
                 value -= 18
@@ -261,36 +481,42 @@ struct OutfitRecommendationEngine {
 
     private func weatherScore(_ item: ClothingItem, weather: WeatherInput) -> Double {
         var value = 0.0
+        let weatherTags = ClothingInference.weatherTags(for: item)
 
         if weather.temperatureF <= 50 {
-            value += item.weatherSuitability.fitcheckContainsTag("cold") ? 16 : -8
+            value += weatherTags.contains("cold") ? 16 : -8
             if item.category == .shorts {
                 value -= 24
             }
         } else if weather.temperatureF >= 82 {
-            value += item.weatherSuitability.fitcheckContainsTag("hot") ? 16 : 0
+            value += weatherTags.contains("hot") ? 16 : 0
             if item.category == .jacket || item.category == .sweater {
                 value -= 22
             }
             if item.category == .shorts {
                 value += 10
             }
-        } else if item.weatherSuitability.fitcheckContainsTag("mild") {
+        } else if weatherTags.contains("mild") {
             value += 8
         }
 
         if weather.isRaining {
-            value += item.weatherSuitability.fitcheckContainsTag("rain") ? 18 : -8
-            if item.category == .shoes && item.weatherSuitability.fitcheckContainsTag("suede") {
+            value += weatherTags.contains("rain") ? 18 : -8
+            if item.category == .shoes && weatherTags.contains("suede") {
                 value -= 28
             }
         }
 
         if weather.windMph >= 18 {
-            value += item.weatherSuitability.fitcheckContainsTag("wind") ? 8 : 0
+            value += weatherTags.contains("wind") ? 8 : 0
         }
 
         return value
+    }
+
+    private func tagScore(_ tags: [String], target: String, matchedNote: String) -> Double {
+        let storedTags = tags.joined(separator: ", ")
+        return tagScore(storedTags, target: target, matchedNote: matchedNote)
     }
 
     private func tagScore(_ tags: String, target: String, matchedNote: String) -> Double {
@@ -303,7 +529,7 @@ struct OutfitRecommendationEngine {
     }
 
     private func colorCompatibilityScore(_ items: [ClothingItem]) -> (value: Double, notes: [String]) {
-        let colors = items.map { $0.color.lowercased() }.filter { !$0.isEmpty }
+        let colors = items.map { ClothingInference.color(for: $0) }.filter { !$0.isEmpty }
         guard colors.count > 1 else { return (0, []) }
 
         let neutralColors: Set<String> = ["black", "white", "gray", "grey", "navy", "denim", "cream", "tan", "brown"]
@@ -347,7 +573,7 @@ struct OutfitRecommendationEngine {
     }
 
     private func formalitySpreadPenalty(_ items: [ClothingItem]) -> Double {
-        let levels = items.map(\.formalityLevel)
+        let levels = items.map { ClothingInference.formalityLevel(for: $0) }
         guard let minLevel = levels.min(), let maxLevel = levels.max() else { return 0 }
         return Double(max(0, maxLevel - minLevel - 2) * 6)
     }
@@ -386,5 +612,11 @@ struct OutfitRecommendationEngine {
             return "\(occasion.capitalized) Fit"
         }
         return "Daily Fit"
+    }
+}
+
+private extension String {
+    func containsAny(_ values: [String]) -> Bool {
+        values.contains { contains($0) }
     }
 }

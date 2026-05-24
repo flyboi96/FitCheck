@@ -113,6 +113,8 @@ private struct TripDetailView: View {
 
     @Bindable var trip: Trip
     @State private var showingStopEditor = false
+    @State private var isGeneratingPackingList = false
+    @State private var isGeneratingItinerary = false
 
     private let service = TripPlanningService()
 
@@ -141,24 +143,34 @@ private struct TripDetailView: View {
 
             Section("Generate") {
                 Button {
-                    service.rebuildPackingList(for: trip, closet: closetItems, context: modelContext)
-                    try? modelContext.save()
+                    Task { @MainActor in
+                        isGeneratingPackingList = true
+                        await service.rebuildPackingList(for: trip, closet: closetItems, context: modelContext)
+                        try? modelContext.save()
+                        isGeneratingPackingList = false
+                    }
                 } label: {
-                    Label("Packing List", systemImage: "checklist")
+                    Label(isGeneratingPackingList ? "Generating Packing List" : "Packing List", systemImage: "checklist")
                 }
+                .disabled(isGeneratingPackingList || trip.stops.isEmpty)
 
                 Button {
-                    service.rebuildItinerary(
-                        for: trip,
-                        closet: closetItems,
-                        feedback: feedback,
-                        stylePreference: preferences.first,
-                        context: modelContext
-                    )
-                    try? modelContext.save()
+                    Task { @MainActor in
+                        isGeneratingItinerary = true
+                        await service.rebuildItinerary(
+                            for: trip,
+                            closet: closetItems,
+                            feedback: feedback,
+                            stylePreference: preferences.first,
+                            context: modelContext
+                        )
+                        try? modelContext.save()
+                        isGeneratingItinerary = false
+                    }
                 } label: {
-                    Label("Outfit Itinerary", systemImage: "calendar")
+                    Label(isGeneratingItinerary ? "Generating Itinerary" : "Outfit Itinerary", systemImage: "calendar")
                 }
+                .disabled(isGeneratingItinerary || trip.stops.isEmpty)
             }
 
             ForEach(trip.packingLists) { list in
@@ -205,7 +217,6 @@ private struct TripStopEditorView: View {
     @State private var location = ""
     @State private var startsAt: Date
     @State private var endsAt: Date
-    @State private var expectedWeather = ""
     @State private var customsNotes = ""
 
     init(trip: Trip) {
@@ -220,8 +231,6 @@ private struct TripStopEditorView: View {
                 .textInputAutocapitalization(.words)
             DatePicker("Start", selection: $startsAt, displayedComponents: .date)
             DatePicker("End", selection: $endsAt, displayedComponents: .date)
-            TextField("Expected weather", text: $expectedWeather)
-                .textInputAutocapitalization(.sentences)
             TextField("Activities or local notes", text: $customsNotes)
                 .textInputAutocapitalization(.sentences)
         }
@@ -246,7 +255,7 @@ private struct TripStopEditorView: View {
             location: location.trimmingCharacters(in: .whitespacesAndNewlines),
             startsAt: startsAt,
             endsAt: startsAt > endsAt ? startsAt : endsAt,
-            expectedWeather: expectedWeather,
+            expectedWeather: "",
             customsNotes: customsNotes,
             trip: trip
         )

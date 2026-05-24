@@ -16,12 +16,12 @@ struct AIClothingItemPayload: Codable {
         id = item.id
         name = item.name
         category = item.category.rawValue
-        color = item.color
-        pattern = item.pattern
-        formalityLevel = item.formalityLevel
-        weatherSuitability = item.weatherSuitability
-        occasionSuitability = item.occasionSuitability
-        activitySuitability = item.activitySuitability
+        color = ClothingInference.color(for: item)
+        pattern = ClothingInference.pattern(for: item)
+        formalityLevel = ClothingInference.formalityLevel(for: item)
+        weatherSuitability = ClothingInference.weatherTags(for: item).joined(separator: ", ")
+        occasionSuitability = ClothingInference.occasionTags(for: item).joined(separator: ", ")
+        activitySuitability = ClothingInference.activityTags(for: item).joined(separator: ", ")
         notes = item.notes
     }
 }

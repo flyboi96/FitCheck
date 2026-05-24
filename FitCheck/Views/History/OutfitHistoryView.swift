@@ -9,10 +9,10 @@ struct OutfitHistoryView: View {
     var body: some View {
         List {
             Section("Outfits") {
-                if outfits.isEmpty {
+                if loggedOutfits.isEmpty {
                     ContentUnavailableView("No Outfits Logged", systemImage: "calendar")
                 } else {
-                    ForEach(outfits) { outfit in
+                    ForEach(loggedOutfits) { outfit in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(outfit.name)
                                 .font(.headline)
@@ -47,7 +47,7 @@ struct OutfitHistoryView: View {
             }
 
             Section("Wear Logs") {
-                ForEach(wearLogs) { log in
+                ForEach(loggedWearLogs) { log in
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(log.item?.name ?? "Item")
@@ -66,6 +66,17 @@ struct OutfitHistoryView: View {
             }
         }
         .navigationTitle("History")
+    }
+
+    private var loggedOutfits: [Outfit] {
+        outfits.filter { outfit in
+            guard let wornAt = outfit.wornAt else { return false }
+            return wornAt <= Date()
+        }
+    }
+
+    private var loggedWearLogs: [WearLog] {
+        wearLogs.filter { $0.date <= Date() }
     }
 
     private func outfitDetail(_ outfit: Outfit) -> String {

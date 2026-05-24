@@ -51,11 +51,15 @@ private struct ScoringGuideView: View {
             }
 
             Section("Color") {
-                Text("Neutral colors get a small boost. Outfits with a tight palette get a boost. Obvious clashes like red with green or orange with purple lose points.")
+                Text("The local engine builds a small palette from item names. Neutral bases, one clear accent, focused palettes, classic pairings like navy with tan, and adjacent colors get boosts. Too many strong accent colors, red with green, and competing patterns lose points.")
             }
 
             Section("Style and Feedback") {
                 Text("Preferred colors and rules from your style profile can add points. Bad feedback on a full combination or item removes points so it is less likely to appear again.")
+            }
+
+            Section("AI Review") {
+                Text("When the AI proxy is enabled in Settings, recommendation cards can ask the backend for a second opinion. The AI sees the candidate outfit, weather, occasion, style notes, and recent feedback, then returns a short rationale and cautions.")
             }
 
             Section("Builder") {

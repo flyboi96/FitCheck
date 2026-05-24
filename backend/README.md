@@ -1,0 +1,26 @@
+# FitCheck AI Proxy
+
+Small local backend for FitCheck AI outfit review. The iPhone app never stores the OpenAI API key; it calls this proxy instead.
+
+## Run locally
+
+1. Copy `backend/.env.example` to `backend/.env`.
+2. Put your OpenAI API key in `OPENAI_API_KEY`.
+3. Optional but recommended: set `FITCHECK_PROXY_TOKEN`.
+4. Run:
+
+```sh
+cd backend
+set -a
+source .env
+set +a
+node server.mjs
+```
+
+In FitCheck Settings:
+
+- Turn on `Use AI proxy`.
+- Set `Proxy endpoint` to `http://127.0.0.1:8787` for the iOS Simulator.
+- Set `Proxy token` to the same value as `FITCHECK_PROXY_TOKEN`.
+
+For a physical iPhone, set `HOST=0.0.0.0` before starting the proxy and use your Mac's LAN address instead of `127.0.0.1`.

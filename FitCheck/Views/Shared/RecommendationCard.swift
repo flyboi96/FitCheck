@@ -6,6 +6,10 @@ struct RecommendationCard: View {
     var onPrimary: (() -> Void)?
     var onGood: (() -> Void)?
     var onBad: (() -> Void)?
+    var aiReview: AIOutfitResponse? = nil
+    var aiReviewError: String? = nil
+    var isAIReviewing = false
+    var onAIReview: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -46,6 +50,24 @@ struct RecommendationCard: View {
                 }
             }
 
+            if let aiReview {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("AI Review", systemImage: "sparkles")
+                        .font(.caption.weight(.semibold))
+                    Text(aiReview.rationale)
+                        .font(.caption)
+                    ForEach(aiReview.cautions, id: \.self) { caution in
+                        Label(caution, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else if let aiReviewError {
+                Label(aiReviewError, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             HStack {
                 if let primaryTitle, let onPrimary {
                     Button(action: onPrimary) {
@@ -54,6 +76,17 @@ struct RecommendationCard: View {
                     .buttonStyle(.borderedProminent)
                 }
                 Spacer()
+                if let onAIReview {
+                    if isAIReviewing {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Button(action: onAIReview) {
+                            Label("AI Review", systemImage: "sparkles")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
                 if let onGood {
                     Button(action: onGood) {
                         Label("Good", systemImage: "hand.thumbsup")

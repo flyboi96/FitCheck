@@ -7,6 +7,9 @@ struct OutfitBuilderView: View {
     @Query private var stylePreferences: [StylePreference]
 
     @AppStorage("fitcheckWeatherFallbackName") private var fallbackName = WeatherLookupFallback.default.name
+    @AppStorage("fitcheckUseAIProxy") private var useAIProxy = false
+    @AppStorage("fitcheckAIProxyURL") private var aiProxyURL = ""
+    @AppStorage("fitcheckAIProxyToken") private var aiProxyToken = ""
 
     @StateObject private var weatherLookup = WeatherLookupController()
     @State private var manualLocationQuery = ""
@@ -14,6 +17,9 @@ struct OutfitBuilderView: View {
     @State private var occasion = OccasionOption.casual.rawValue
     @State private var activity = ActivityOption.walkingAroundCity.rawValue
     @State private var recommendations: [OutfitRecommendation] = []
+    @State private var aiReviews: [String: AIOutfitResponse] = [:]
+    @State private var aiReviewErrors: [String: String] = [:]
+    @State private var reviewingCombinationKeys = Set<String>()
 
     private let engine = OutfitRecommendationEngine()
 
@@ -69,7 +75,13 @@ struct OutfitBuilderView: View {
             if !recommendations.isEmpty {
                 Section("Outfits") {
                     ForEach(recommendations) { recommendation in
-                        RecommendationCard(recommendation: recommendation)
+                        RecommendationCard(
+                            recommendation: recommendation,
+                            aiReview: aiReviews[recommendation.combinationKey],
+                            aiReviewError: aiReviewErrors[recommendation.combinationKey],
+                            isAIReviewing: reviewingCombinationKeys.contains(recommendation.combinationKey),
+                            onAIReview: aiReviewAction(for: recommendation)
+                        )
                     }
                 }
             }
@@ -126,6 +138,8 @@ struct OutfitBuilderView: View {
 
     private func generate() {
         guard let selectedItem, let weather = weatherLookup.result?.input else { return }
+        aiReviews = [:]
+        aiReviewErrors = [:]
         recommendations = engine.recommend(
             closet: closetItems,
             feedback: feedback,
@@ -137,5 +151,83 @@ struct OutfitBuilderView: View {
                 selectedItem: selectedItem
             )
         )
+    }
+
+    private func aiReviewAction(for recommendation: OutfitRecommendation) -> (() -> Void)? {
+        guard useAIProxy, configuredAIProxyURL != nil else { return nil }
+        return {
+            Task {
+                await reviewWithAI(recommendation)
+            }
+        }
+    }
+
+    private var configuredAIProxyURL: URL? {
+        let trimmed = aiProxyURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return URL(string: trimmed)
+    }
+
+    @MainActor
+    private func reviewWithAI(_ recommendation: OutfitRecommendation) async {
+        guard let baseURL = configuredAIProxyURL else { return }
+
+        let key = recommendation.combinationKey
+        reviewingCombinationKeys.insert(key)
+        aiReviewErrors[key] = nil
+        defer {
+            reviewingCombinationKeys.remove(key)
+        }
+
+        let token = aiProxyToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let client = BackendOutfitAIClient(baseURL: baseURL, proxyToken: token.isEmpty ? nil : token)
+
+        do {
+            let response = try await client.suggestOutfit(request: aiRequest(for: recommendation))
+            aiReviews[key] = response
+        } catch {
+            aiReviewErrors[key] = error.localizedDescription
+        }
+    }
+
+    private func aiRequest(for recommendation: OutfitRecommendation) -> AIOutfitRequest {
+        AIOutfitRequest(
+            closet: closetItems.map(AIClothingItemPayload.init),
+            weatherSummary: weatherLookup.result?.input.summary ?? "",
+            occasion: occasion,
+            activity: activity,
+            styleDescription: styleDescription,
+            selectedItemID: selectedItem?.id,
+            candidateItemIDs: recommendation.items.map(\.id),
+            localScore: recommendation.score,
+            localNotes: recommendation.notes,
+            recentFeedback: feedback.prefix(12).map(feedbackSummary)
+        )
+    }
+
+    private var styleDescription: String {
+        guard let stylePreference = stylePreferences.first else { return "" }
+        return [
+            stylePreference.styleDescription,
+            stylePreference.favoriteLooks,
+            stylePreference.preferredColors,
+            stylePreference.preferredFit,
+            stylePreference.rules,
+            stylePreference.dislikedCombinations.isEmpty ? nil : "Avoid: \(stylePreference.dislikedCombinations)"
+        ]
+        .compactMap { $0 }
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .joined(separator: "\n")
+    }
+
+    private func feedbackSummary(_ entry: Feedback) -> String {
+        [
+            entry.type.displayName,
+            entry.note,
+            entry.item?.name
+        ]
+        .compactMap { $0 }
+        .filter { !$0.isEmpty }
+        .joined(separator: " - ")
     }
 }

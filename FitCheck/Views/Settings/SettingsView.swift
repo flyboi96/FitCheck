@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage("fitcheckUseAIProxy") private var useAIProxy = false
     @AppStorage("fitcheckAIProxyURL") private var aiProxyURL = ""
+    @AppStorage("fitcheckAIProxyToken") private var aiProxyToken = ""
     @AppStorage("fitcheckWeatherFallbackName") private var fallbackName = WeatherLookupFallback.default.name
 
     var body: some View {
@@ -19,6 +20,9 @@ struct SettingsView: View {
                 Toggle("Use AI proxy", isOn: $useAIProxy)
                 TextField("Proxy endpoint", text: $aiProxyURL)
                     .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                SecureField("Proxy token", text: $aiProxyToken)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 Text("Optional. Leave this off until a small backend exists. The iPhone app should call that backend, not store an OpenAI API key.")

@@ -529,29 +529,91 @@ struct OutfitRecommendationEngine {
     }
 
     private func colorCompatibilityScore(_ items: [ClothingItem]) -> (value: Double, notes: [String]) {
-        let colors = items.map { ClothingInference.color(for: $0) }.filter { !$0.isEmpty }
-        guard colors.count > 1 else { return (0, []) }
+        let profiles = items.compactMap { WardrobeColorProfile(colorName: ClothingInference.color(for: $0)) }
+        guard profiles.count > 1 else { return (0, []) }
 
-        let neutralColors: Set<String> = ["black", "white", "gray", "grey", "navy", "denim", "cream", "tan", "brown"]
-        let neutralCount = colors.filter { neutralColors.contains($0) }.count
-        var value = Double(neutralCount * 4)
+        let nonNeutrals = profiles.filter { !$0.isNeutral }
+        let neutralCount = profiles.count - nonNeutrals.count
+        var value = Double(neutralCount * 3)
         var notes: [String] = []
 
-        if Set(colors).count <= 3 {
+        if nonNeutrals.isEmpty {
+            value += 14
+            notes.append("Neutral palette")
+        } else if nonNeutrals.count == 1 {
+            value += neutralCount > 0 ? 16 : 8
+            notes.append("\(nonNeutrals[0].displayName.capitalized) works as the accent")
+        } else if nonNeutrals.count == 2 {
+            let relationship = ColorHarmony.relationship(between: nonNeutrals[0], and: nonNeutrals[1])
+            value += relationship.score(neutralCount: neutralCount)
+            if let note = relationship.note {
+                notes.append(note)
+            }
+        } else {
+            let saturatedAccentCount = nonNeutrals.filter { $0.saturation == .high }.count
+            if saturatedAccentCount >= 3 {
+                value -= 18
+                notes.append("Too many strong accent colors")
+            } else {
+                value -= 8
+                notes.append("Palette may be busy")
+            }
+        }
+
+        let uniqueColors = Set(profiles.map(\.displayName))
+        if uniqueColors.count <= 3 {
             value += 8
-            notes.append("Color palette is tight")
+            notes.append("Color palette is focused")
         }
 
-        if colors.contains("red") && colors.contains("green") {
-            value -= 14
-            notes.append("Red and green may clash")
-        }
-        if colors.contains("orange") && colors.contains("purple") {
-            value -= 12
-            notes.append("Orange and purple may clash")
+        if hasClassicMenswearPair(in: profiles) {
+            value += 10
+            notes.append("Classic menswear color pairing")
         }
 
-        return (value, notes)
+        if hasHolidayRedGreenClash(in: profiles) {
+            value -= 16
+            notes.append("Red and green can read seasonal")
+        }
+
+        value += patternCompatibilityScore(items, notes: &notes)
+
+        return (value, Array(notes.prefix(3)))
+    }
+
+    private func hasClassicMenswearPair(in profiles: [WardrobeColorProfile]) -> Bool {
+        let families = Set(profiles.map(\.family))
+        let colors = Set(profiles.map(\.displayName))
+
+        if families.contains(.blue) && (families.contains(.brown) || families.contains(.olive)) {
+            return true
+        }
+        if colors.contains("navy") && (colors.contains("cream") || colors.contains("white") || colors.contains("tan")) {
+            return true
+        }
+        if colors.contains("denim") && (colors.contains("white") || colors.contains("gray") || colors.contains("grey")) {
+            return true
+        }
+        return false
+    }
+
+    private func hasHolidayRedGreenClash(in profiles: [WardrobeColorProfile]) -> Bool {
+        let colors = Set(profiles.map(\.displayName))
+        guard colors.contains("red"), colors.contains("green") else { return false }
+        return !colors.contains("burgundy") && !colors.contains("olive")
+    }
+
+    private func patternCompatibilityScore(_ items: [ClothingItem], notes: inout [String]) -> Double {
+        let patterns = Set(items.map { ClothingInference.pattern(for: $0) }.filter { !$0.isEmpty && $0 != "solid" })
+        guard !patterns.isEmpty else { return 0 }
+
+        if patterns.count == 1 {
+            notes.append("Pattern has room to stand out")
+            return 4
+        }
+
+        notes.append("Multiple patterns may compete")
+        return -12
     }
 
     private func feedbackPenalty(items: [ClothingItem], feedback: [Feedback]) -> (value: Double, notes: [String]) {
@@ -612,6 +674,145 @@ struct OutfitRecommendationEngine {
             return "\(occasion.capitalized) Fit"
         }
         return "Daily Fit"
+    }
+}
+
+private struct WardrobeColorProfile {
+    var displayName: String
+    var family: ColorFamily
+    var hue: Double?
+    var saturation: ColorSaturation
+
+    var isNeutral: Bool {
+        family == .neutral || family == .brown
+    }
+
+    private init(displayName: String, family: ColorFamily, hue: Double?, saturation: ColorSaturation) {
+        self.displayName = displayName
+        self.family = family
+        self.hue = hue
+        self.saturation = saturation
+    }
+
+    init?(colorName: String) {
+        let normalized = colorName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return nil }
+
+        switch normalized {
+        case "black":
+            self.init(displayName: "black", family: .neutral, hue: nil, saturation: .low)
+        case "white", "cream", "ivory":
+            self.init(displayName: normalized, family: .neutral, hue: nil, saturation: .low)
+        case "gray", "grey", "charcoal", "silver":
+            self.init(displayName: normalized, family: .neutral, hue: nil, saturation: .low)
+        case "navy", "denim":
+            self.init(displayName: normalized, family: .blue, hue: 220, saturation: .low)
+        case "blue":
+            self.init(displayName: "blue", family: .blue, hue: 220, saturation: .medium)
+        case "green":
+            self.init(displayName: "green", family: .green, hue: 130, saturation: .high)
+        case "olive":
+            self.init(displayName: "olive", family: .olive, hue: 95, saturation: .low)
+        case "red":
+            self.init(displayName: "red", family: .red, hue: 0, saturation: .high)
+        case "burgundy":
+            self.init(displayName: "burgundy", family: .red, hue: 350, saturation: .medium)
+        case "pink":
+            self.init(displayName: "pink", family: .red, hue: 340, saturation: .medium)
+        case "purple":
+            self.init(displayName: "purple", family: .purple, hue: 275, saturation: .high)
+        case "orange":
+            self.init(displayName: "orange", family: .orange, hue: 30, saturation: .high)
+        case "yellow", "gold":
+            self.init(displayName: normalized, family: .yellow, hue: 55, saturation: .high)
+        case "tan", "beige", "khaki", "brown", "taupe":
+            self.init(displayName: normalized, family: .brown, hue: 35, saturation: .low)
+        default:
+            return nil
+        }
+    }
+}
+
+private enum ColorFamily: Hashable {
+    case neutral
+    case blue
+    case green
+    case olive
+    case red
+    case purple
+    case orange
+    case yellow
+    case brown
+}
+
+private enum ColorSaturation: Equatable {
+    case low
+    case medium
+    case high
+}
+
+private enum ColorHarmony {
+    case sameFamily(String)
+    case analogous
+    case complementary
+    case splitComplementary
+    case clash
+
+    var note: String? {
+        switch self {
+        case .sameFamily(let family):
+            "\(family.capitalized) tones work together"
+        case .analogous:
+            "Adjacent colors work together"
+        case .complementary:
+            "Complementary colors need a neutral base"
+        case .splitComplementary:
+            "Contrast is balanced"
+        case .clash:
+            "Strong color contrast may clash"
+        }
+    }
+
+    func score(neutralCount: Int) -> Double {
+        switch self {
+        case .sameFamily:
+            14
+        case .analogous:
+            12
+        case .complementary:
+            neutralCount > 0 ? 8 : -6
+        case .splitComplementary:
+            neutralCount > 0 ? 6 : -4
+        case .clash:
+            -14
+        }
+    }
+
+    static func relationship(between first: WardrobeColorProfile, and second: WardrobeColorProfile) -> ColorHarmony {
+        if first.family == second.family {
+            return .sameFamily(first.displayName)
+        }
+
+        guard let firstHue = first.hue, let secondHue = second.hue else {
+            return .analogous
+        }
+
+        let distance = hueDistance(firstHue, secondHue)
+        if distance <= 45 {
+            return .analogous
+        }
+        if (150...210).contains(distance) {
+            return .complementary
+        }
+        if (105...150).contains(distance) || (210...255).contains(distance) {
+            return .splitComplementary
+        }
+        return first.saturation == .high && second.saturation == .high ? .clash : .splitComplementary
+    }
+
+    private static func hueDistance(_ first: Double, _ second: Double) -> Double {
+        let rawDistance = abs(first - second).truncatingRemainder(dividingBy: 360)
+        return min(rawDistance, 360 - rawDistance)
     }
 }
 

@@ -33,7 +33,10 @@ struct AIOutfitRequest: Codable {
     var activity: String
     var styleDescription: String
     var selectedItemID: UUID?
-    var recentFeedback: [String]
+    var candidateItemIDs: [UUID] = []
+    var localScore: Double?
+    var localNotes: [String] = []
+    var recentFeedback: [String] = []
 }
 
 struct AIOutfitResponse: Codable {
@@ -49,6 +52,7 @@ protocol OutfitAIClient {
 enum OutfitAIClientError: LocalizedError {
     case proxyNotConfigured
     case invalidResponse
+    case serverMessage(String)
 
     var errorDescription: String? {
         switch self {
@@ -56,8 +60,14 @@ enum OutfitAIClientError: LocalizedError {
             "AI proxy is not configured."
         case .invalidResponse:
             "The AI proxy response could not be read."
+        case .serverMessage(let message):
+            message
         }
     }
+}
+
+private struct AIProxyErrorResponse: Decodable {
+    var error: String
 }
 
 struct DisabledOutfitAIClient: OutfitAIClient {
@@ -68,6 +78,7 @@ struct DisabledOutfitAIClient: OutfitAIClient {
 
 struct BackendOutfitAIClient: OutfitAIClient {
     var baseURL: URL
+    var proxyToken: String?
     var session: URLSession = .shared
 
     func suggestOutfit(request: AIOutfitRequest) async throws -> AIOutfitResponse {
@@ -75,10 +86,19 @@ struct BackendOutfitAIClient: OutfitAIClient {
         var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let proxyToken, !proxyToken.isEmpty {
+            urlRequest.setValue(proxyToken, forHTTPHeaderField: "X-FitCheck-Token")
+        }
         urlRequest.httpBody = try JSONEncoder().encode(request)
 
         let (data, response) = try await session.data(for: urlRequest)
-        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw OutfitAIClientError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            if let proxyError = try? JSONDecoder().decode(AIProxyErrorResponse.self, from: data) {
+                throw OutfitAIClientError.serverMessage(proxyError.error)
+            }
             throw OutfitAIClientError.invalidResponse
         }
         return try JSONDecoder().decode(AIOutfitResponse.self, from: data)

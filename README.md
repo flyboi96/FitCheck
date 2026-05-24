@@ -18,7 +18,7 @@ FitCheck is a personal iPhone wardrobe and outfit planning app built with SwiftU
 
 The first version stores data locally with SwiftData and uses a rules-based recommendation engine. The scoring engine considers weather, occasion, activity, color compatibility, formality, rotation history, style preferences, negative feedback, and required-item bonuses.
 
-Weather lookup uses Open-Meteo directly from the app. No weather API key is required for this MVP. The app asks for location permission and falls back to the coordinates saved in Settings if permission is denied or location lookup fails.
+Weather lookup uses Open-Meteo directly from the app. No weather API key is required for this MVP. The app asks for location permission by default, falls back to the coordinates saved in Settings if permission is denied or location lookup fails, and also supports typing a city or place for manual weather lookup.
 
 OpenAI integration is intentionally behind an app-owned backend/proxy abstraction in `FitCheck/Services/OpenAIOutfitClient.swift`. Do not put an OpenAI API key in the iPhone app. For local prototyping, keep the key in a backend environment variable such as `OPENAI_API_KEY` and point the app at that backend from Settings.
 

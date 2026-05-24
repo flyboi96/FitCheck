@@ -24,6 +24,8 @@ enum WeatherLookupError: LocalizedError {
     case invalidURL
     case invalidResponse
     case missingCurrentWeather
+    case emptyLocationSearch
+    case noMatchingLocation
 
     var errorDescription: String? {
         switch self {
@@ -33,12 +35,25 @@ enum WeatherLookupError: LocalizedError {
             "The weather service response could not be read."
         case .missingCurrentWeather:
             "The weather service did not return current weather."
+        case .emptyLocationSearch:
+            "Enter a city or place."
+        case .noMatchingLocation:
+            "No matching location was found."
         }
     }
 }
 
 struct OpenMeteoWeatherClient {
     var session: URLSession = .shared
+
+    func currentWeather(for searchText: String) async throws -> WeatherLookupResult {
+        let location = try await geocode(searchText)
+        return try await currentWeather(
+            latitude: location.latitude,
+            longitude: location.longitude,
+            locationName: location.displayName
+        )
+    }
 
     func currentWeather(latitude: Double, longitude: Double, locationName: String) async throws -> WeatherLookupResult {
         var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
@@ -77,6 +92,37 @@ struct OpenMeteoWeatherClient {
             sourceDescription: "Open-Meteo",
             fetchedAt: Date()
         )
+    }
+
+    private func geocode(_ searchText: String) async throws -> OpenMeteoLocation {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw WeatherLookupError.emptyLocationSearch
+        }
+
+        var components = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")
+        components?.queryItems = [
+            URLQueryItem(name: "name", value: trimmed),
+            URLQueryItem(name: "count", value: "1"),
+            URLQueryItem(name: "language", value: "en"),
+            URLQueryItem(name: "format", value: "json")
+        ]
+
+        guard let url = components?.url else {
+            throw WeatherLookupError.invalidURL
+        }
+
+        let (data, response) = try await session.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            throw WeatherLookupError.invalidResponse
+        }
+
+        let decoded = try JSONDecoder().decode(OpenMeteoGeocodingResponse.self, from: data)
+        guard let location = decoded.results?.first else {
+            throw WeatherLookupError.noMatchingLocation
+        }
+
+        return location
     }
 
     private static func isWetWeather(code: Int) -> Bool {
@@ -144,6 +190,20 @@ final class WeatherLookupController: NSObject, ObservableObject, CLLocationManag
             Task {
                 await fetchFallback(reason: "Using fallback location")
             }
+        }
+    }
+
+    func refresh(searchText: String) {
+        errorMessage = nil
+        isLoading = true
+
+        Task {
+            do {
+                result = try await weatherClient.currentWeather(for: searchText)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isLoading = false
         }
     }
 
@@ -235,5 +295,24 @@ private struct OpenMeteoResponse: Decodable {
             case weatherCode = "weather_code"
             case windSpeed = "wind_speed_10m"
         }
+    }
+}
+
+private struct OpenMeteoGeocodingResponse: Decodable {
+    var results: [OpenMeteoLocation]?
+}
+
+private struct OpenMeteoLocation: Decodable {
+    var name: String
+    var latitude: Double
+    var longitude: Double
+    var country: String?
+    var admin1: String?
+
+    var displayName: String {
+        [name, admin1, country]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
     }
 }

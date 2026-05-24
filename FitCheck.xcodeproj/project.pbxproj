@@ -14,7 +14,6 @@
 		FC0001050000000000000001 /* OutfitRecommendationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002050000000000000001 /* OutfitRecommendationEngine.swift */; };
 		FC0001060000000000000001 /* OpenAIOutfitClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002060000000000000001 /* OpenAIOutfitClient.swift */; };
 		FC0001070000000000000001 /* TripPlanningService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002070000000000000001 /* TripPlanningService.swift */; };
-		FC0001130000000000000001 /* WeatherLookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002140000000000000001 /* WeatherLookupService.swift */; };
 		FC0001080000000000000001 /* RecommendationCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002080000000000000001 /* RecommendationCard.swift */; };
 		FC0001090000000000000001 /* TodayOutfitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002090000000000000001 /* TodayOutfitView.swift */; };
 		FC00010A0000000000000001 /* ClosetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC00020A0000000000000001 /* ClosetView.swift */; };
@@ -25,6 +24,7 @@
 		FC00010F0000000000000001 /* TripPlannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC00020F0000000000000001 /* TripPlannerView.swift */; };
 		FC0001100000000000000001 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002100000000000000001 /* SettingsView.swift */; };
 		FC0001110000000000000001 /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002110000000000000001 /* MoreView.swift */; };
+		FC0001130000000000000001 /* WeatherLookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002140000000000000001 /* WeatherLookupService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,7 +35,6 @@
 		FC0002050000000000000001 /* OutfitRecommendationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutfitRecommendationEngine.swift; sourceTree = "<group>"; };
 		FC0002060000000000000001 /* OpenAIOutfitClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIOutfitClient.swift; sourceTree = "<group>"; };
 		FC0002070000000000000001 /* TripPlanningService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPlanningService.swift; sourceTree = "<group>"; };
-		FC0002140000000000000001 /* WeatherLookupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherLookupService.swift; sourceTree = "<group>"; };
 		FC0002080000000000000001 /* RecommendationCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecommendationCard.swift; sourceTree = "<group>"; };
 		FC0002090000000000000001 /* TodayOutfitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayOutfitView.swift; sourceTree = "<group>"; };
 		FC00020A0000000000000001 /* ClosetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClosetView.swift; sourceTree = "<group>"; };
@@ -47,6 +46,7 @@
 		FC0002100000000000000001 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		FC0002110000000000000001 /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
 		FC0002130000000000000001 /* FitCheck.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FitCheck.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FC0002140000000000000001 /* WeatherLookupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherLookupService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -164,6 +164,14 @@
 			path = Style;
 			sourceTree = "<group>";
 		};
+		FC00040C0000000000000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				FC0002130000000000000001 /* FitCheck.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		FC00040D0000000000000001 /* Trips */ = {
 			isa = PBXGroup;
 			children = (
@@ -187,14 +195,6 @@
 				FC0002110000000000000001 /* MoreView.swift */,
 			);
 			path = Shared;
-			sourceTree = "<group>";
-		};
-		FC00040C0000000000000001 /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				FC0002130000000000000001 /* FitCheck.app */,
-			);
-			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -225,7 +225,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastSwiftUpdateCheck = 2600;
-				LastUpgradeCheck = 2600;
+				LastUpgradeCheck = 2650;
 				TargetAttributes = {
 					FC0005010000000000000001 = {
 						CreatedOnToolsVersion = 26.0;
@@ -313,11 +313,13 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -343,6 +345,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -372,11 +375,13 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
@@ -395,6 +400,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};

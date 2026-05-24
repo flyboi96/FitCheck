@@ -12,6 +12,7 @@ struct TodayOutfitView: View {
     @AppStorage("fitcheckWeatherFallbackLongitude") private var fallbackLongitude = WeatherLookupFallback.default.longitude
 
     @StateObject private var weatherLookup = WeatherLookupController()
+    @State private var manualLocationQuery = ""
     @State private var occasion = "casual"
     @State private var activity = "walking around city"
     @State private var recommendations: [OutfitRecommendation] = []
@@ -22,12 +23,21 @@ struct TodayOutfitView: View {
         List {
             Section("Weather") {
                 weatherStatus
+                TextField("City or place", text: $manualLocationQuery)
+                    .textInputAutocapitalization(.words)
                 Button {
                     refreshWeather()
                 } label: {
-                    Label("Refresh Weather", systemImage: "location")
+                    Label("Use Current Location", systemImage: "location")
                 }
                 .disabled(weatherLookup.isLoading)
+
+                Button {
+                    lookupManualWeather()
+                } label: {
+                    Label("Look Up Location", systemImage: "magnifyingglass")
+                }
+                .disabled(weatherLookup.isLoading || manualLocationQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
 
             Section("Context") {
@@ -108,6 +118,10 @@ struct TodayOutfitView: View {
 
     private func refreshWeather() {
         weatherLookup.refresh(fallback: fallback)
+    }
+
+    private func lookupManualWeather() {
+        weatherLookup.refresh(searchText: manualLocationQuery)
     }
 
     private func generate() {

@@ -1,7 +1,49 @@
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+
+function loadDotEnv(filePath = ".env") {
+  const fullPath = path.resolve(process.cwd(), filePath);
+
+  if (!fs.existsSync(fullPath)) {
+    return;
+  }
+
+  const lines = fs.readFileSync(fullPath, "utf8").split(/\r?\n/);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const equalsIndex = trimmed.indexOf("=");
+
+    if (equalsIndex === -1) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, equalsIndex).trim();
+    let value = trimmed.slice(equalsIndex + 1).trim();
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadDotEnv();
 
 const port = Number(process.env.PORT ?? 8787);
-const host = process.env.HOST ?? "127.0.0.1";
+const host = process.env.HOST ?? "0.0.0.0";
 const openAIKey = process.env.OPENAI_API_KEY;
 const openAIModel = process.env.OPENAI_MODEL ?? "gpt-5-mini";
 const proxyToken = process.env.FITCHECK_PROXY_TOKEN ?? "";
@@ -149,19 +191,32 @@ async function reviewOutfit(requestBody) {
           schema: responseSchema
         }
       },
-      max_output_tokens: 700,
+      max_output_tokens: 2000,
       store: false
     })
   });
+
 
   const data = await openAIResponse.json().catch(() => ({}));
   if (!openAIResponse.ok) {
     throw httpError(openAIResponse.status, data.error?.message ?? "OpenAI request failed");
   }
 
-  const outputText = extractOutputText(data);
+  const outputText = extractOpenAIText(data);
+
   if (!outputText) {
-    throw httpError(502, "OpenAI response did not include output text");
+    console.error("OpenAI response without extractable text:", JSON.stringify(data, null, 2));
+
+    if (data.status === "incomplete") {
+      throw new Error(`OpenAI response incomplete: ${data.incomplete_details?.reason ?? "unknown reason"}`);
+    }
+
+    const refusal = extractOpenAIRefusal(data);
+    if (refusal) {
+      throw new Error(`OpenAI refused the request: ${refusal}`);
+    }
+
+    throw new Error("OpenAI response did not include output text");
   }
 
   const parsed = JSON.parse(outputText);
@@ -176,15 +231,40 @@ async function reviewOutfit(requestBody) {
   };
 }
 
-function extractOutputText(data) {
-  if (typeof data.output_text === "string") {
-    return data.output_text;
+function extractOpenAIText(data) {
+  if (typeof data.output_text === "string" && data.output_text.trim()) {
+    return data.output_text.trim();
   }
+
+  const textParts = [];
 
   for (const output of data.output ?? []) {
     for (const content of output.content ?? []) {
-      if (content.type === "output_text" && typeof content.text === "string") {
-        return content.text;
+      if (typeof content.text === "string") {
+        textParts.push(content.text);
+      }
+
+      if (typeof content.value === "string") {
+        textParts.push(content.value);
+      }
+    }
+  }
+
+  for (const choice of data.choices ?? []) {
+    const choiceText = choice?.message?.content ?? choice?.text;
+    if (typeof choiceText === "string") {
+      textParts.push(choiceText);
+    }
+  }
+
+  return textParts.join("\n").trim();
+}
+
+function extractOpenAIRefusal(data) {
+  for (const output of data.output ?? []) {
+    for (const content of output.content ?? []) {
+      if (typeof content.refusal === "string" && content.refusal.trim()) {
+        return content.refusal.trim();
       }
     }
   }

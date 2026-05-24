@@ -3,3 +3,4 @@ DerivedData/
 backend/.env
 backend/node_modules/
 *.xcuserstate
+.env

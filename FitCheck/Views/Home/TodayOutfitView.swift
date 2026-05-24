@@ -14,8 +14,7 @@ struct TodayOutfitView: View {
 
     @StateObject private var weatherLookup = WeatherLookupController()
     @State private var manualLocationQuery = ""
-    @State private var occasion = OccasionOption.casual.rawValue
-    @State private var activity = ActivityOption.walkingAroundCity.rawValue
+    @State private var selectedContext = OutfitContextOption.casualDay.rawValue
     @State private var recommendations: [OutfitRecommendation] = []
     @State private var aiReviews: [String: AIOutfitResponse] = [:]
     @State private var aiReviewErrors: [String: String] = [:]
@@ -45,13 +44,8 @@ struct TodayOutfitView: View {
             }
 
             Section("Context") {
-                Picker("Occasion", selection: $occasion) {
-                    ForEach(OccasionOption.allCases) { option in
-                        Text(option.displayName).tag(option.rawValue)
-                    }
-                }
-                Picker("Activity", selection: $activity) {
-                    ForEach(ActivityOption.allCases) { option in
+                Picker("Context", selection: $selectedContext) {
+                    ForEach(OutfitContextOption.allCases) { option in
                         Text(option.displayName).tag(option.rawValue)
                     }
                 }
@@ -144,8 +138,8 @@ struct TodayOutfitView: View {
             stylePreference: stylePreferences.first,
             request: RecommendationRequest(
                 weather: currentWeather,
-                occasion: occasion,
-                activity: activity,
+                occasion: currentContext.occasion,
+                activity: currentContext.activity,
                 selectedItem: nil
             )
         )
@@ -155,8 +149,8 @@ struct TodayOutfitView: View {
         let outfit = Outfit(
             name: recommendation.title,
             wornAt: Date(),
-            occasion: occasion,
-            activity: activity,
+            occasion: currentContext.occasion,
+            activity: currentContext.activity,
             weatherSummary: currentWeather.summary,
             score: recommendation.score,
             rating: feedbackType == .goodOutfit ? 1 : 0
@@ -234,8 +228,8 @@ struct TodayOutfitView: View {
         AIOutfitRequest(
             closet: closetItems.map(AIClothingItemPayload.init),
             weatherSummary: currentWeather.summary,
-            occasion: occasion,
-            activity: activity,
+            occasion: currentContext.occasion,
+            activity: currentContext.activity,
             styleDescription: styleDescription,
             selectedItemID: selectedItemID,
             candidateItemIDs: recommendation.items.map(\.id),
@@ -268,7 +262,11 @@ struct TodayOutfitView: View {
         ]
         .compactMap { $0 }
         .filter { !$0.isEmpty }
-        .joined(separator: " - ")
+            .joined(separator: " - ")
+    }
+
+    private var currentContext: OutfitContextOption {
+        OutfitContextOption(rawValue: selectedContext) ?? .casualDay
     }
 }
 

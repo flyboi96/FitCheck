@@ -14,8 +14,9 @@ struct OutfitBuilderView: View {
     @StateObject private var weatherLookup = WeatherLookupController()
     @State private var manualLocationQuery = ""
     @State private var selectedItemID: UUID?
-    @State private var occasion = OccasionOption.casual.rawValue
-    @State private var activity = ActivityOption.walkingAroundCity.rawValue
+    @State private var itemSearchText = ""
+    @State private var selectedCategoryRawValue = "all"
+    @State private var selectedContext = OutfitContextOption.casualDay.rawValue
     @State private var recommendations: [OutfitRecommendation] = []
     @State private var aiReviews: [String: AIOutfitResponse] = [:]
     @State private var aiReviewErrors: [String: String] = [:]
@@ -26,10 +27,60 @@ struct OutfitBuilderView: View {
     var body: some View {
         List {
             Section("Anchor Item") {
-                Picker("Item", selection: $selectedItemID) {
-                    Text("Choose Item").tag(nil as UUID?)
-                    ForEach(activeItems) { item in
-                        Text("\(item.name) - \(item.category.displayName)").tag(Optional(item.id))
+                if let selectedItem {
+                    HStack {
+                        Label(selectedItem.name, systemImage: iconName(for: selectedItem.category))
+                        Spacer()
+                        Text(selectedItem.category.displayName)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Label("Choose one closet item to build around", systemImage: "tshirt")
+                        .foregroundStyle(.secondary)
+                }
+
+                TextField("Search closet", text: $itemSearchText)
+                    .textInputAutocapitalization(.words)
+
+                Picker("Category", selection: $selectedCategoryRawValue) {
+                    Text("All Categories").tag("all")
+                    ForEach(availableCategories) { category in
+                        Text(category.displayName).tag(category.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
+            if filteredItemGroups.isEmpty {
+                Section("Items") {
+                    ContentUnavailableView("No Matching Items", systemImage: "magnifyingglass")
+                }
+            } else {
+                ForEach(filteredItemGroups) { group in
+                    Section(group.category.displayName) {
+                        ForEach(group.items) { item in
+                            Button {
+                                selectedItemID = item.id
+                            } label: {
+                                HStack {
+                                    Image(systemName: iconName(for: item.category))
+                                        .frame(width: 24)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.name)
+                                            .font(.body.weight(item.id == selectedItemID ? .semibold : .regular))
+                                        Text(itemDetail(for: item))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if item.id == selectedItemID {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.tint)
+                                    }
+                                }
+                            }
+                            .foregroundStyle(.primary)
+                        }
                     }
                 }
             }
@@ -54,13 +105,8 @@ struct OutfitBuilderView: View {
             }
 
             Section("Context") {
-                Picker("Occasion", selection: $occasion) {
-                    ForEach(OccasionOption.allCases) { option in
-                        Text(option.displayName).tag(option.rawValue)
-                    }
-                }
-                Picker("Activity", selection: $activity) {
-                    ForEach(ActivityOption.allCases) { option in
+                Picker("Context", selection: $selectedContext) {
+                    ForEach(OutfitContextOption.allCases) { option in
                         Text(option.displayName).tag(option.rawValue)
                     }
                 }
@@ -95,12 +141,39 @@ struct OutfitBuilderView: View {
     }
 
     private var activeItems: [ClothingItem] {
-        closetItems.filter { $0.status == .active }
+        closetItems
+            .filter { $0.status == .active }
+            .sorted {
+                if $0.category == $1.category {
+                    return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
+                return categorySortIndex($0.category) < categorySortIndex($1.category)
+            }
     }
 
     private var selectedItem: ClothingItem? {
         guard let selectedItemID else { return nil }
         return activeItems.first { $0.id == selectedItemID }
+    }
+
+    private var availableCategories: [ClothingCategory] {
+        let categories = Set(activeItems.map(\.category))
+        return ClothingCategory.allCases.filter { categories.contains($0) }
+    }
+
+    private var filteredItemGroups: [ItemCategoryGroup] {
+        let search = itemSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let filtered = activeItems.filter { item in
+            let matchesCategory = selectedCategoryRawValue == "all" || item.category.rawValue == selectedCategoryRawValue
+            let matchesSearch = search.isEmpty || item.name.localizedCaseInsensitiveContains(search)
+            return matchesCategory && matchesSearch
+        }
+
+        return availableCategories.compactMap { category in
+            let items = filtered.filter { $0.category == category }
+            guard !items.isEmpty else { return nil }
+            return ItemCategoryGroup(category: category, items: items)
+        }
     }
 
     @ViewBuilder
@@ -146,8 +219,8 @@ struct OutfitBuilderView: View {
             stylePreference: stylePreferences.first,
             request: RecommendationRequest(
                 weather: weather,
-                occasion: occasion,
-                activity: activity,
+                occasion: currentContext.occasion,
+                activity: currentContext.activity,
                 selectedItem: selectedItem
             )
         )
@@ -194,8 +267,8 @@ struct OutfitBuilderView: View {
         AIOutfitRequest(
             closet: closetItems.map(AIClothingItemPayload.init),
             weatherSummary: weatherLookup.result?.input.summary ?? "",
-            occasion: occasion,
-            activity: activity,
+            occasion: currentContext.occasion,
+            activity: currentContext.activity,
             styleDescription: styleDescription,
             selectedItemID: selectedItem?.id,
             candidateItemIDs: recommendation.items.map(\.id),
@@ -228,6 +301,50 @@ struct OutfitBuilderView: View {
         ]
         .compactMap { $0 }
         .filter { !$0.isEmpty }
-        .joined(separator: " - ")
+            .joined(separator: " - ")
     }
+
+    private var currentContext: OutfitContextOption {
+        OutfitContextOption(rawValue: selectedContext) ?? .casualDay
+    }
+
+    private func itemDetail(for item: ClothingItem) -> String {
+        let parts = [
+            ClothingInference.color(for: item),
+            ClothingInference.pattern(for: item)
+        ]
+        .filter { !$0.isEmpty }
+
+        return parts.isEmpty ? item.category.displayName : parts.joined(separator: " · ")
+    }
+
+    private func iconName(for category: ClothingCategory) -> String {
+        switch category {
+        case .shirt, .sweater:
+            "tshirt"
+        case .pants, .shorts:
+            "figure.stand"
+        case .shoes:
+            "shoeprints.fill"
+        case .jacket:
+            "cloud"
+        case .belt, .watch, .accessory:
+            "sparkles"
+        case .bag:
+            "bag"
+        case .other:
+            "circle"
+        }
+    }
+
+    private func categorySortIndex(_ category: ClothingCategory) -> Int {
+        ClothingCategory.allCases.firstIndex(of: category) ?? ClothingCategory.allCases.count
+    }
+}
+
+private struct ItemCategoryGroup: Identifiable {
+    var category: ClothingCategory
+    var items: [ClothingItem]
+
+    var id: String { category.rawValue }
 }

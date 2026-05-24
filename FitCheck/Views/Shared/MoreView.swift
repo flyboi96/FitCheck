@@ -42,8 +42,12 @@ private struct ScoringGuideView: View {
                 Text("Cold weather rewards wool, merino, fleece, sweaters, jackets, boots, and coats. Hot weather rewards linen, tees, lightweight items, and shorts. Rain rewards rain shells, waterproof items, and weather-safe shoes.")
             }
 
-            Section("Occasion and Activity") {
-                Text("The app infers tags from the item name and category. For example, a blue merino wool button-down is treated as better for dinner, work, and date night than a running tee.")
+            Section("Context") {
+                Text("You choose one context, such as Work / Office, Travel Day, Dinner, or Walking Around City. Internally, FitCheck maps that to both a situation and an activity so the app does not make you decide whether something is an occasion or an activity.")
+            }
+
+            Section("Dressiness") {
+                Text("FitCheck infers dressiness from the item name and category. A blue merino button-down scores better for dinner or work than a running tee because the item name suggests a sharper, more polished piece.")
             }
 
             Section("Rotation") {
@@ -59,7 +63,7 @@ private struct ScoringGuideView: View {
             }
 
             Section("AI Review") {
-                Text("When the AI proxy is enabled in Settings, recommendation cards can ask the backend for a second opinion. The AI sees the candidate outfit, weather, occasion, style notes, and recent feedback, then returns a short rationale and cautions.")
+                Text("When the AI proxy is enabled in Settings, recommendation cards can ask the backend for a second opinion. The AI sees the candidate outfit, weather, context, style notes, and recent feedback, then returns a short rationale and cautions.")
             }
 
             Section("Builder") {

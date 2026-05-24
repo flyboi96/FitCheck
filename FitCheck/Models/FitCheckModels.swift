@@ -301,6 +301,8 @@ final class Trip: Identifiable {
     var startsAt: Date
     var endsAt: Date
     var notes: String
+    var laundryIntervalDays: Int = 0
+    var wearsBeforeWash: Int = 1
     @Relationship(deleteRule: .cascade, inverse: \TripStop.trip)
     var stops: [TripStop]
     @Relationship(deleteRule: .cascade, inverse: \PackingList.trip)
@@ -314,6 +316,8 @@ final class Trip: Identifiable {
         startsAt: Date,
         endsAt: Date,
         notes: String = "",
+        laundryIntervalDays: Int = 0,
+        wearsBeforeWash: Int = 1,
         stops: [TripStop] = [],
         packingLists: [PackingList] = [],
         itineraryOutfits: [DailyItineraryOutfit] = []
@@ -323,6 +327,8 @@ final class Trip: Identifiable {
         self.startsAt = startsAt
         self.endsAt = endsAt
         self.notes = notes
+        self.laundryIntervalDays = laundryIntervalDays
+        self.wearsBeforeWash = wearsBeforeWash
         self.stops = stops
         self.packingLists = packingLists
         self.itineraryOutfits = itineraryOutfits

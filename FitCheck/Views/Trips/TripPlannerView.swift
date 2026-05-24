@@ -67,6 +67,8 @@ private struct TripEditorView: View {
     @State private var startsAt = Date()
     @State private var endsAt = Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date()
     @State private var notes = ""
+    @State private var laundryIntervalDays = 0
+    @State private var wearsBeforeWash = 1
 
     var body: some View {
         Form {
@@ -76,6 +78,26 @@ private struct TripEditorView: View {
             DatePicker("End", selection: $endsAt, displayedComponents: .date)
             TextEditor(text: $notes)
                 .frame(minHeight: 96)
+
+            Section("Laundry & Rewear") {
+                Stepper(value: $laundryIntervalDays, in: 0...14) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Laundry")
+                        Text(laundryIntervalDays == 0 ? "No planned laundry" : "Every \(laundryIntervalDays) days")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Stepper(value: $wearsBeforeWash, in: 1...5) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Wear before wash")
+                        Text("\(wearsBeforeWash)x per clothing item")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
         .navigationTitle("Add Trip")
         .toolbar {
@@ -94,7 +116,14 @@ private struct TripEditorView: View {
     }
 
     private func save() {
-        let trip = Trip(title: title.trimmingCharacters(in: .whitespacesAndNewlines), startsAt: startsAt, endsAt: maxDate(startsAt, endsAt), notes: notes)
+        let trip = Trip(
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+            startsAt: startsAt,
+            endsAt: maxDate(startsAt, endsAt),
+            notes: notes,
+            laundryIntervalDays: laundryIntervalDays,
+            wearsBeforeWash: wearsBeforeWash
+        )
         modelContext.insert(trip)
         try? modelContext.save()
         dismiss()
@@ -115,6 +144,7 @@ private struct TripDetailView: View {
     @State private var showingStopEditor = false
     @State private var isGeneratingPackingList = false
     @State private var isGeneratingItinerary = false
+    @State private var feedbackStatus = ""
 
     private let service = TripPlanningService()
 
@@ -139,6 +169,30 @@ private struct TripDetailView: View {
                 } label: {
                     Label("Add Stop", systemImage: "plus")
                 }
+            }
+
+            Section("Laundry & Rewear") {
+                Stepper(value: $trip.laundryIntervalDays, in: 0...14) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Laundry")
+                        Text(trip.laundryIntervalDays == 0 ? "No planned laundry" : "Every \(trip.laundryIntervalDays) days")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Stepper(value: $trip.wearsBeforeWash, in: 1...5) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Wear before wash")
+                        Text("\(trip.wearsBeforeWash)x per clothing item")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Text("Packing uses these values to reduce overpacking. It chooses enough items to cover the longest stretch between laundry.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Generate") {
@@ -176,11 +230,18 @@ private struct TripDetailView: View {
             ForEach(trip.packingLists) { list in
                 Section(list.title) {
                     ForEach(list.items) { packingItem in
-                        HStack {
-                            Text(packingItem.item?.name ?? "Item")
-                            Spacer()
-                            Text("x\(packingItem.quantity)")
-                                .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(packingItem.item?.name ?? "Item")
+                                Spacer()
+                                Text("x\(packingItem.quantity)")
+                                    .foregroundStyle(.secondary)
+                            }
+                            if !packingItem.reason.isEmpty {
+                                Text(packingItem.reason)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -195,8 +256,48 @@ private struct TripDetailView: View {
                             Text(outfit.items.compactMap { $0.item?.name }.joined(separator: ", "))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if let latestFeedback = latestFeedback(for: outfit) {
+                                Text("Feedback: \(latestFeedback.type.displayName)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            HStack {
+                                Button {
+                                    recordFeedback(for: itinerary, type: .goodOutfit)
+                                } label: {
+                                    Label("Good", systemImage: "hand.thumbsup")
+                                }
+                                Button {
+                                    recordFeedback(for: itinerary, type: .badOutfit)
+                                } label: {
+                                    Label("Bad", systemImage: "hand.thumbsdown")
+                                }
+                                Menu {
+                                    Button("Bad for weather") {
+                                        recordFeedback(for: itinerary, type: .badForWeather)
+                                    }
+                                    Button("Bad for context") {
+                                        recordFeedback(for: itinerary, type: .badForOccasion)
+                                    }
+                                    Button("Colors do not work") {
+                                        recordFeedback(for: itinerary, type: .colorsDoNotWork)
+                                    }
+                                    Button("Dislike combination") {
+                                        recordFeedback(for: itinerary, type: .dislikeCombination)
+                                    }
+                                } label: {
+                                    Label("Issue", systemImage: "exclamationmark.bubble")
+                                }
+                            }
+                            .font(.caption)
+                            .buttonStyle(.borderless)
                         }
                     }
+                }
+                if !feedbackStatus.isEmpty {
+                    Text(feedbackStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -206,6 +307,34 @@ private struct TripDetailView: View {
                 TripStopEditorView(trip: trip)
             }
         }
+        .onChange(of: trip.laundryIntervalDays) { _, _ in
+            try? modelContext.save()
+        }
+        .onChange(of: trip.wearsBeforeWash) { _, _ in
+            try? modelContext.save()
+        }
+    }
+
+    private func recordFeedback(for itinerary: DailyItineraryOutfit, type: FeedbackType) {
+        guard let outfit = itinerary.outfit else { return }
+        let note = "Trip itinerary: \(trip.title), \(TripPlannerView.dateFormatter.string(from: itinerary.date))"
+        let entry = Feedback(
+            type: type,
+            note: note,
+            combinationKey: OutfitRecommendation.combinationKey(for: outfit.items.compactMap(\.item)),
+            outfit: outfit
+        )
+        modelContext.insert(entry)
+        outfit.feedback.append(entry)
+        try? modelContext.save()
+        feedbackStatus = "Saved \(type.displayName.lowercased()) feedback."
+    }
+
+    private func latestFeedback(for outfit: Outfit) -> Feedback? {
+        feedback
+            .filter { $0.outfit?.id == outfit.id }
+            .sorted { $0.createdAt > $1.createdAt }
+            .first
     }
 }
 

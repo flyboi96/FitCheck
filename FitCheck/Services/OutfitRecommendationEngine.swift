@@ -52,6 +52,80 @@ enum ActivityOption: String, CaseIterable, Identifiable {
     }
 }
 
+enum OutfitContextOption: String, CaseIterable, Identifiable {
+    case casualDay = "casual day"
+    case dateNight = "date night"
+    case workDay = "work day"
+    case travelDay = "travel day"
+    case dinner
+    case gym
+    case walkingAroundCity = "walking around city"
+    case outdoors
+    case errands
+    case wedding
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .casualDay: "Casual Day"
+        case .dateNight: "Date Night"
+        case .workDay: "Work / Office"
+        case .travelDay: "Travel Day"
+        case .dinner: "Dinner"
+        case .gym: "Gym"
+        case .walkingAroundCity: "Walking Around City"
+        case .outdoors: "Outdoors"
+        case .errands: "Errands"
+        case .wedding: "Wedding / Formal"
+        }
+    }
+
+    var occasion: String {
+        switch self {
+        case .casualDay, .errands, .outdoors:
+            OccasionOption.casual.rawValue
+        case .dateNight:
+            OccasionOption.dateNight.rawValue
+        case .workDay:
+            OccasionOption.work.rawValue
+        case .travelDay:
+            OccasionOption.travelDay.rawValue
+        case .dinner:
+            OccasionOption.dinner.rawValue
+        case .gym:
+            OccasionOption.gym.rawValue
+        case .walkingAroundCity:
+            OccasionOption.walkingAroundCity.rawValue
+        case .wedding:
+            OccasionOption.wedding.rawValue
+        }
+    }
+
+    var activity: String {
+        switch self {
+        case .casualDay:
+            ActivityOption.walkingAroundCity.rawValue
+        case .dateNight, .dinner:
+            ActivityOption.dinner.rawValue
+        case .workDay:
+            ActivityOption.office.rawValue
+        case .travelDay:
+            ActivityOption.travel.rawValue
+        case .gym:
+            ActivityOption.gym.rawValue
+        case .walkingAroundCity:
+            ActivityOption.walkingAroundCity.rawValue
+        case .outdoors:
+            ActivityOption.outdoors.rawValue
+        case .errands:
+            ActivityOption.errands.rawValue
+        case .wedding:
+            ActivityOption.formalEvent.rawValue
+        }
+    }
+}
+
 struct ClothingInference {
     struct Metadata {
         var color: String
@@ -433,14 +507,26 @@ struct OutfitRecommendationEngine {
         var notes: [String] = []
 
         value += weatherScore(item, weather: request.weather)
-        value += tagScore(ClothingInference.occasionTags(for: item), target: request.occasion, matchedNote: "\(item.name) fits \(request.occasion)")
-        value += tagScore(ClothingInference.activityTags(for: item), target: request.activity, matchedNote: "\(item.name) fits \(request.activity)")
+
+        let occasionTags = ClothingInference.occasionTags(for: item)
+        let activityTags = ClothingInference.activityTags(for: item)
+        value += tagScore(occasionTags, target: request.occasion, matchedNote: "\(item.name) suits \(request.occasion)")
+        value += tagScore(activityTags, target: request.activity, matchedNote: "\(item.name) works for \(request.activity)")
+
+        if tagsMatch(occasionTags, target: request.occasion) {
+            notes.append("\(item.name) suits \(request.occasion)")
+        }
+        if request.activity != request.occasion, tagsMatch(activityTags, target: request.activity) {
+            notes.append("\(item.name) works for \(request.activity)")
+        }
 
         let targetFormality = targetFormality(for: request.occasion)
         let formalityDistance = abs(ClothingInference.formalityLevel(for: item) - targetFormality)
         value -= Double(formalityDistance * 4)
         if formalityDistance == 0 {
-            notes.append("Inferred dressiness matches")
+            notes.append("\(item.name) matches \(contextLabel(for: request)) dressiness")
+        } else if formalityDistance == 1 {
+            notes.append("\(item.name) is close enough for \(contextLabel(for: request))")
         }
 
         if let lastWornAt = item.lastWornAt {
@@ -517,6 +603,10 @@ struct OutfitRecommendationEngine {
     private func tagScore(_ tags: [String], target: String, matchedNote: String) -> Double {
         let storedTags = tags.joined(separator: ", ")
         return tagScore(storedTags, target: target, matchedNote: matchedNote)
+    }
+
+    private func tagsMatch(_ tags: [String], target: String) -> Bool {
+        tags.joined(separator: ", ").fitcheckContainsTag(target)
     }
 
     private func tagScore(_ tags: String, target: String, matchedNote: String) -> Double {
@@ -655,6 +745,16 @@ struct OutfitRecommendationEngine {
             return 2
         }
         return 3
+    }
+
+    private func contextLabel(for request: RecommendationRequest) -> String {
+        let occasion = request.occasion.trimmingCharacters(in: .whitespacesAndNewlines)
+        let activity = request.activity.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !occasion.isEmpty, !activity.isEmpty, occasion != activity {
+            return "\(occasion) / \(activity)"
+        }
+        return occasion.isEmpty ? activity : occasion
     }
 
     private func itemSortScore(_ item: ClothingItem) -> Double {

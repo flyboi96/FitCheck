@@ -15,6 +15,8 @@ FitCheck is a personal iPhone wardrobe and outfit planning app built with SwiftU
 - Personal style preferences
 - Trip stops, packing lists, socks/underwear estimates, laundry-aware packing, itinerary feedback, and basic outfit itineraries
 - Wearer profile setting for male/female/unset personalization context
+- Firebase Auth account screen for registering, signing in, and saving a cloud user profile
+- Firestore user profile document for name, gender, and style preferences
 - Settings for an optional AI proxy endpoint
 - Optional AI outfit review and clothing photo description through a local backend proxy
 - JSON export/import for moving local FitCheck data to a new phone
@@ -30,6 +32,20 @@ OpenAI integration is intentionally behind an app-owned backend/proxy abstractio
 The local color scorer recognizes neutrals, accent colors, analogous colors, complementary contrast, classic menswear pairings, and pattern conflicts. This keeps the app useful when the AI proxy is off.
 
 Settings includes a backup section. Export writes closet items, outfit history, feedback, style preferences, trips, packing lists, and itinerary feedback to JSON. Import restores that JSON and replaces the local FitCheck data on the device.
+
+Firebase is used for optional login and profile sync. SwiftData remains the local closet database for this version. Firestore currently stores one document per signed-in user at `users/{uid}` with account email, display name, gender, and style preferences.
+
+## Firebase Setup
+
+1. Create a Firebase project.
+2. Add an iOS app with bundle ID `com.alexcorbin.personal.FitCheck`.
+3. Download `GoogleService-Info.plist`.
+4. Add that plist to the FitCheck app target in Xcode. The file is gitignored so local Firebase project details do not need to be committed.
+5. Enable Email/Password under Firebase Authentication.
+6. Create a Cloud Firestore database.
+7. Publish rules equivalent to `firestore.rules` so users can only read and write their own `users/{uid}` document.
+
+After setup, open More > Account in FitCheck to register or sign in. Saving the account profile writes to Firestore and also applies the same gender/style preferences locally for outfit recommendations.
 
 ## AI Proxy
 

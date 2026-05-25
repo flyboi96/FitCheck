@@ -3,6 +3,8 @@ import SwiftUI
 
 @main
 struct FitCheckApp: App {
+    @UIApplicationDelegateAdaptor(FitCheckFirebaseAppDelegate.self) private var firebaseDelegate
+
     var body: some Scene {
         WindowGroup {
             FitCheckRootView()

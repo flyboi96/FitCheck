@@ -30,6 +30,13 @@
 		FC0001160000000000000001 /* FitCheckHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002170000000000000001 /* FitCheckHistoryService.swift */; };
 		FC0001170000000000000001 /* PhotoImportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002180000000000000001 /* PhotoImportSupport.swift */; };
 		FC0001180000000000000001 /* WardrobePhotoImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002190000000000000001 /* WardrobePhotoImportView.swift */; };
+		FC0001190000000000000001 /* FitCheckFirebaseAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC00021A0000000000000001 /* FitCheckFirebaseAppDelegate.swift */; };
+		FC00011A0000000000000001 /* FirebaseAccountService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC00021B0000000000000001 /* FirebaseAccountService.swift */; };
+		FC00011B0000000000000001 /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC00021C0000000000000001 /* AccountView.swift */; };
+		FC00011C0000000000000001 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = FC000A010000000000000001 /* FirebaseCore */; };
+		FC00011D0000000000000001 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = FC000A020000000000000001 /* FirebaseAuth */; };
+		FC00011E0000000000000001 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = FC000A030000000000000001 /* FirebaseFirestore */; };
+		FC00011F0000000000000001 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = FC00021D0000000000000001 /* GoogleService-Info.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -57,6 +64,10 @@
 		FC0002170000000000000001 /* FitCheckHistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitCheckHistoryService.swift; sourceTree = "<group>"; };
 		FC0002180000000000000001 /* PhotoImportSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoImportSupport.swift; sourceTree = "<group>"; };
 		FC0002190000000000000001 /* WardrobePhotoImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WardrobePhotoImportView.swift; sourceTree = "<group>"; };
+		FC00021A0000000000000001 /* FitCheckFirebaseAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitCheckFirebaseAppDelegate.swift; sourceTree = "<group>"; };
+		FC00021B0000000000000001 /* FirebaseAccountService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseAccountService.swift; sourceTree = "<group>"; };
+		FC00021C0000000000000001 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
+		FC00021D0000000000000001 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,6 +75,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FC00011C0000000000000001 /* FirebaseCore in Frameworks */,
+				FC00011D0000000000000001 /* FirebaseAuth in Frameworks */,
+				FC00011E0000000000000001 /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -86,6 +100,7 @@
 				FC0004050000000000000001 /* Services */,
 				FC0004060000000000000001 /* Views */,
 				FC0002150000000000000001 /* Assets.xcassets */,
+				FC00021D0000000000000001 /* GoogleService-Info.plist */,
 			);
 			path = FitCheck;
 			sourceTree = "<group>";
@@ -96,6 +111,7 @@
 				FC0002010000000000000001 /* FitCheckApp.swift */,
 				FC0002020000000000000001 /* FitCheckRootView.swift */,
 				FC0002030000000000000001 /* AppTab.swift */,
+				FC00021A0000000000000001 /* FitCheckFirebaseAppDelegate.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -117,6 +133,7 @@
 				FC0002140000000000000001 /* WeatherLookupService.swift */,
 				FC0002160000000000000001 /* FitCheckBackupService.swift */,
 				FC0002170000000000000001 /* FitCheckHistoryService.swift */,
+				FC00021B0000000000000001 /* FirebaseAccountService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -125,6 +142,7 @@
 			isa = PBXGroup;
 			children = (
 				FC0004070000000000000001 /* Home */,
+				FC0004110000000000000001 /* Account */,
 				FC0004080000000000000001 /* Closet */,
 				FC0004090000000000000001 /* Builder */,
 				FC00040A0000000000000001 /* History */,
@@ -142,6 +160,14 @@
 				FC0002090000000000000001 /* TodayOutfitView.swift */,
 			);
 			path = Home;
+			sourceTree = "<group>";
+		};
+		FC0004110000000000000001 /* Account */ = {
+			isa = PBXGroup;
+			children = (
+				FC00021C0000000000000001 /* AccountView.swift */,
+			);
+			path = Account;
 			sourceTree = "<group>";
 		};
 		FC0004080000000000000001 /* Closet */ = {
@@ -228,6 +254,11 @@
 			dependencies = (
 			);
 			name = FitCheck;
+			packageProductDependencies = (
+				FC000A010000000000000001 /* FirebaseCore */,
+				FC000A020000000000000001 /* FirebaseAuth */,
+				FC000A030000000000000001 /* FirebaseFirestore */,
+			);
 			productName = FitCheck;
 			productReference = FC0002130000000000000001 /* FitCheck.app */;
 			productType = "com.apple.product-type.application";
@@ -256,6 +287,9 @@
 				Base,
 			);
 			mainGroup = FC0004010000000000000001;
+			packageReferences = (
+				FC0009010000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			productRefGroup = FC00040C0000000000000001 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -271,6 +305,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FC0001140000000000000001 /* Assets.xcassets in Resources */,
+				FC00011F0000000000000001 /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -303,10 +338,42 @@
 				FC0001110000000000000001 /* MoreView.swift in Sources */,
 				FC0001170000000000000001 /* PhotoImportSupport.swift in Sources */,
 				FC0001180000000000000001 /* WardrobePhotoImportView.swift in Sources */,
+				FC0001190000000000000001 /* FitCheckFirebaseAppDelegate.swift in Sources */,
+				FC00011A0000000000000001 /* FirebaseAccountService.swift in Sources */,
+				FC00011B0000000000000001 /* AccountView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		FC0009010000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.13.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		FC000A010000000000000001 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC0009010000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		FC000A020000000000000001 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC0009010000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		FC000A030000000000000001 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC0009010000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		FC0008010000000000000001 /* Debug */ = {

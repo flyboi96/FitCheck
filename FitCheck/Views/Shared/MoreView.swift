@@ -4,6 +4,12 @@ struct MoreView: View {
     var body: some View {
         List {
             NavigationLink {
+                AccountView()
+            } label: {
+                Label("Account", systemImage: "person.crop.circle")
+            }
+
+            NavigationLink {
                 OutfitHistoryView()
             } label: {
                 Label("Outfit History", systemImage: "calendar")

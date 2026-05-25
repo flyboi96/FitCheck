@@ -109,27 +109,6 @@ struct RecommendationCard: View {
     }
 
     private func iconName(for category: ClothingCategory) -> String {
-        switch category {
-        case .shirt, .sweater:
-            "tshirt"
-        case .activewear:
-            "figure.run"
-        case .underwear:
-            "person"
-        case .socks:
-            "shoeprints.fill"
-        case .pants, .shorts:
-            "figure.stand"
-        case .shoes:
-            "shoeprints.fill"
-        case .jacket:
-            "cloud"
-        case .belt, .watch, .accessory:
-            "sparkles"
-        case .bag:
-            "bag"
-        case .other:
-            "circle"
-        }
+        category.systemImageName
     }
 }

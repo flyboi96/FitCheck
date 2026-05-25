@@ -7,10 +7,13 @@ struct ClothingItemEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
+    @AppStorage("fitcheckWearerProfile") private var wearerProfile = WearerProfileOption.unspecified.rawValue
+
     private let item: ClothingItem?
 
     @State private var name: String
     @State private var category: ClothingCategory
+    @State private var quantity: Int
     @State private var notes: String
     @State private var status: ClothingStatus
     @State private var photoData: Data?
@@ -22,6 +25,7 @@ struct ClothingItemEditorView: View {
         self.item = item
         _name = State(initialValue: item?.name ?? "")
         _category = State(initialValue: item?.category ?? .shirt)
+        _quantity = State(initialValue: max(1, item?.quantity ?? 1))
         _notes = State(initialValue: item?.notes ?? "")
         _status = State(initialValue: item?.status ?? .active)
         _photoData = State(initialValue: item?.photoData)
@@ -63,9 +67,12 @@ struct ClothingItemEditorView: View {
                 TextField("Blue merino wool button-down", text: $name)
                     .textInputAutocapitalization(.words)
                 Picker("Category", selection: $category) {
-                    ForEach(ClothingCategory.allCases) { category in
+                    ForEach(availableCategories) { category in
                         Text(category.displayName).tag(category)
                     }
+                }
+                Stepper(value: $quantity, in: 1...99) {
+                    LabeledContent("Quantity", value: "\(quantity)")
                 }
                 Picker("Status", selection: $status) {
                     ForEach(ClothingStatus.allCases) { status in
@@ -112,6 +119,7 @@ struct ClothingItemEditorView: View {
         if let item {
             item.name = trimmedName
             item.category = category
+            item.quantity = max(1, quantity)
             item.color = inferred.color
             item.pattern = inferred.pattern
             item.formalityLevel = inferred.formalityLevel
@@ -126,6 +134,7 @@ struct ClothingItemEditorView: View {
             let newItem = ClothingItem(
                 name: trimmedName,
                 category: category,
+                quantity: quantity,
                 color: inferred.color,
                 pattern: inferred.pattern,
                 formalityLevel: inferred.formalityLevel,
@@ -141,6 +150,16 @@ struct ClothingItemEditorView: View {
 
         try? modelContext.save()
         dismiss()
+    }
+
+    private var availableCategories: [ClothingCategory] {
+        let base = ClothingCategory.options(for: currentWearerProfile)
+        guard !base.contains(category) else { return base }
+        return base + [category]
+    }
+
+    private var currentWearerProfile: WearerProfileOption {
+        WearerProfileOption(rawValue: wearerProfile) ?? .unspecified
     }
 
     @MainActor

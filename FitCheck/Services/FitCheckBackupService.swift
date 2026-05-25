@@ -203,6 +203,7 @@ private struct ClothingItemBackup: Codable {
     var id: UUID
     var name: String
     var categoryRawValue: String
+    var quantity: Int
     var color: String
     var pattern: String
     var formalityLevel: Int
@@ -221,6 +222,7 @@ private struct ClothingItemBackup: Codable {
         id = item.id
         name = item.name
         categoryRawValue = item.categoryRawValue
+        quantity = max(1, item.quantity)
         color = item.color
         pattern = item.pattern
         formalityLevel = item.formalityLevel
@@ -236,11 +238,33 @@ private struct ClothingItemBackup: Codable {
         wearCount = item.wearCount
     }
 
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        categoryRawValue = try container.decode(String.self, forKey: .categoryRawValue)
+        quantity = try container.decodeIfPresent(Int.self, forKey: .quantity) ?? 1
+        color = try container.decodeIfPresent(String.self, forKey: .color) ?? ""
+        pattern = try container.decodeIfPresent(String.self, forKey: .pattern) ?? ""
+        formalityLevel = try container.decodeIfPresent(Int.self, forKey: .formalityLevel) ?? 3
+        weatherSuitability = try container.decodeIfPresent(String.self, forKey: .weatherSuitability) ?? ""
+        occasionSuitability = try container.decodeIfPresent(String.self, forKey: .occasionSuitability) ?? ""
+        activitySuitability = try container.decodeIfPresent(String.self, forKey: .activitySuitability) ?? ""
+        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        photoData = try container.decodeIfPresent(Data.self, forKey: .photoData)
+        statusRawValue = try container.decodeIfPresent(String.self, forKey: .statusRawValue) ?? ClothingStatus.active.rawValue
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+        lastWornAt = try container.decodeIfPresent(Date.self, forKey: .lastWornAt)
+        wearCount = try container.decodeIfPresent(Int.self, forKey: .wearCount) ?? 0
+    }
+
     var model: ClothingItem {
         ClothingItem(
             id: id,
             name: name,
             category: ClothingCategory(rawValue: categoryRawValue) ?? .other,
+            quantity: max(1, quantity),
             color: color,
             pattern: pattern,
             formalityLevel: formalityLevel,

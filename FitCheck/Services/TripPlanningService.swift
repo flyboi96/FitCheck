@@ -27,7 +27,23 @@ struct TripPlanningService {
             list.items.append(packingItem)
         }
 
-        for extra in packingExtras(for: trip, days: days) {
+        addQuantityBasedPackingItems(
+            category: .underwear,
+            needed: baseLayerQuantityNeeded(for: trip, days: days),
+            closet: activeItems,
+            list: list,
+            context: context
+        )
+
+        addQuantityBasedPackingItems(
+            category: .socks,
+            needed: baseLayerQuantityNeeded(for: trip, days: days),
+            closet: activeItems,
+            list: list,
+            context: context
+        )
+
+        for extra in packingExtras(for: trip, days: days, chosenItems: chosen) {
             let packingItem = PackingListItem(quantity: extra.quantity, reason: extra.title, item: nil, packingList: list)
             context.insert(packingItem)
             list.items.append(packingItem)
@@ -127,9 +143,9 @@ struct TripPlanningService {
         let activewearLimit = tripHasExercise(trip) ? clothingLimit(for: trip, category: .activewear, days: days, minimum: 1, maximum: 4) : 0
         let shoeLimit = min(2, max(1, days / 5 + 1))
 
-        chosen.append(contentsOf: chooseItems(from: closet, categories: [.shirt, .sweater], limit: topLimit))
-        chosen.append(contentsOf: chooseItems(from: closet, categories: [.pants, .shorts], limit: bottomLimit))
-        chosen.append(contentsOf: chooseItems(from: closet, categories: [.shoes], limit: shoeLimit))
+        chosen.append(contentsOf: chooseItems(from: closet, categories: [.shirt, .blouse, .sweater, .dress], limit: topLimit))
+        chosen.append(contentsOf: chooseItems(from: closet, categories: [.pants, .shorts, .skirt], limit: bottomLimit))
+        chosen.append(contentsOf: chooseItems(from: closet, categories: [.shoes, .heels, .flats], limit: shoeLimit))
         chosen.append(contentsOf: chooseItems(from: closet, categories: [.activewear], limit: activewearLimit))
 
         let weatherText = trip.stops.map(\.expectedWeather).joined(separator: " ").lowercased()
@@ -146,7 +162,7 @@ struct TripPlanningService {
         }
 
         chosen.append(contentsOf: closet
-            .filter { [.belt, .watch, .accessory, .bag].contains($0.category) }
+            .filter { [.belt, .watch, .jewelry, .accessory, .bag, .purse].contains($0.category) }
             .prefix(3))
 
         var seen = Set<UUID>()
@@ -185,16 +201,51 @@ struct TripPlanningService {
         return item.category.displayName
     }
 
-    private func packingExtras(for trip: Trip, days: Int) -> [PackingExtra] {
+    private func baseLayerQuantityNeeded(for trip: Trip, days: Int) -> Int {
         let exerciseDays = tripHasExercise(trip) ? max(1, min(days, trip.stops.count)) : 0
-        let underwearCount = days + exerciseDays
-        let socksCount = days + exerciseDays
-        var extras = [
-            PackingExtra(title: "Underwear - one per day\(exerciseDays > 0 ? " plus workout extras" : "")", quantity: underwearCount),
-            PackingExtra(title: "Socks - one pair per day\(exerciseDays > 0 ? " plus workout extras" : "")", quantity: socksCount)
-        ]
+        return days + exerciseDays
+    }
 
-        if tripHasExercise(trip) {
+    private func addQuantityBasedPackingItems(
+        category: ClothingCategory,
+        needed: Int,
+        closet: [ClothingItem],
+        list: PackingList,
+        context: ModelContext
+    ) {
+        var remaining = max(0, needed)
+        guard remaining > 0 else { return }
+
+        let candidates = closet
+            .filter { $0.category == category }
+            .sorted { $0.wearCount < $1.wearCount }
+
+        for item in candidates where remaining > 0 {
+            let quantity = min(max(1, item.quantity), remaining)
+            let reason = "Need \(needed) total; saved quantity \(max(1, item.quantity))"
+            let packingItem = PackingListItem(quantity: quantity, reason: reason, item: item, packingList: list)
+            context.insert(packingItem)
+            list.items.append(packingItem)
+            remaining -= quantity
+        }
+
+        if remaining > 0 {
+            let packingItem = PackingListItem(
+                quantity: remaining,
+                reason: "\(category.displayName) - add enough for the remaining trip days",
+                item: nil,
+                packingList: list
+            )
+            context.insert(packingItem)
+            list.items.append(packingItem)
+        }
+    }
+
+    private func packingExtras(for trip: Trip, days: Int, chosenItems: [ClothingItem]) -> [PackingExtra] {
+        var extras: [PackingExtra] = []
+
+        if tripHasExercise(trip), !chosenItems.contains(where: { $0.category == .activewear }) {
+            let exerciseDays = max(1, min(days, trip.stops.count))
             extras.append(PackingExtra(title: "Exercise outfit\(exerciseDays > 1 ? "s" : "")", quantity: exerciseDays))
         }
 
@@ -210,9 +261,9 @@ struct TripPlanningService {
 
     private func wearLimit(for category: ClothingCategory, trip: Trip) -> Int {
         switch category {
-        case .shirt:
+        case .shirt, .blouse, .dress:
             return max(1, trip.topWearsBeforeWash)
-        case .pants, .shorts:
+        case .pants, .shorts, .skirt:
             return max(1, trip.bottomWearsBeforeWash)
         case .sweater:
             return max(1, trip.sweaterWearsBeforeWash)
@@ -222,7 +273,7 @@ struct TripPlanningService {
             return max(1, trip.activewearWearsBeforeWash)
         case .underwear, .socks:
             return 1
-        case .shoes, .belt, .watch, .accessory, .bag, .other:
+        case .shoes, .heels, .flats, .belt, .watch, .jewelry, .accessory, .bag, .purse, .other:
             return max(1, trip.wearsBeforeWash)
         }
     }
@@ -250,9 +301,9 @@ struct TripPlanningService {
 
     private func isLaundryTracked(_ item: ClothingItem) -> Bool {
         switch item.category {
-        case .shirt, .pants, .shorts, .jacket, .sweater, .activewear, .underwear, .socks:
+        case .shirt, .blouse, .pants, .shorts, .dress, .skirt, .jacket, .sweater, .activewear, .underwear, .socks:
             return true
-        case .shoes, .belt, .watch, .accessory, .bag, .other:
+        case .shoes, .heels, .flats, .belt, .watch, .jewelry, .accessory, .bag, .purse, .other:
             return false
         }
     }

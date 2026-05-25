@@ -4,6 +4,7 @@ import SwiftUI
 struct AccountView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var stylePreferences: [StylePreference]
+    @Query(sort: \ClothingItem.name) private var closetItems: [ClothingItem]
 
     @AppStorage("fitcheckWearerProfile") private var wearerProfile = WearerProfileOption.unspecified.rawValue
 
@@ -11,6 +12,7 @@ struct AccountView: View {
     @State private var authMode: AuthMode = .register
     @State private var draft = AccountProfileDraft()
     @State private var statusMessage = ""
+    @State private var cloudClosetStatus = ""
 
     var body: some View {
         Group {
@@ -134,6 +136,38 @@ struct AccountView: View {
 
             styleProfileFields
 
+            Section("Cloud Personalization") {
+                LabeledContent("Local closet", value: "\(closetItems.count) item\(closetItems.count == 1 ? "" : "s")")
+
+                Button {
+                    Task {
+                        await uploadCloset()
+                    }
+                } label: {
+                    Label("Upload Closet Metadata", systemImage: "icloud.and.arrow.up")
+                }
+                .disabled(accountStore.isLoading || closetItems.isEmpty)
+
+                Button {
+                    Task {
+                        await downloadCloset()
+                    }
+                } label: {
+                    Label("Download Closet Metadata", systemImage: "icloud.and.arrow.down")
+                }
+                .disabled(accountStore.isLoading)
+
+                Text("This stores your clothing names, categories, quantities, wear counts, and style metadata under your signed-in Firestore user. Photos stay local for now.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if !cloudClosetStatus.isEmpty {
+                    Text(cloudClosetStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section {
                 Button {
                     Task {
@@ -248,6 +282,36 @@ struct AccountView: View {
             applyLocalProfileDraft(draft)
             statusMessage = "Profile saved."
         }
+    }
+
+    private func uploadCloset() async {
+        cloudClosetStatus = ""
+        let success = await accountStore.uploadClothingItems(closetItems)
+        if success {
+            cloudClosetStatus = "Uploaded \(closetItems.count) closet item\(closetItems.count == 1 ? "" : "s")."
+        }
+    }
+
+    private func downloadCloset() async {
+        cloudClosetStatus = ""
+        let cloudItems = await accountStore.fetchClothingItems()
+        guard accountStore.errorMessage.isEmpty else { return }
+
+        var updatedCount = 0
+        var insertedCount = 0
+
+        for cloudItem in cloudItems {
+            if let localItem = closetItems.first(where: { $0.id == cloudItem.id }) {
+                cloudItem.apply(to: localItem)
+                updatedCount += 1
+            } else {
+                modelContext.insert(cloudItem.model)
+                insertedCount += 1
+            }
+        }
+
+        try? modelContext.save()
+        cloudClosetStatus = "Downloaded \(cloudItems.count) item\(cloudItems.count == 1 ? "" : "s"): \(insertedCount) new, \(updatedCount) updated."
     }
 
     private func seedDraftIfNeeded() {

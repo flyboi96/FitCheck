@@ -241,6 +241,28 @@ private struct TripDetailView: View {
                 .disabled(isGeneratingItinerary || trip.stops.isEmpty)
             }
 
+            Section("Export") {
+                ShareLink(
+                    item: packingListExportText,
+                    subject: Text("\(trip.title) Packing List")
+                ) {
+                    Label("Share Packing List", systemImage: "square.and.arrow.up")
+                }
+                .disabled(trip.packingLists.isEmpty)
+
+                ShareLink(
+                    item: itineraryExportText,
+                    subject: Text("\(trip.title) Outfit Itinerary")
+                ) {
+                    Label("Share Outfit Itinerary", systemImage: "calendar.badge.clock")
+                }
+                .disabled(trip.itineraryOutfits.isEmpty)
+
+                Text("Packing and itinerary export separately as clean text so you can send, print, or save each one.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             ForEach(trip.packingLists) { list in
                 Section(list.title) {
                     ForEach(list.items) { packingItem in
@@ -375,6 +397,64 @@ private struct TripDetailView: View {
             return clothingName
         }
         return item.reason.isEmpty ? "Packing item" : item.reason
+    }
+
+    private var packingListExportText: String {
+        var lines = [
+            "\(trip.title) Packing List",
+            "\(TripPlannerView.dateFormatter.string(from: trip.startsAt)) - \(TripPlannerView.dateFormatter.string(from: trip.endsAt))",
+            ""
+        ]
+
+        if !trip.stops.isEmpty {
+            lines.append("Stops")
+            for stop in trip.stops.sorted(by: { $0.startsAt < $1.startsAt }) {
+                lines.append("- \(stop.location): \(TripPlannerView.dateFormatter.string(from: stop.startsAt)) - \(TripPlannerView.dateFormatter.string(from: stop.endsAt))")
+                if !stop.expectedWeather.isEmpty {
+                    lines.append("  Weather: \(stop.expectedWeather)")
+                }
+            }
+            lines.append("")
+        }
+
+        for list in trip.packingLists.sorted(by: { $0.createdAt < $1.createdAt }) {
+            lines.append(list.title)
+            for packingItem in list.items.sorted(by: { packingTitle(for: $0) < packingTitle(for: $1) }) {
+                lines.append("- \(packingTitle(for: packingItem)) x\(packingItem.quantity)")
+                if packingItem.item != nil, !packingItem.reason.isEmpty {
+                    lines.append("  \(packingItem.reason)")
+                }
+            }
+            lines.append("")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private var itineraryExportText: String {
+        var lines = [
+            "\(trip.title) Outfit Itinerary",
+            "\(TripPlannerView.dateFormatter.string(from: trip.startsAt)) - \(TripPlannerView.dateFormatter.string(from: trip.endsAt))",
+            ""
+        ]
+
+        for itinerary in trip.itineraryOutfits.sorted(by: { $0.date < $1.date }) {
+            lines.append("\(TripPlannerView.dateFormatter.string(from: itinerary.date)) - \(itinerary.location)")
+            if !itinerary.activity.isEmpty {
+                lines.append("Context: \(itinerary.activity)")
+            }
+            if let outfit = itinerary.outfit {
+                lines.append("Score: \(Int(outfit.score))")
+                for item in outfit.items.compactMap(\.item).sorted(by: { $0.category.displayName < $1.category.displayName }) {
+                    lines.append("- \(item.category.displayName): \(item.name)")
+                }
+            } else {
+                lines.append("No outfit generated")
+            }
+            lines.append("")
+        }
+
+        return lines.joined(separator: "\n")
     }
 
     private func wearStepper(_ title: String, value: Binding<Int>) -> some View {

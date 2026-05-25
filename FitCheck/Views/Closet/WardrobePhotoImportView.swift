@@ -17,6 +17,7 @@ struct WardrobePhotoImportView: View {
     @State private var userDescription = ""
     @State private var draftName = ""
     @State private var draftCategory: ClothingCategory = .shirt
+    @State private var draftQuantity = 1
     @State private var draftNotes = ""
     @State private var aiSuggestion: AIClothingImportResponse?
     @State private var isAnalyzing = false
@@ -82,9 +83,13 @@ struct WardrobePhotoImportView: View {
                     .textInputAutocapitalization(.words)
 
                 Picker("Category", selection: $draftCategory) {
-                    ForEach(ClothingCategory.allCases) { category in
+                    ForEach(availableCategories) { category in
                         Text(category.displayName).tag(category)
                     }
+                }
+
+                Stepper(value: $draftQuantity, in: 1...99) {
+                    LabeledContent("Quantity", value: "\(draftQuantity)")
                 }
 
                 TextEditor(text: $draftNotes)
@@ -238,6 +243,7 @@ struct WardrobePhotoImportView: View {
         let item = ClothingItem(
             name: trimmedName,
             category: draftCategory,
+            quantity: draftQuantity,
             color: preferredValue(fallback.color, aiSuggestion?.color),
             pattern: preferredValue(fallback.pattern, aiSuggestion?.pattern),
             formalityLevel: max(1, min(5, aiSuggestion?.formalityLevel ?? fallback.formalityLevel)),
@@ -266,5 +272,11 @@ struct WardrobePhotoImportView: View {
 
     private var currentWearerProfile: WearerProfileOption {
         WearerProfileOption(rawValue: wearerProfile) ?? .unspecified
+    }
+
+    private var availableCategories: [ClothingCategory] {
+        let base = ClothingCategory.options(for: currentWearerProfile)
+        guard !base.contains(draftCategory) else { return base }
+        return base + [draftCategory]
     }
 }

@@ -123,6 +123,181 @@ struct CloudUserProfile: Equatable {
     }
 }
 
+struct CloudClothingItem: Equatable, Identifiable {
+    var id: UUID
+    var name: String
+    var category: ClothingCategory
+    var quantity: Int
+    var color: String
+    var pattern: String
+    var formalityLevel: Int
+    var weatherSuitability: String
+    var occasionSuitability: String
+    var activitySuitability: String
+    var notes: String
+    var status: ClothingStatus
+    var createdAt: Date
+    var updatedAt: Date
+    var lastWornAt: Date?
+    var wearCount: Int
+
+    init(item: ClothingItem) {
+        id = item.id
+        name = item.name
+        category = item.category
+        quantity = max(1, item.quantity)
+        color = item.color
+        pattern = item.pattern
+        formalityLevel = item.formalityLevel
+        weatherSuitability = item.weatherSuitability
+        occasionSuitability = item.occasionSuitability
+        activitySuitability = item.activitySuitability
+        notes = item.notes
+        status = item.status
+        createdAt = item.createdAt
+        updatedAt = item.updatedAt
+        lastWornAt = item.lastWornAt
+        wearCount = item.wearCount
+    }
+
+    init(
+        id: UUID,
+        name: String,
+        category: ClothingCategory,
+        quantity: Int,
+        color: String,
+        pattern: String,
+        formalityLevel: Int,
+        weatherSuitability: String,
+        occasionSuitability: String,
+        activitySuitability: String,
+        notes: String,
+        status: ClothingStatus,
+        createdAt: Date,
+        updatedAt: Date,
+        lastWornAt: Date?,
+        wearCount: Int
+    ) {
+        self.id = id
+        self.name = name
+        self.category = category
+        self.quantity = max(1, quantity)
+        self.color = color
+        self.pattern = pattern
+        self.formalityLevel = formalityLevel
+        self.weatherSuitability = weatherSuitability
+        self.occasionSuitability = occasionSuitability
+        self.activitySuitability = activitySuitability
+        self.notes = notes
+        self.status = status
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.lastWornAt = lastWornAt
+        self.wearCount = wearCount
+    }
+
+    var firestoreData: [String: Any] {
+        var data: [String: Any] = [
+            "id": id.uuidString,
+            "name": name,
+            "category": category.rawValue,
+            "quantity": quantity,
+            "color": color,
+            "pattern": pattern,
+            "formalityLevel": formalityLevel,
+            "weatherSuitability": weatherSuitability,
+            "occasionSuitability": occasionSuitability,
+            "activitySuitability": activitySuitability,
+            "notes": notes,
+            "status": status.rawValue,
+            "createdAt": createdAt,
+            "updatedAt": updatedAt,
+            "wearCount": wearCount
+        ]
+        if let lastWornAt {
+            data["lastWornAt"] = lastWornAt
+        }
+        return data
+    }
+
+    static func from(documentID: String, data: [String: Any]) -> CloudClothingItem? {
+        guard let id = UUID(uuidString: stringValue(data["id"]) ?? documentID) else { return nil }
+        return CloudClothingItem(
+            id: id,
+            name: stringValue(data["name"]) ?? "",
+            category: ClothingCategory(rawValue: stringValue(data["category"]) ?? "") ?? .other,
+            quantity: intValue(data["quantity"]) ?? 1,
+            color: stringValue(data["color"]) ?? "",
+            pattern: stringValue(data["pattern"]) ?? "",
+            formalityLevel: intValue(data["formalityLevel"]) ?? 3,
+            weatherSuitability: stringValue(data["weatherSuitability"]) ?? "",
+            occasionSuitability: stringValue(data["occasionSuitability"]) ?? "",
+            activitySuitability: stringValue(data["activitySuitability"]) ?? "",
+            notes: stringValue(data["notes"]) ?? "",
+            status: ClothingStatus(rawValue: stringValue(data["status"]) ?? "") ?? .active,
+            createdAt: dateValue(data["createdAt"]) ?? Date(),
+            updatedAt: dateValue(data["updatedAt"]) ?? Date(),
+            lastWornAt: dateValue(data["lastWornAt"]),
+            wearCount: intValue(data["wearCount"]) ?? 0
+        )
+    }
+
+    var model: ClothingItem {
+        ClothingItem(
+            id: id,
+            name: name,
+            category: category,
+            quantity: quantity,
+            color: color,
+            pattern: pattern,
+            formalityLevel: formalityLevel,
+            weatherSuitability: weatherSuitability,
+            occasionSuitability: occasionSuitability,
+            activitySuitability: activitySuitability,
+            notes: notes,
+            status: status,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            lastWornAt: lastWornAt,
+            wearCount: wearCount
+        )
+    }
+
+    func apply(to item: ClothingItem) {
+        item.name = name
+        item.category = category
+        item.quantity = quantity
+        item.color = color
+        item.pattern = pattern
+        item.formalityLevel = formalityLevel
+        item.weatherSuitability = weatherSuitability
+        item.occasionSuitability = occasionSuitability
+        item.activitySuitability = activitySuitability
+        item.notes = notes
+        item.status = status
+        item.createdAt = createdAt
+        item.updatedAt = updatedAt
+        item.lastWornAt = lastWornAt
+        item.wearCount = wearCount
+    }
+
+    private static func stringValue(_ value: Any?) -> String? {
+        value as? String
+    }
+
+    private static func intValue(_ value: Any?) -> Int? {
+        if let value = value as? Int { return value }
+        if let value = value as? NSNumber { return value.intValue }
+        return nil
+    }
+
+    private static func dateValue(_ value: Any?) -> Date? {
+        if let value = value as? Date { return value }
+        if let value = value as? Timestamp { return value.dateValue() }
+        return nil
+    }
+}
+
 struct AccountProfileDraft: Equatable {
     var email: String = ""
     var password: String = ""
@@ -290,6 +465,59 @@ final class FirebaseAccountStore: ObservableObject {
         }
     }
 
+    func uploadClothingItems(_ items: [ClothingItem]) async -> Bool {
+        guard isConfigured else {
+            errorMessage = FirebaseAccountError.notConfigured.localizedDescription
+            return false
+        }
+        guard let currentUser = Auth.auth().currentUser else {
+            errorMessage = FirebaseAccountError.noSignedInUser.localizedDescription
+            return false
+        }
+
+        isLoading = true
+        errorMessage = ""
+        defer { isLoading = false }
+
+        do {
+            for item in items {
+                let cloudItem = CloudClothingItem(item: item)
+                try await clothingItemsCollection(uid: currentUser.uid)
+                    .document(item.id.uuidString)
+                    .setData(cloudItem.firestoreData, merge: true)
+            }
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func fetchClothingItems() async -> [CloudClothingItem] {
+        guard isConfigured else {
+            errorMessage = FirebaseAccountError.notConfigured.localizedDescription
+            return []
+        }
+        guard let currentUser = Auth.auth().currentUser else {
+            errorMessage = FirebaseAccountError.noSignedInUser.localizedDescription
+            return []
+        }
+
+        isLoading = true
+        errorMessage = ""
+        defer { isLoading = false }
+
+        do {
+            let snapshot = try await clothingItemsCollection(uid: currentUser.uid).getDocuments()
+            return snapshot.documents.compactMap { document in
+                CloudClothingItem.from(documentID: document.documentID, data: document.data())
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+            return []
+        }
+    }
+
     func signOut() {
         guard isConfigured else {
             errorMessage = FirebaseAccountError.notConfigured.localizedDescription
@@ -330,5 +558,9 @@ final class FirebaseAccountStore: ObservableObject {
 
     private func profileDocument(uid: String) -> DocumentReference {
         Firestore.firestore().collection("users").document(uid)
+    }
+
+    private func clothingItemsCollection(uid: String) -> CollectionReference {
+        profileDocument(uid: uid).collection("clothingItems")
     }
 }

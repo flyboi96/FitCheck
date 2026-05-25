@@ -6,9 +6,12 @@ struct ClosetView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ClothingItem.name) private var items: [ClothingItem]
 
+    @AppStorage("fitcheckWearerProfile") private var wearerProfile = WearerProfileOption.unspecified.rawValue
+
     @State private var selectedCategory: ClothingCategory?
     @State private var showingAddItem = false
     @State private var showingPhotoImport = false
+    @State private var showingBulkImport = false
     @State private var editingItem: ClothingItem?
 
     var body: some View {
@@ -16,7 +19,7 @@ struct ClosetView: View {
             Section {
                 Picker("Category", selection: $selectedCategory) {
                     Text("All").tag(nil as ClothingCategory?)
-                    ForEach(ClothingCategory.allCases) { category in
+                    ForEach(availableCategories) { category in
                         Text(category.displayName).tag(Optional(category))
                     }
                 }
@@ -59,6 +62,12 @@ struct ClosetView: View {
                     } label: {
                         Label("Import from Photo", systemImage: "camera")
                     }
+
+                    Button {
+                        showingBulkImport = true
+                    } label: {
+                        Label("Bulk Import List", systemImage: "list.bullet.clipboard")
+                    }
                 } label: {
                     Label("Add", systemImage: "plus")
                 }
@@ -79,6 +88,11 @@ struct ClosetView: View {
                 WardrobePhotoImportView()
             }
         }
+        .sheet(isPresented: $showingBulkImport) {
+            NavigationStack {
+                BulkWardrobeImportView()
+            }
+        }
     }
 
     private var filteredItems: [ClothingItem] {
@@ -97,6 +111,16 @@ struct ClosetView: View {
 
     private var groupedCategories: [String] {
         groupedItems.keys.sorted()
+    }
+
+    private var availableCategories: [ClothingCategory] {
+        let profileCategories = ClothingCategory.options(for: currentWearerProfile)
+        let itemCategories = Set(items.map(\.category))
+        return ClothingCategory.allCases.filter { profileCategories.contains($0) || itemCategories.contains($0) }
+    }
+
+    private var currentWearerProfile: WearerProfileOption {
+        WearerProfileOption(rawValue: wearerProfile) ?? .unspecified
     }
 }
 
@@ -141,6 +165,7 @@ private struct ClosetItemRow: View {
     private var detailText: String {
         [
             item.category.displayName,
+            item.quantity > 1 ? "Qty \(item.quantity)" : nil,
             item.lastWornAt.map { "Last \(Self.dateFormatter.string(from: $0))" }
         ]
         .compactMap { $0 }
@@ -149,28 +174,7 @@ private struct ClosetItemRow: View {
     }
 
     private var iconName: String {
-        switch item.category {
-        case .shirt, .sweater:
-            "tshirt"
-        case .activewear:
-            "figure.run"
-        case .underwear:
-            "person"
-        case .socks:
-            "shoeprints.fill"
-        case .pants, .shorts:
-            "figure.stand"
-        case .shoes:
-            "shoeprints.fill"
-        case .jacket:
-            "cloud"
-        case .belt, .watch, .accessory:
-            "sparkles"
-        case .bag:
-            "bag"
-        case .other:
-            "circle"
-        }
+        item.category.systemImageName
     }
 
     private static let dateFormatter: DateFormatter = {

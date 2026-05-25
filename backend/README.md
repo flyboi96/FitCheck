@@ -1,6 +1,6 @@
 # FitCheck AI Proxy
 
-Small local backend for FitCheck AI outfit review and clothing photo import. The iPhone app never stores the OpenAI API key; it calls this proxy instead.
+Small local backend for FitCheck AI outfit review, AI-first outfit selection, and clothing photo import. The iPhone app never stores the OpenAI API key; it calls this proxy instead.
 
 ## Run locally
 
@@ -28,5 +28,5 @@ For a physical iPhone, set `HOST=0.0.0.0` before starting the proxy and use your
 
 ## Routes
 
-- `POST /outfit-recommendation` reviews a locally generated outfit.
+- `POST /outfit-recommendation` reviews a locally generated outfit or chooses an outfit from the closet when no candidate item IDs are supplied.
 - `POST /clothing-item-description` accepts a compressed base64 image plus optional user notes and returns an editable clothing-item draft.

@@ -22,6 +22,8 @@ struct OutfitBuilderView: View {
     @State private var aiReviews: [String: AIOutfitResponse] = [:]
     @State private var aiReviewErrors: [String: String] = [:]
     @State private var reviewingCombinationKeys = Set<String>()
+    @State private var isAIChoosingOutfit = false
+    @State private var aiBuildError = ""
 
     private let engine = OutfitRecommendationEngine()
 
@@ -117,6 +119,29 @@ struct OutfitBuilderView: View {
                     Label("Build Outfit", systemImage: "wand.and.stars")
                 }
                 .disabled(selectedItem == nil || weatherLookup.result == nil)
+
+                Button {
+                    Task {
+                        await generateWithAIFirst()
+                    }
+                } label: {
+                    if isAIChoosingOutfit {
+                        Label("Asking AI", systemImage: "sparkles")
+                    } else {
+                        Label("Ask AI First", systemImage: "sparkles")
+                    }
+                }
+                .disabled(!canAskAIForOutfit)
+
+                Text("Build Outfit uses the local scoring engine. Ask AI First lets the proxy choose from your closet, then FitCheck scores that outfit locally and shows the AI rationale.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if !aiBuildError.isEmpty {
+                    Text(aiBuildError)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if !recommendations.isEmpty {
@@ -214,6 +239,7 @@ struct OutfitBuilderView: View {
         guard let selectedItem, let weather = weatherLookup.result?.input else { return }
         aiReviews = [:]
         aiReviewErrors = [:]
+        aiBuildError = ""
         recommendations = engine.recommend(
             closet: closetItems,
             feedback: feedback,
@@ -225,6 +251,70 @@ struct OutfitBuilderView: View {
                 selectedItem: selectedItem
             )
         )
+    }
+
+    private var canAskAIForOutfit: Bool {
+        useAIProxy &&
+        configuredAIProxyURL != nil &&
+        weatherLookup.result != nil &&
+        !isAIChoosingOutfit &&
+        activeItems.count >= 3
+    }
+
+    @MainActor
+    private func generateWithAIFirst() async {
+        guard let baseURL = configuredAIProxyURL, let weather = weatherLookup.result?.input else { return }
+
+        isAIChoosingOutfit = true
+        aiBuildError = ""
+        aiReviews = [:]
+        aiReviewErrors = [:]
+        defer {
+            isAIChoosingOutfit = false
+        }
+
+        let token = aiProxyToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let client = BackendOutfitAIClient(baseURL: baseURL, proxyToken: token.isEmpty ? nil : token)
+
+        do {
+            let response = try await client.suggestOutfit(
+                request: aiRequest(
+                    candidateItemIDs: [],
+                    localScore: nil,
+                    localNotes: []
+                )
+            )
+            let itemsByID = Dictionary(uniqueKeysWithValues: closetItems.map { ($0.id, $0) })
+            var chosenItems = response.itemIDs.compactMap { itemsByID[$0] }
+
+            if let selectedItem, !chosenItems.contains(where: { $0.id == selectedItem.id }) {
+                chosenItems.insert(selectedItem, at: 0)
+            }
+
+            guard chosenItems.count >= 2 else {
+                aiBuildError = "AI did not return enough closet items."
+                return
+            }
+
+            let request = RecommendationRequest(
+                weather: weather,
+                occasion: currentContext.occasion,
+                activity: currentContext.activity,
+                selectedItem: selectedItem
+            )
+            let recommendation = engine.scoreExistingOutfit(
+                items: chosenItems,
+                feedback: feedback,
+                stylePreference: stylePreferences.first,
+                request: request,
+                title: "AI Fit"
+            )
+
+            recommendations = [recommendation]
+            aiReviews[recommendation.combinationKey] = response
+        } catch {
+            aiBuildError = error.localizedDescription
+        }
     }
 
     private func aiReviewAction(for recommendation: OutfitRecommendation) -> (() -> Void)? {
@@ -265,6 +355,18 @@ struct OutfitBuilderView: View {
     }
 
     private func aiRequest(for recommendation: OutfitRecommendation) -> AIOutfitRequest {
+        aiRequest(
+            candidateItemIDs: recommendation.items.map(\.id),
+            localScore: recommendation.score,
+            localNotes: recommendation.notes
+        )
+    }
+
+    private func aiRequest(
+        candidateItemIDs: [UUID],
+        localScore: Double?,
+        localNotes: [String]
+    ) -> AIOutfitRequest {
         AIOutfitRequest(
             closet: closetItems.map(AIClothingItemPayload.init),
             weatherSummary: weatherLookup.result?.input.summary ?? "",
@@ -272,9 +374,9 @@ struct OutfitBuilderView: View {
             activity: currentContext.activity,
             styleDescription: styleDescription,
             selectedItemID: selectedItem?.id,
-            candidateItemIDs: recommendation.items.map(\.id),
-            localScore: recommendation.score,
-            localNotes: recommendation.notes,
+            candidateItemIDs: candidateItemIDs,
+            localScore: localScore,
+            localNotes: localNotes,
             recentFeedback: feedback.prefix(12).map(feedbackSummary)
         )
     }
@@ -326,28 +428,7 @@ struct OutfitBuilderView: View {
     }
 
     private func iconName(for category: ClothingCategory) -> String {
-        switch category {
-        case .shirt, .sweater:
-            "tshirt"
-        case .activewear:
-            "figure.run"
-        case .underwear:
-            "person"
-        case .socks:
-            "shoeprints.fill"
-        case .pants, .shorts:
-            "figure.stand"
-        case .shoes:
-            "shoeprints.fill"
-        case .jacket:
-            "cloud"
-        case .belt, .watch, .accessory:
-            "sparkles"
-        case .bag:
-            "bag"
-        case .other:
-            "circle"
-        }
+        category.systemImageName
     }
 
     private func categorySortIndex(_ category: ClothingCategory) -> Int {

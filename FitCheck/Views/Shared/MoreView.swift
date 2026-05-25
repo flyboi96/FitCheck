@@ -69,7 +69,7 @@ private struct ScoringGuideView: View {
             }
 
             Section("AI Review") {
-                Text("When the AI proxy is enabled in Settings, recommendation cards can ask the backend for a second opinion. The AI sees the candidate outfit, weather, context, style notes, and recent feedback, then returns a short rationale and cautions.")
+                Text("When the AI proxy is enabled in Settings, recommendation cards can ask the backend for a second opinion. The Builder can also ask AI to choose first from the closet. In both cases, the AI sees weather, context, wearer profile, style notes, quantities, and recent feedback, then the app still keeps local scoring visible.")
             }
 
             Section("Builder") {

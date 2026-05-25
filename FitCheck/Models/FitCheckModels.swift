@@ -3,9 +3,14 @@ import SwiftData
 
 enum ClothingCategory: String, CaseIterable, Codable, Identifiable {
     case shirt
+    case blouse
     case pants
     case shorts
+    case dress
+    case skirt
     case shoes
+    case heels
+    case flats
     case jacket
     case sweater
     case activewear
@@ -13,8 +18,10 @@ enum ClothingCategory: String, CaseIterable, Codable, Identifiable {
     case socks
     case belt
     case watch
+    case jewelry
     case accessory
     case bag
+    case purse
     case other
 
     var id: String { rawValue }
@@ -22,9 +29,14 @@ enum ClothingCategory: String, CaseIterable, Codable, Identifiable {
     var displayName: String {
         switch self {
         case .shirt: "Shirt"
+        case .blouse: "Blouse"
         case .pants: "Pants"
         case .shorts: "Shorts"
+        case .dress: "Dress"
+        case .skirt: "Skirt"
         case .shoes: "Shoes"
+        case .heels: "Heels"
+        case .flats: "Flats"
         case .jacket: "Jacket"
         case .sweater: "Sweater"
         case .activewear: "Exercise Clothes"
@@ -32,9 +44,56 @@ enum ClothingCategory: String, CaseIterable, Codable, Identifiable {
         case .socks: "Socks"
         case .belt: "Belt"
         case .watch: "Watch"
+        case .jewelry: "Jewelry"
         case .accessory: "Accessory"
         case .bag: "Bag"
+        case .purse: "Purse"
         case .other: "Other"
+        }
+    }
+
+    static func options(for wearerProfile: WearerProfileOption) -> [ClothingCategory] {
+        switch wearerProfile {
+        case .female:
+            return allCases
+        case .male:
+            return allCases.filter { !$0.isFemaleFocused }
+        case .unspecified:
+            return allCases
+        }
+    }
+
+    var isFemaleFocused: Bool {
+        switch self {
+        case .blouse, .dress, .skirt, .heels, .flats, .jewelry, .purse:
+            return true
+        case .shirt, .pants, .shorts, .shoes, .jacket, .sweater, .activewear, .underwear, .socks, .belt, .watch, .accessory, .bag, .other:
+            return false
+        }
+    }
+
+    var systemImageName: String {
+        switch self {
+        case .shirt, .blouse, .sweater:
+            return "tshirt"
+        case .activewear:
+            return "figure.run"
+        case .underwear:
+            return "person"
+        case .socks:
+            return "shoeprints.fill"
+        case .pants, .shorts, .dress, .skirt:
+            return "figure.stand"
+        case .shoes, .heels, .flats:
+            return "shoeprints.fill"
+        case .jacket:
+            return "cloud"
+        case .belt, .watch, .jewelry, .accessory:
+            return "sparkles"
+        case .bag, .purse:
+            return "bag"
+        case .other:
+            return "circle"
         }
     }
 }
@@ -108,6 +167,7 @@ final class ClothingItem: Identifiable {
     var id: UUID
     var name: String
     var categoryRawValue: String
+    var quantity: Int = 1
     var color: String
     var pattern: String
     var formalityLevel: Int
@@ -126,6 +186,7 @@ final class ClothingItem: Identifiable {
         id: UUID = UUID(),
         name: String,
         category: ClothingCategory,
+        quantity: Int = 1,
         color: String = "",
         pattern: String = "",
         formalityLevel: Int = 3,
@@ -143,6 +204,7 @@ final class ClothingItem: Identifiable {
         self.id = id
         self.name = name
         self.categoryRawValue = category.rawValue
+        self.quantity = max(1, quantity)
         self.color = color
         self.pattern = pattern
         self.formalityLevel = formalityLevel

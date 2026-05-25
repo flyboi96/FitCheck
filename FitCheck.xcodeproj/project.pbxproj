@@ -33,6 +33,7 @@
 		FC0001190000000000000001 /* FitCheckFirebaseAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC00021A0000000000000001 /* FitCheckFirebaseAppDelegate.swift */; };
 		FC00011A0000000000000001 /* FirebaseAccountService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC00021B0000000000000001 /* FirebaseAccountService.swift */; };
 		FC00011B0000000000000001 /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC00021C0000000000000001 /* AccountView.swift */; };
+		FC0001200000000000000001 /* BulkWardrobeImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002200000000000000001 /* BulkWardrobeImportView.swift */; };
 		FC00011C0000000000000001 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = FC000A010000000000000001 /* FirebaseCore */; };
 		FC00011D0000000000000001 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = FC000A020000000000000001 /* FirebaseAuth */; };
 		FC00011E0000000000000001 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = FC000A030000000000000001 /* FirebaseFirestore */; };
@@ -68,6 +69,7 @@
 		FC00021B0000000000000001 /* FirebaseAccountService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseAccountService.swift; sourceTree = "<group>"; };
 		FC00021C0000000000000001 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
 		FC00021D0000000000000001 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		FC0002200000000000000001 /* BulkWardrobeImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkWardrobeImportView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -176,6 +178,7 @@
 				FC00020A0000000000000001 /* ClosetView.swift */,
 				FC00020B0000000000000001 /* ClothingItemEditorView.swift */,
 				FC0002190000000000000001 /* WardrobePhotoImportView.swift */,
+				FC0002200000000000000001 /* BulkWardrobeImportView.swift */,
 			);
 			path = Closet;
 			sourceTree = "<group>";
@@ -338,6 +341,7 @@
 				FC0001110000000000000001 /* MoreView.swift in Sources */,
 				FC0001170000000000000001 /* PhotoImportSupport.swift in Sources */,
 				FC0001180000000000000001 /* WardrobePhotoImportView.swift in Sources */,
+				FC0001200000000000000001 /* BulkWardrobeImportView.swift in Sources */,
 				FC0001190000000000000001 /* FitCheckFirebaseAppDelegate.swift in Sources */,
 				FC00011A0000000000000001 /* FirebaseAccountService.swift in Sources */,
 				FC00011B0000000000000001 /* AccountView.swift in Sources */,

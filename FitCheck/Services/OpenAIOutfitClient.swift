@@ -4,6 +4,7 @@ struct AIClothingItemPayload: Codable {
     var id: UUID
     var name: String
     var category: String
+    var quantity: Int
     var color: String
     var pattern: String
     var formalityLevel: Int
@@ -16,6 +17,7 @@ struct AIClothingItemPayload: Codable {
         id = item.id
         name = item.name
         category = item.category.rawValue
+        quantity = max(1, item.quantity)
         color = ClothingInference.color(for: item)
         pattern = ClothingInference.pattern(for: item)
         formalityLevel = ClothingInference.formalityLevel(for: item)

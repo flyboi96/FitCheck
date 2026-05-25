@@ -193,7 +193,7 @@ struct ClothingInference {
         let text = normalized(name)
         var tags = Set(["mild"])
 
-        if text.containsAny(["linen", "seersucker", "short sleeve", "t-shirt", "tee", "shorts", "lightweight"]) {
+        if text.containsAny(["linen", "seersucker", "short sleeve", "t-shirt", "tee", "shorts", "skirt", "sundress", "lightweight"]) {
             tags.insert("hot")
         }
         if text.containsAny(["wool", "merino", "cashmere", "fleece", "flannel", "puffer", "coat", "sweater", "hoodie"]) {
@@ -213,7 +213,7 @@ struct ClothingInference {
         if category == .activewear {
             tags.insert("hot")
         }
-        if category == .shorts {
+        if category == .shorts || category == .skirt {
             tags.insert("hot")
         }
 
@@ -224,7 +224,7 @@ struct ClothingInference {
         let text = normalized(name)
         var tags = Set(["casual"])
 
-        if text.containsAny(["button-down", "button down", "oxford", "chino", "loafer", "blazer", "dress", "merino"]) {
+        if text.containsAny(["button-down", "button down", "oxford", "chino", "loafer", "blazer", "dress", "blouse", "heel", "flat", "merino"]) {
             tags.formUnion(["dinner", "date night", "work"])
         }
         if text.containsAny(["suit", "tie", "formal"]) {
@@ -239,10 +239,13 @@ struct ClothingInference {
         if category == .activewear {
             tags.formUnion(["gym", "travel day"])
         }
+        if category == .dress || category == .blouse || category == .skirt || category == .heels || category == .flats {
+            tags.formUnion(["dinner", "date night", "work"])
+        }
         if category == .underwear || category == .socks {
             tags.formUnion(["casual", "travel day", "gym"])
         }
-        if category == .bag || category == .shoes {
+        if category == .bag || category == .purse || category == .shoes || category == .flats {
             tags.insert("travel day")
         }
 
@@ -253,7 +256,7 @@ struct ClothingInference {
         let text = normalized(name)
         var tags = Set(["errands", "walking around city"])
 
-        if text.containsAny(["button-down", "button down", "oxford", "blazer", "chino", "dress"]) {
+        if text.containsAny(["button-down", "button down", "oxford", "blazer", "chino", "dress", "blouse", "heel", "flat"]) {
             tags.formUnion(["office", "dinner"])
         }
         if text.containsAny(["gym", "running", "trainer", "athletic", "performance"]) {
@@ -268,7 +271,10 @@ struct ClothingInference {
         if text.containsAny(["boots", "shell", "waterproof", "jacket", "bag"]) {
             tags.formUnion(["travel", "outdoors"])
         }
-        if category == .bag {
+        if category == .dress || category == .blouse || category == .skirt || category == .heels || category == .flats {
+            tags.formUnion(["office", "dinner"])
+        }
+        if category == .bag || category == .purse {
             tags.insert("travel")
         }
 
@@ -280,7 +286,7 @@ struct ClothingInference {
         if text.containsAny(["suit", "tie", "tux", "formal"]) {
             return 5
         }
-        if text.containsAny(["blazer", "dress", "loafer", "oxford", "button-down", "button down"]) {
+        if text.containsAny(["blazer", "dress", "loafer", "heel", "oxford", "button-down", "button down", "blouse"]) {
             return 4
         }
         if text.containsAny(["merino", "chino", "polo", "boot"]) {
@@ -292,9 +298,11 @@ struct ClothingInference {
         switch category {
         case .activewear, .underwear, .socks:
             return 1
-        case .watch, .belt:
+        case .watch, .belt, .jewelry:
             return 3
         case .jacket, .sweater:
+            return 3
+        case .dress, .blouse, .skirt, .heels, .flats:
             return 3
         default:
             return 2
@@ -358,6 +366,28 @@ struct OutfitRecommendation: Identifiable {
 }
 
 struct OutfitRecommendationEngine {
+    func scoreExistingOutfit(
+        items: [ClothingItem],
+        feedback: [Feedback],
+        stylePreference: StylePreference?,
+        request: RecommendationRequest,
+        title: String
+    ) -> OutfitRecommendation {
+        let scored = score(
+            items: items,
+            feedback: feedback,
+            stylePreference: stylePreference,
+            request: request
+        )
+
+        return OutfitRecommendation(
+            title: title,
+            items: items,
+            score: scored.value,
+            notes: scored.notes
+        )
+    }
+
     func recommend(
         closet: [ClothingItem],
         feedback: [Feedback],
@@ -369,17 +399,18 @@ struct OutfitRecommendationEngine {
         let selected = request.selectedItem
 
         let tops = constrainedPool(
-            categories: [.shirt, .sweater],
+            categories: [.shirt, .blouse, .sweater, .dress],
             items: activeItems,
             selectedItem: selected
         )
-        let bottoms = constrainedPool(
-            categories: [.pants, .shorts],
+        let bottomPool = constrainedBottomPool(
+            categories: [.pants, .shorts, .skirt],
             items: activeItems,
             selectedItem: selected
         )
+        let bottoms = bottomPool.isEmpty && tops.contains(where: { $0.category == .dress }) ? [nil] : bottomPool
         let shoes = constrainedPool(
-            categories: [.shoes],
+            categories: [.shoes, .heels, .flats],
             items: activeItems,
             selectedItem: selected
         )
@@ -395,7 +426,7 @@ struct OutfitRecommendationEngine {
             weather: request.weather
         )
         let accessories = constrainedOptionalPool(
-            categories: [.belt, .watch, .accessory, .bag],
+            categories: [.belt, .watch, .jewelry, .accessory, .bag, .purse],
             items: activeItems,
             selectedItem: selected,
             weather: request.weather
@@ -404,11 +435,15 @@ struct OutfitRecommendationEngine {
         var recommendations: [OutfitRecommendation] = []
 
         for top in tops.prefix(8) {
-            for bottom in bottoms.prefix(8) {
+            let bottomOptions = top.category == .dress ? [nil] : Array(bottoms.prefix(8))
+            for bottom in bottomOptions {
                 for shoe in shoes.prefix(6) {
                     for jacket in jackets.prefix(4) {
                         for accessory in accessories.prefix(4) {
-                            var outfitItems = [top, bottom, shoe]
+                            var outfitItems = [top, shoe]
+                            if let bottom {
+                                outfitItems.append(bottom)
+                            }
                             if let jacket {
                                 outfitItems.append(jacket)
                             }
@@ -457,6 +492,24 @@ struct OutfitRecommendationEngine {
         return items
             .filter { categories.contains($0.category) }
             .sorted { itemSortScore($0) > itemSortScore($1) }
+    }
+
+    private func constrainedBottomPool(
+        categories: Set<ClothingCategory>,
+        items: [ClothingItem],
+        selectedItem: ClothingItem?
+    ) -> [ClothingItem?] {
+        if let selectedItem, selectedItem.category == .dress {
+            return [nil]
+        }
+        if let selectedItem, categories.contains(selectedItem.category) {
+            return [selectedItem]
+        }
+
+        return items
+            .filter { categories.contains($0.category) }
+            .sorted { itemSortScore($0) > itemSortScore($1) }
+            .map { Optional($0) }
     }
 
     private func constrainedOptionalPool(
@@ -588,7 +641,7 @@ struct OutfitRecommendationEngine {
 
         if weather.temperatureF <= 50 {
             value += weatherTags.contains("cold") ? 16 : -8
-            if item.category == .shorts {
+            if item.category == .shorts || item.category == .skirt {
                 value -= 24
             }
         } else if weather.temperatureF >= 82 {
@@ -596,7 +649,7 @@ struct OutfitRecommendationEngine {
             if item.category == .jacket || item.category == .sweater {
                 value -= 22
             }
-            if item.category == .shorts {
+            if item.category == .shorts || item.category == .skirt {
                 value += 10
             }
         } else if weatherTags.contains("mild") {
@@ -605,7 +658,7 @@ struct OutfitRecommendationEngine {
 
         if weather.isRaining {
             value += weatherTags.contains("rain") ? 18 : -8
-            if item.category == .shoes && weatherTags.contains("suede") {
+            if [.shoes, .heels, .flats].contains(item.category) && weatherTags.contains("suede") {
                 value -= 28
             }
         }

@@ -51,9 +51,14 @@ const proxyToken = process.env.FITCHECK_PROXY_TOKEN ?? "";
 const maxBodyBytes = 6_000_000;
 const clothingCategories = [
   "shirt",
+  "blouse",
   "pants",
   "shorts",
+  "dress",
+  "skirt",
   "shoes",
+  "heels",
+  "flats",
   "jacket",
   "sweater",
   "activewear",
@@ -61,8 +66,10 @@ const clothingCategories = [
   "socks",
   "belt",
   "watch",
+  "jewelry",
   "accessory",
   "bag",
+  "purse",
   "other"
 ];
 
@@ -138,13 +145,14 @@ const clothingDescriptionSchema = {
 
 const instructions = `
 You are FitCheck's private outfit reviewer. Review outfits for a single user's real closet.
-Use practical, modern menswear judgment: color harmony, silhouette, material, weather, occasion,
-activity, user style preferences, outfit rotation, and prior negative feedback.
+Use practical, modern personal style judgment: color harmony, silhouette, material, weather, occasion,
+activity, user style preferences, outfit rotation, trends that fit the user's taste, and prior negative feedback.
 
 Rules:
 - Only return item IDs that were provided in the closet payload.
 - Prefer the candidate outfit if it is solid; suggest swaps only when the candidate has a clear issue.
-- Never invent clothing items, duplicate a closet item, or recommend a quantity.
+- Never invent clothing items or duplicate a closet item beyond its saved quantity.
+- Do not chase trends when they conflict with the user's saved feedback, body of preferences, or practical needs.
 - Keep the rationale concise and specific.
 - Put risks or caveats in cautions, not the rationale.
 `;
@@ -244,6 +252,7 @@ async function reviewOutfit(requestBody) {
       name: item.name,
       category: item.category,
       color: item.color,
+      quantity: item.quantity,
       pattern: item.pattern,
       formalityLevel: item.formalityLevel,
       weatherSuitability: item.weatherSuitability,

@@ -57,11 +57,11 @@ struct TodayOutfitView: View {
                 } label: {
                     Label("Generate Outfit", systemImage: "wand.and.stars")
                 }
-                .disabled(activeItems.count < 3 || weatherLookup.result == nil)
+                .disabled(!hasEnoughItemsForOutfit || weatherLookup.result == nil)
             }
 
-            if activeItems.count < 3 {
-                ContentUnavailableView("Add Closet Items", systemImage: "tshirt", description: Text("A shirt, bottom, and shoes are needed before FitCheck can score outfits."))
+            if !hasEnoughItemsForOutfit {
+                ContentUnavailableView("Add Closet Items", systemImage: "tshirt", description: Text("FitCheck needs a top or dress, shoes, and either a bottom or dress before it can score outfits."))
             }
 
             if !recommendations.isEmpty {
@@ -113,6 +113,15 @@ struct TodayOutfitView: View {
 
     private var activeItems: [ClothingItem] {
         closetItems.filter { $0.status == .active }
+    }
+
+    private var hasEnoughItemsForOutfit: Bool {
+        let categories = Set(activeItems.map(\.category))
+        let hasTop = categories.contains(.shirt) || categories.contains(.blouse) || categories.contains(.sweater)
+        let hasDress = categories.contains(.dress)
+        let hasBottom = categories.contains(.pants) || categories.contains(.shorts) || categories.contains(.skirt)
+        let hasShoes = categories.contains(.shoes) || categories.contains(.heels) || categories.contains(.flats)
+        return hasShoes && (hasDress || (hasTop && hasBottom))
     }
 
     private var currentWeather: WeatherInput {

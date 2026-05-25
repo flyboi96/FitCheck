@@ -27,6 +27,9 @@
 		FC0001130000000000000001 /* WeatherLookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002140000000000000001 /* WeatherLookupService.swift */; };
 		FC0001140000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FC0002150000000000000001 /* Assets.xcassets */; };
 		FC0001150000000000000001 /* FitCheckBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002160000000000000001 /* FitCheckBackupService.swift */; };
+		FC0001160000000000000001 /* FitCheckHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002170000000000000001 /* FitCheckHistoryService.swift */; };
+		FC0001170000000000000001 /* PhotoImportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002180000000000000001 /* PhotoImportSupport.swift */; };
+		FC0001180000000000000001 /* WardrobePhotoImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002190000000000000001 /* WardrobePhotoImportView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,6 +54,9 @@
 		FC0002140000000000000001 /* WeatherLookupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherLookupService.swift; sourceTree = "<group>"; };
 		FC0002150000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FC0002160000000000000001 /* FitCheckBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitCheckBackupService.swift; sourceTree = "<group>"; };
+		FC0002170000000000000001 /* FitCheckHistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitCheckHistoryService.swift; sourceTree = "<group>"; };
+		FC0002180000000000000001 /* PhotoImportSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoImportSupport.swift; sourceTree = "<group>"; };
+		FC0002190000000000000001 /* WardrobePhotoImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WardrobePhotoImportView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -110,6 +116,7 @@
 				FC0002070000000000000001 /* TripPlanningService.swift */,
 				FC0002140000000000000001 /* WeatherLookupService.swift */,
 				FC0002160000000000000001 /* FitCheckBackupService.swift */,
+				FC0002170000000000000001 /* FitCheckHistoryService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -142,6 +149,7 @@
 			children = (
 				FC00020A0000000000000001 /* ClosetView.swift */,
 				FC00020B0000000000000001 /* ClothingItemEditorView.swift */,
+				FC0002190000000000000001 /* WardrobePhotoImportView.swift */,
 			);
 			path = Closet;
 			sourceTree = "<group>";
@@ -199,6 +207,7 @@
 			children = (
 				FC0002080000000000000001 /* RecommendationCard.swift */,
 				FC0002110000000000000001 /* MoreView.swift */,
+				FC0002180000000000000001 /* PhotoImportSupport.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -281,6 +290,7 @@
 				FC0001070000000000000001 /* TripPlanningService.swift in Sources */,
 				FC0001130000000000000001 /* WeatherLookupService.swift in Sources */,
 				FC0001150000000000000001 /* FitCheckBackupService.swift in Sources */,
+				FC0001160000000000000001 /* FitCheckHistoryService.swift in Sources */,
 				FC0001080000000000000001 /* RecommendationCard.swift in Sources */,
 				FC0001090000000000000001 /* TodayOutfitView.swift in Sources */,
 				FC00010A0000000000000001 /* ClosetView.swift in Sources */,
@@ -291,6 +301,8 @@
 				FC00010F0000000000000001 /* TripPlannerView.swift in Sources */,
 				FC0001100000000000000001 /* SettingsView.swift in Sources */,
 				FC0001110000000000000001 /* MoreView.swift in Sources */,
+				FC0001170000000000000001 /* PhotoImportSupport.swift in Sources */,
+				FC0001180000000000000001 /* WardrobePhotoImportView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -425,6 +437,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = FitCheck;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
+				INFOPLIST_KEY_NSCameraUsageDescription = "FitCheck uses the camera to photograph clothing items for closet import.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FitCheck uses your location to look up local weather for outfit recommendations.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -450,6 +463,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = FitCheck;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
+				INFOPLIST_KEY_NSCameraUsageDescription = "FitCheck uses the camera to photograph clothing items for closet import.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FitCheck uses your location to look up local weather for outfit recommendations.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

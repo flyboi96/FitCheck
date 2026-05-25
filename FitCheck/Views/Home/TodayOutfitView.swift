@@ -11,6 +11,7 @@ struct TodayOutfitView: View {
     @AppStorage("fitcheckUseAIProxy") private var useAIProxy = false
     @AppStorage("fitcheckAIProxyURL") private var aiProxyURL = ""
     @AppStorage("fitcheckAIProxyToken") private var aiProxyToken = ""
+    @AppStorage("fitcheckWearerProfile") private var wearerProfile = WearerProfileOption.unspecified.rawValue
 
     @StateObject private var weatherLookup = WeatherLookupController()
     @State private var manualLocationQuery = ""
@@ -19,8 +20,10 @@ struct TodayOutfitView: View {
     @State private var aiReviews: [String: AIOutfitResponse] = [:]
     @State private var aiReviewErrors: [String: String] = [:]
     @State private var reviewingCombinationKeys = Set<String>()
+    @State private var lastAction: TodayUndoAction?
 
     private let engine = OutfitRecommendationEngine()
+    private let historyService = FitCheckHistoryService()
 
     var body: some View {
         List {
@@ -62,11 +65,28 @@ struct TodayOutfitView: View {
             }
 
             if !recommendations.isEmpty {
-                Section("Recommendations") {
+                if let lastAction {
+                    Section("Last Action") {
+                        HStack {
+                            Text(lastAction.message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if lastAction.canUndo {
+                                Button("Undo") {
+                                    undoLastAction()
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                    }
+                }
+
+                Section {
                     ForEach(recommendations) { recommendation in
                         RecommendationCard(
                             recommendation: recommendation,
-                            primaryTitle: "Wear",
+                            primaryTitle: "Log Wear",
                             onPrimary: { logWear(recommendation, feedbackType: nil) },
                             onGood: { logWear(recommendation, feedbackType: .goodOutfit) },
                             onBad: { recordNegativeFeedback(for: recommendation, type: .badOutfit) },
@@ -76,6 +96,10 @@ struct TodayOutfitView: View {
                             onAIReview: aiReviewAction(for: recommendation)
                         )
                     }
+                } header: {
+                    Text("Recommendations")
+                } footer: {
+                    Text("Log Wear records that you wore it. Wore + Liked records the wear and boosts similar outfits. Reject saves negative feedback without logging a wear.")
                 }
             }
         }
@@ -177,6 +201,7 @@ struct TodayOutfitView: View {
         }
 
         try? modelContext.save()
+        lastAction = .loggedOutfit(outfit.id, feedbackType == .goodOutfit ? "Logged wear and positive feedback." : "Logged wear.")
         generate()
     }
 
@@ -184,7 +209,31 @@ struct TodayOutfitView: View {
         let entry = Feedback(type: type, combinationKey: recommendation.combinationKey)
         modelContext.insert(entry)
         try? modelContext.save()
+        lastAction = .feedback(entry.id, "Saved rejection feedback.")
         generate()
+    }
+
+    private func undoLastAction() {
+        guard let lastAction else { return }
+
+        do {
+            switch lastAction {
+            case .loggedOutfit(let outfitID, _):
+                if let outfit = try modelContext.fetch(FetchDescriptor<Outfit>()).first(where: { $0.id == outfitID }) {
+                    try historyService.deleteOutfit(outfit, context: modelContext)
+                }
+            case .feedback(let feedbackID, _):
+                if let entry = try modelContext.fetch(FetchDescriptor<Feedback>()).first(where: { $0.id == feedbackID }) {
+                    try historyService.deleteFeedback(entry, context: modelContext)
+                }
+            case .message:
+                break
+            }
+            self.lastAction = nil
+            generate()
+        } catch {
+            self.lastAction = .message("Undo failed: \(error.localizedDescription)")
+        }
     }
 
     private func aiReviewAction(for recommendation: OutfitRecommendation) -> (() -> Void)? {
@@ -240,8 +289,10 @@ struct TodayOutfitView: View {
     }
 
     private var styleDescription: String {
-        guard let stylePreference = stylePreferences.first else { return "" }
+        let wearerLine = currentWearerProfile == .unspecified ? nil : "Wearer profile: \(currentWearerProfile.displayName)"
+        guard let stylePreference = stylePreferences.first else { return wearerLine ?? "" }
         return [
+            wearerLine,
             stylePreference.styleDescription,
             stylePreference.favoriteLooks,
             stylePreference.preferredColors,
@@ -262,11 +313,37 @@ struct TodayOutfitView: View {
         ]
         .compactMap { $0 }
         .filter { !$0.isEmpty }
-            .joined(separator: " - ")
+        .joined(separator: " - ")
     }
 
     private var currentContext: OutfitContextOption {
         OutfitContextOption(rawValue: selectedContext) ?? .casualDay
+    }
+
+    private var currentWearerProfile: WearerProfileOption {
+        WearerProfileOption(rawValue: wearerProfile) ?? .unspecified
+    }
+}
+
+private enum TodayUndoAction {
+    case loggedOutfit(UUID, String)
+    case feedback(UUID, String)
+    case message(String)
+
+    var message: String {
+        switch self {
+        case .loggedOutfit(_, let message), .feedback(_, let message), .message(let message):
+            message
+        }
+    }
+
+    var canUndo: Bool {
+        switch self {
+        case .loggedOutfit, .feedback:
+            true
+        case .message:
+            false
+        }
     }
 }
 

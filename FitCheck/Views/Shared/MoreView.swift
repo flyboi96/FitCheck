@@ -59,7 +59,7 @@ private struct ScoringGuideView: View {
             }
 
             Section("Style and Feedback") {
-                Text("Preferred colors and rules from your style profile can add points. Bad feedback on a full combination or item removes points so it is less likely to appear again.")
+                Text("Preferred colors and rules from your style profile can add points. Liked combinations get a boost. Bad feedback on a full combination or item removes points so it is less likely to appear again.")
             }
 
             Section("AI Review") {

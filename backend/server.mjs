@@ -46,8 +46,25 @@ const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "0.0.0.0";
 const openAIKey = process.env.OPENAI_API_KEY;
 const openAIModel = process.env.OPENAI_MODEL ?? "gpt-5-mini";
+const openAIVisionModel = process.env.OPENAI_VISION_MODEL ?? openAIModel;
 const proxyToken = process.env.FITCHECK_PROXY_TOKEN ?? "";
-const maxBodyBytes = 512_000;
+const maxBodyBytes = 6_000_000;
+const clothingCategories = [
+  "shirt",
+  "pants",
+  "shorts",
+  "shoes",
+  "jacket",
+  "sweater",
+  "activewear",
+  "underwear",
+  "socks",
+  "belt",
+  "watch",
+  "accessory",
+  "bag",
+  "other"
+];
 
 const responseSchema = {
   type: "object",
@@ -71,6 +88,54 @@ const responseSchema = {
   }
 };
 
+const clothingDescriptionSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "name",
+    "category",
+    "color",
+    "pattern",
+    "formalityLevel",
+    "weatherSuitability",
+    "occasionSuitability",
+    "activitySuitability",
+    "notes"
+  ],
+  properties: {
+    name: {
+      type: "string"
+    },
+    category: {
+      type: "string",
+      enum: clothingCategories
+    },
+    color: {
+      type: "string"
+    },
+    pattern: {
+      type: "string"
+    },
+    formalityLevel: {
+      type: "integer",
+      minimum: 1,
+      maximum: 5
+    },
+    weatherSuitability: {
+      type: "string"
+    },
+    occasionSuitability: {
+      type: "string"
+    },
+    activitySuitability: {
+      type: "string"
+    },
+    notes: {
+      type: "string"
+    }
+  }
+};
+
 const instructions = `
 You are FitCheck's private outfit reviewer. Review outfits for a single user's real closet.
 Use practical, modern menswear judgment: color harmony, silhouette, material, weather, occasion,
@@ -84,8 +149,24 @@ Rules:
 - Put risks or caveats in cautions, not the rationale.
 `;
 
+const clothingDescriptionInstructions = `
+You are FitCheck's private closet import assistant. Describe one clothing item from a user's photo.
+Use the optional user description as context, but trust the image when it clearly conflicts.
+
+Rules:
+- Return one closet item, not a full outfit.
+- The name should be concise and useful in a closet, like "navy merino wool sweater" or "white leather sneakers".
+- Put color, material, pattern, and clothing type in the name when visible or strongly implied.
+- Choose category only from the provided enum.
+- Use comma-separated tags for weatherSuitability, occasionSuitability, and activitySuitability.
+- Prefer practical tags such as hot, mild, cold, rain, casual, work, dinner, date night, travel, gym, walking.
+- If uncertain, say so briefly in notes instead of inventing details.
+`;
+
 const server = http.createServer(async (request, response) => {
   setCommonHeaders(response);
+  const requestURL = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  const pathname = requestURL.pathname;
 
   if (request.method === "OPTIONS") {
     response.writeHead(204);
@@ -93,12 +174,14 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (request.method === "GET" && request.url === "/health") {
-    sendJSON(response, 200, { ok: true, model: openAIModel });
+  if (request.method === "GET" && pathname === "/health") {
+    sendJSON(response, 200, { ok: true, model: openAIModel, visionModel: openAIVisionModel });
     return;
   }
 
-  if (request.method !== "POST" || request.url !== "/outfit-recommendation") {
+  const supportedPostRoutes = new Set(["/outfit-recommendation", "/clothing-item-description"]);
+
+  if (request.method !== "POST" || !supportedPostRoutes.has(pathname)) {
     sendJSON(response, 404, { error: "Not found" });
     return;
   }
@@ -115,6 +198,13 @@ const server = http.createServer(async (request, response) => {
 
   try {
     const body = await readJSONBody(request);
+
+    if (pathname === "/clothing-item-description") {
+      const description = await describeClothingItem(body);
+      sendJSON(response, 200, description);
+      return;
+    }
+
     const review = await reviewOutfit(body);
     sendJSON(response, 200, review);
   } catch (error) {
@@ -231,6 +321,105 @@ async function reviewOutfit(requestBody) {
   };
 }
 
+async function describeClothingItem(requestBody) {
+  const imageBase64 = String(requestBody.imageBase64 ?? "").trim();
+
+  if (!imageBase64) {
+    throw httpError(400, "imageBase64 is required");
+  }
+
+  if (!/^[A-Za-z0-9+/=]+$/.test(imageBase64)) {
+    throw httpError(400, "imageBase64 must be a base64-encoded image");
+  }
+
+  const requestedMimeType = String(requestBody.mimeType ?? "image/jpeg").toLowerCase();
+  const mimeType = ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(requestedMimeType)
+    ? requestedMimeType
+    : "image/jpeg";
+  const dataURL = `data:${mimeType};base64,${imageBase64}`;
+  const userDescription = String(requestBody.userDescription ?? "").trim();
+
+  const promptPayload = {
+    userDescription,
+    wearerProfile: requestBody.wearerProfile ?? "",
+    allowedCategories: clothingCategories
+  };
+
+  const openAIResponse = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${openAIKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: openAIVisionModel,
+      instructions: clothingDescriptionInstructions,
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: JSON.stringify(promptPayload)
+            },
+            {
+              type: "input_image",
+              image_url: dataURL
+            }
+          ]
+        }
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "fitcheck_clothing_description",
+          strict: true,
+          schema: clothingDescriptionSchema
+        }
+      },
+      max_output_tokens: 1200,
+      store: false
+    })
+  });
+
+  const data = await openAIResponse.json().catch(() => ({}));
+  if (!openAIResponse.ok) {
+    throw httpError(openAIResponse.status, data.error?.message ?? "OpenAI request failed");
+  }
+
+  const outputText = extractOpenAIText(data);
+
+  if (!outputText) {
+    console.error("OpenAI clothing response without extractable text:", JSON.stringify(data, null, 2));
+
+    if (data.status === "incomplete") {
+      throw new Error(`OpenAI response incomplete: ${data.incomplete_details?.reason ?? "unknown reason"}`);
+    }
+
+    const refusal = extractOpenAIRefusal(data);
+    if (refusal) {
+      throw new Error(`OpenAI refused the request: ${refusal}`);
+    }
+
+    throw new Error("OpenAI response did not include output text");
+  }
+
+  const parsed = JSON.parse(outputText);
+  const category = clothingCategories.includes(parsed.category) ? parsed.category : "other";
+
+  return {
+    name: String(parsed.name ?? "").trim(),
+    category,
+    color: String(parsed.color ?? "").trim(),
+    pattern: String(parsed.pattern ?? "").trim(),
+    formalityLevel: clampInteger(parsed.formalityLevel, 1, 5, 3),
+    weatherSuitability: String(parsed.weatherSuitability ?? "").trim(),
+    occasionSuitability: String(parsed.occasionSuitability ?? "").trim(),
+    activitySuitability: String(parsed.activitySuitability ?? "").trim(),
+    notes: String(parsed.notes ?? "").trim()
+  };
+}
+
 function extractOpenAIText(data) {
   if (typeof data.output_text === "string" && data.output_text.trim()) {
     return data.output_text.trim();
@@ -311,4 +500,12 @@ function httpError(statusCode, message) {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
+}
+
+function clampInteger(value, minimum, maximum, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+  return Math.min(maximum, Math.max(minimum, Math.round(number)));
 }

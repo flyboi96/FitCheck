@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage("fitcheckAIProxyURL") private var aiProxyURL = ""
     @AppStorage("fitcheckAIProxyToken") private var aiProxyToken = ""
     @AppStorage("fitcheckWeatherFallbackName") private var fallbackName = WeatherLookupFallback.default.name
+    @AppStorage("fitcheckWearerProfile") private var wearerProfile = WearerProfileOption.unspecified.rawValue
 
     @State private var isExportingBackup = false
     @State private var isImportingBackup = false
@@ -28,6 +29,17 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Wearer") {
+                Picker("Profile", selection: $wearerProfile) {
+                    ForEach(WearerProfileOption.allCases) { option in
+                        Text(option.displayName).tag(option.rawValue)
+                    }
+                }
+                Text("Used as context for AI outfit reviews and future personalization. Keep it unset if you do not want gendered style assumptions.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("AI Brain") {
                 Toggle("Use AI proxy", isOn: $useAIProxy)
                 TextField("Proxy endpoint", text: $aiProxyURL, prompt: Text("http://127.0.0.1:8787"))
@@ -37,7 +49,7 @@ struct SettingsView: View {
                 SecureField("Proxy token", text: $aiProxyToken)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                Text("Optional. The iPhone app calls your backend proxy. Do not put an OpenAI API key in the app.")
+                Text("Optional. The iPhone app calls your backend proxy for outfit review and photo import. Do not put an OpenAI API key in the app.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

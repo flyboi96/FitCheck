@@ -10,6 +10,7 @@ struct OutfitBuilderView: View {
     @AppStorage("fitcheckUseAIProxy") private var useAIProxy = false
     @AppStorage("fitcheckAIProxyURL") private var aiProxyURL = ""
     @AppStorage("fitcheckAIProxyToken") private var aiProxyToken = ""
+    @AppStorage("fitcheckWearerProfile") private var wearerProfile = WearerProfileOption.unspecified.rawValue
 
     @StateObject private var weatherLookup = WeatherLookupController()
     @State private var manualLocationQuery = ""
@@ -279,8 +280,10 @@ struct OutfitBuilderView: View {
     }
 
     private var styleDescription: String {
-        guard let stylePreference = stylePreferences.first else { return "" }
+        let wearerLine = currentWearerProfile == .unspecified ? nil : "Wearer profile: \(currentWearerProfile.displayName)"
+        guard let stylePreference = stylePreferences.first else { return wearerLine ?? "" }
         return [
+            wearerLine,
             stylePreference.styleDescription,
             stylePreference.favoriteLooks,
             stylePreference.preferredColors,
@@ -301,11 +304,15 @@ struct OutfitBuilderView: View {
         ]
         .compactMap { $0 }
         .filter { !$0.isEmpty }
-            .joined(separator: " - ")
+        .joined(separator: " - ")
     }
 
     private var currentContext: OutfitContextOption {
         OutfitContextOption(rawValue: selectedContext) ?? .casualDay
+    }
+
+    private var currentWearerProfile: WearerProfileOption {
+        WearerProfileOption(rawValue: wearerProfile) ?? .unspecified
     }
 
     private func itemDetail(for item: ClothingItem) -> String {
@@ -322,6 +329,12 @@ struct OutfitBuilderView: View {
         switch category {
         case .shirt, .sweater:
             "tshirt"
+        case .activewear:
+            "figure.run"
+        case .underwear:
+            "person"
+        case .socks:
+            "shoeprints.fill"
         case .pants, .shorts:
             "figure.stand"
         case .shoes:

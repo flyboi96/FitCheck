@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct ClosetView: View {
     @Environment(\.modelContext) private var modelContext
@@ -7,6 +8,7 @@ struct ClosetView: View {
 
     @State private var selectedCategory: ClothingCategory?
     @State private var showingAddItem = false
+    @State private var showingPhotoImport = false
     @State private var editingItem: ClothingItem?
 
     var body: some View {
@@ -45,10 +47,20 @@ struct ClosetView: View {
         .navigationTitle("Closet")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showingAddItem = true
+                Menu {
+                    Button {
+                        showingAddItem = true
+                    } label: {
+                        Label("Add Manually", systemImage: "square.and.pencil")
+                    }
+
+                    Button {
+                        showingPhotoImport = true
+                    } label: {
+                        Label("Import from Photo", systemImage: "camera")
+                    }
                 } label: {
-                    Label("Add Item", systemImage: "plus")
+                    Label("Add", systemImage: "plus")
                 }
             }
         }
@@ -60,6 +72,11 @@ struct ClosetView: View {
         .sheet(item: $editingItem) { item in
             NavigationStack {
                 ClothingItemEditorView(item: item)
+            }
+        }
+        .sheet(isPresented: $showingPhotoImport) {
+            NavigationStack {
+                WardrobePhotoImportView()
             }
         }
     }
@@ -88,9 +105,19 @@ private struct ClosetItemRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: iconName)
-                .foregroundStyle(.tint)
-                .frame(width: 28, height: 28)
+            if let photoData = item.photoData, let uiImage = UIImage(data: photoData) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            } else {
+                Image(systemName: iconName)
+                    .foregroundStyle(.tint)
+                    .frame(width: 44, height: 44)
+                    .background(.quaternary)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.name)
@@ -125,6 +152,12 @@ private struct ClosetItemRow: View {
         switch item.category {
         case .shirt, .sweater:
             "tshirt"
+        case .activewear:
+            "figure.run"
+        case .underwear:
+            "person"
+        case .socks:
+            "shoeprints.fill"
         case .pants, .shorts:
             "figure.stand"
         case .shoes:

@@ -210,6 +210,9 @@ struct ClothingInference {
             tags.insert("cold")
             tags.insert("wind")
         }
+        if category == .activewear {
+            tags.insert("hot")
+        }
         if category == .shorts {
             tags.insert("hot")
         }
@@ -233,6 +236,12 @@ struct ClothingInference {
         if text.containsAny(["gym", "running", "trainer", "athletic", "performance"]) {
             tags.insert("gym")
         }
+        if category == .activewear {
+            tags.formUnion(["gym", "travel day"])
+        }
+        if category == .underwear || category == .socks {
+            tags.formUnion(["casual", "travel day", "gym"])
+        }
         if category == .bag || category == .shoes {
             tags.insert("travel day")
         }
@@ -249,6 +258,12 @@ struct ClothingInference {
         }
         if text.containsAny(["gym", "running", "trainer", "athletic", "performance"]) {
             tags.insert("gym")
+        }
+        if category == .activewear {
+            tags.formUnion(["gym", "travel"])
+        }
+        if category == .underwear || category == .socks {
+            tags.formUnion(["gym", "travel"])
         }
         if text.containsAny(["boots", "shell", "waterproof", "jacket", "bag"]) {
             tags.formUnion(["travel", "outdoors"])
@@ -275,6 +290,8 @@ struct ClothingInference {
             return 2
         }
         switch category {
+        case .activewear, .underwear, .socks:
+            return 1
         case .watch, .belt:
             return 3
         case .jacket, .sweater:
@@ -489,7 +506,7 @@ struct OutfitRecommendationEngine {
         value += colorValue.value
         notes.append(contentsOf: colorValue.notes)
 
-        let feedbackValue = feedbackPenalty(items: items, feedback: feedback)
+        let feedbackValue = feedbackScore(items: items, feedback: feedback)
         value += feedbackValue.value
         notes.append(contentsOf: feedbackValue.notes)
 
@@ -706,18 +723,28 @@ struct OutfitRecommendationEngine {
         return -12
     }
 
-    private func feedbackPenalty(items: [ClothingItem], feedback: [Feedback]) -> (value: Double, notes: [String]) {
+    private func feedbackScore(items: [ClothingItem], feedback: [Feedback]) -> (value: Double, notes: [String]) {
         let combinationKey = OutfitRecommendation.combinationKey(for: items)
         var value = 0.0
         var notes: [String] = []
 
-        for entry in feedback where entry.type.isNegative {
-            if !entry.combinationKey.isEmpty && entry.combinationKey == combinationKey {
-                value -= 45
-                notes.append("Past negative combo")
-            }
-            if let feedbackItem = entry.item, items.contains(where: { $0.id == feedbackItem.id }) {
-                value -= 8
+        for entry in feedback {
+            if entry.type == .goodOutfit {
+                if !entry.combinationKey.isEmpty && entry.combinationKey == combinationKey {
+                    value += 18
+                    notes.append("Past positive combo")
+                }
+                if let feedbackItem = entry.item, items.contains(where: { $0.id == feedbackItem.id }) {
+                    value += 4
+                }
+            } else if entry.type.isNegative {
+                if !entry.combinationKey.isEmpty && entry.combinationKey == combinationKey {
+                    value -= 45
+                    notes.append("Past negative combo")
+                }
+                if let feedbackItem = entry.item, items.contains(where: { $0.id == feedbackItem.id }) {
+                    value -= 8
+                }
             }
         }
 

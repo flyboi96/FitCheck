@@ -383,6 +383,11 @@ private struct TripBackup: Codable {
     var notes: String
     var laundryIntervalDays: Int
     var wearsBeforeWash: Int
+    var topWearsBeforeWash: Int
+    var bottomWearsBeforeWash: Int
+    var sweaterWearsBeforeWash: Int
+    var jacketWearsBeforeWash: Int
+    var activewearWearsBeforeWash: Int
 
     init(trip: Trip) {
         id = trip.id
@@ -392,6 +397,27 @@ private struct TripBackup: Codable {
         notes = trip.notes
         laundryIntervalDays = trip.laundryIntervalDays
         wearsBeforeWash = trip.wearsBeforeWash
+        topWearsBeforeWash = trip.topWearsBeforeWash
+        bottomWearsBeforeWash = trip.bottomWearsBeforeWash
+        sweaterWearsBeforeWash = trip.sweaterWearsBeforeWash
+        jacketWearsBeforeWash = trip.jacketWearsBeforeWash
+        activewearWearsBeforeWash = trip.activewearWearsBeforeWash
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        startsAt = try container.decode(Date.self, forKey: .startsAt)
+        endsAt = try container.decode(Date.self, forKey: .endsAt)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        laundryIntervalDays = try container.decodeIfPresent(Int.self, forKey: .laundryIntervalDays) ?? 0
+        wearsBeforeWash = try container.decodeIfPresent(Int.self, forKey: .wearsBeforeWash) ?? 1
+        topWearsBeforeWash = try container.decodeIfPresent(Int.self, forKey: .topWearsBeforeWash) ?? max(1, wearsBeforeWash)
+        bottomWearsBeforeWash = try container.decodeIfPresent(Int.self, forKey: .bottomWearsBeforeWash) ?? 3
+        sweaterWearsBeforeWash = try container.decodeIfPresent(Int.self, forKey: .sweaterWearsBeforeWash) ?? 3
+        jacketWearsBeforeWash = try container.decodeIfPresent(Int.self, forKey: .jacketWearsBeforeWash) ?? 5
+        activewearWearsBeforeWash = try container.decodeIfPresent(Int.self, forKey: .activewearWearsBeforeWash) ?? 1
     }
 
     var model: Trip {
@@ -402,7 +428,12 @@ private struct TripBackup: Codable {
             endsAt: endsAt,
             notes: notes,
             laundryIntervalDays: laundryIntervalDays,
-            wearsBeforeWash: max(1, wearsBeforeWash)
+            wearsBeforeWash: max(1, wearsBeforeWash),
+            topWearsBeforeWash: max(1, topWearsBeforeWash),
+            bottomWearsBeforeWash: max(1, bottomWearsBeforeWash),
+            sweaterWearsBeforeWash: max(1, sweaterWearsBeforeWash),
+            jacketWearsBeforeWash: max(1, jacketWearsBeforeWash),
+            activewearWearsBeforeWash: max(1, activewearWearsBeforeWash)
         )
     }
 }

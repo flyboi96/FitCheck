@@ -26,6 +26,12 @@ struct TripPlanningService {
             context.insert(packingItem)
             list.items.append(packingItem)
         }
+
+        for extra in packingExtras(for: trip, days: days) {
+            let packingItem = PackingListItem(quantity: extra.quantity, reason: extra.title, item: nil, packingList: list)
+            context.insert(packingItem)
+            list.items.append(packingItem)
+        }
     }
 
     func rebuildItinerary(
@@ -72,7 +78,7 @@ struct TripPlanningService {
             let availableCloset = closetAvailableForTripDay(
                 closet: closet,
                 plannedWearCounts: plannedWearCounts,
-                wearsBeforeWash: trip.wearsBeforeWash
+                trip: trip
             )
 
             guard let recommendation = engine.recommend(
@@ -116,13 +122,15 @@ struct TripPlanningService {
 
     private func packingCandidates(from closet: [ClothingItem], trip: Trip, days: Int) -> [ClothingItem] {
         var chosen: [ClothingItem] = []
-        let topLimit = clothingLimit(for: trip, days: days, minimum: 1, maximum: 6)
-        let bottomLimit = clothingLimit(for: trip, days: days, minimum: 1, maximum: 4)
+        let topLimit = clothingLimit(for: trip, category: .shirt, days: days, minimum: 1, maximum: 6)
+        let bottomLimit = clothingLimit(for: trip, category: .pants, days: days, minimum: 1, maximum: 4)
+        let activewearLimit = tripHasExercise(trip) ? clothingLimit(for: trip, category: .activewear, days: days, minimum: 1, maximum: 4) : 0
         let shoeLimit = min(2, max(1, days / 5 + 1))
 
         chosen.append(contentsOf: chooseItems(from: closet, categories: [.shirt, .sweater], limit: topLimit))
         chosen.append(contentsOf: chooseItems(from: closet, categories: [.pants, .shorts], limit: bottomLimit))
         chosen.append(contentsOf: chooseItems(from: closet, categories: [.shoes], limit: shoeLimit))
+        chosen.append(contentsOf: chooseItems(from: closet, categories: [.activewear], limit: activewearLimit))
 
         let weatherText = trip.stops.map(\.expectedWeather).joined(separator: " ").lowercased()
         if weatherText.contains("rain") || weatherText.contains("cold") {
@@ -153,9 +161,9 @@ struct TripPlanningService {
             .map { $0 }
     }
 
-    private func clothingLimit(for trip: Trip, days: Int, minimum: Int, maximum: Int) -> Int {
+    private func clothingLimit(for trip: Trip, category: ClothingCategory, days: Int, minimum: Int, maximum: Int) -> Int {
         let laundryWindow = laundryWindowDays(for: trip, days: days)
-        let wearsBeforeWash = max(1, trip.wearsBeforeWash)
+        let wearsBeforeWash = wearLimit(for: category, trip: trip)
         let needed = Int(ceil(Double(laundryWindow) / Double(wearsBeforeWash)))
         return min(maximum, max(minimum, needed))
     }
@@ -170,11 +178,53 @@ struct TripPlanningService {
         if !weatherText.isEmpty, ClothingInference.weatherTags(for: item).contains(where: { weatherText.localizedCaseInsensitiveContains($0) }) {
             return "Weather match"
         }
-        if trip.laundryIntervalDays > 0 || trip.wearsBeforeWash > 1 {
+        if trip.laundryIntervalDays > 0 || wearLimit(for: item.category, trip: trip) > 1 {
             let window = laundryWindowDays(for: trip, days: days)
-            return "Covers \(window) days between laundry; rewear up to \(max(1, trip.wearsBeforeWash))x"
+            return "Covers \(window) days between laundry; rewear up to \(wearLimit(for: item.category, trip: trip))x"
         }
         return item.category.displayName
+    }
+
+    private func packingExtras(for trip: Trip, days: Int) -> [PackingExtra] {
+        let exerciseDays = tripHasExercise(trip) ? max(1, min(days, trip.stops.count)) : 0
+        let underwearCount = days + exerciseDays
+        let socksCount = days + exerciseDays
+        var extras = [
+            PackingExtra(title: "Underwear - one per day\(exerciseDays > 0 ? " plus workout extras" : "")", quantity: underwearCount),
+            PackingExtra(title: "Socks - one pair per day\(exerciseDays > 0 ? " plus workout extras" : "")", quantity: socksCount)
+        ]
+
+        if tripHasExercise(trip) {
+            extras.append(PackingExtra(title: "Exercise outfit\(exerciseDays > 1 ? "s" : "")", quantity: exerciseDays))
+        }
+
+        return extras
+    }
+
+    private func tripHasExercise(_ trip: Trip) -> Bool {
+        let text = ([trip.notes] + trip.stops.flatMap { [$0.customsNotes, $0.location] })
+            .joined(separator: " ")
+            .lowercased()
+        return text.containsAny(["gym", "workout", "exercise", "run", "running", "training", "hike", "hiking"])
+    }
+
+    private func wearLimit(for category: ClothingCategory, trip: Trip) -> Int {
+        switch category {
+        case .shirt:
+            return max(1, trip.topWearsBeforeWash)
+        case .pants, .shorts:
+            return max(1, trip.bottomWearsBeforeWash)
+        case .sweater:
+            return max(1, trip.sweaterWearsBeforeWash)
+        case .jacket:
+            return max(1, trip.jacketWearsBeforeWash)
+        case .activewear:
+            return max(1, trip.activewearWearsBeforeWash)
+        case .underwear, .socks:
+            return 1
+        case .shoes, .belt, .watch, .accessory, .bag, .other:
+            return max(1, trip.wearsBeforeWash)
+        }
     }
 
     private func shouldResetLaundryCounts(for trip: Trip, dayIndex: Int) -> Bool {
@@ -184,12 +234,11 @@ struct TripPlanningService {
     private func closetAvailableForTripDay(
         closet: [ClothingItem],
         plannedWearCounts: [UUID: Int],
-        wearsBeforeWash: Int
+        trip: Trip
     ) -> [ClothingItem] {
-        let allowedWears = max(1, wearsBeforeWash)
         return closet.filter { item in
             guard isLaundryTracked(item) else { return true }
-            return plannedWearCounts[item.id, default: 0] < allowedWears
+            return plannedWearCounts[item.id, default: 0] < wearLimit(for: item.category, trip: trip)
         }
     }
 
@@ -201,7 +250,7 @@ struct TripPlanningService {
 
     private func isLaundryTracked(_ item: ClothingItem) -> Bool {
         switch item.category {
-        case .shirt, .pants, .shorts, .jacket, .sweater:
+        case .shirt, .pants, .shorts, .jacket, .sweater, .activewear, .underwear, .socks:
             return true
         case .shoes, .belt, .watch, .accessory, .bag, .other:
             return false
@@ -307,5 +356,16 @@ struct TripPlanningService {
             return numbers[1]
         }
         return text.localizedCaseInsensitiveContains("wind") ? 18 : 5
+    }
+}
+
+private struct PackingExtra {
+    var title: String
+    var quantity: Int
+}
+
+private extension String {
+    func containsAny(_ values: [String]) -> Bool {
+        values.contains { contains($0) }
     }
 }

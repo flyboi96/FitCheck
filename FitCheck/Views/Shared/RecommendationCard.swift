@@ -68,39 +68,42 @@ struct RecommendationCard: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack {
-                if let primaryTitle, let onPrimary {
-                    Button(action: onPrimary) {
-                        Label(primaryTitle, systemImage: "checkmark")
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    if let primaryTitle, let onPrimary {
+                        Button(action: onPrimary) {
+                            Label(primaryTitle, systemImage: "checkmark")
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.borderedProminent)
+                    if let onAIReview {
+                        if isAIReviewing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Button(action: onAIReview) {
+                                Label("AI Review", systemImage: "sparkles")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
                 }
-                Spacer()
-                if let onAIReview {
-                    if isAIReviewing {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Button(action: onAIReview) {
-                            Label("AI Review", systemImage: "sparkles")
+
+                HStack {
+                    if let onGood {
+                        Button(action: onGood) {
+                            Label("Wore + Liked", systemImage: "hand.thumbsup")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    if let onBad {
+                        Button(action: onBad) {
+                            Label("Reject", systemImage: "hand.thumbsdown")
                         }
                         .buttonStyle(.bordered)
                     }
                 }
-                if let onGood {
-                    Button(action: onGood) {
-                        Label("Good", systemImage: "hand.thumbsup")
-                    }
-                    .buttonStyle(.bordered)
-                }
-                if let onBad {
-                    Button(action: onBad) {
-                        Label("Bad", systemImage: "hand.thumbsdown")
-                    }
-                    .buttonStyle(.bordered)
-                }
             }
-            .labelStyle(.iconOnly)
         }
         .padding(.vertical, 8)
     }
@@ -109,6 +112,12 @@ struct RecommendationCard: View {
         switch category {
         case .shirt, .sweater:
             "tshirt"
+        case .activewear:
+            "figure.run"
+        case .underwear:
+            "person"
+        case .socks:
+            "shoeprints.fill"
         case .pants, .shorts:
             "figure.stand"
         case .shoes:

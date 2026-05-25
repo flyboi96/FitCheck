@@ -68,7 +68,11 @@ private struct TripEditorView: View {
     @State private var endsAt = Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date()
     @State private var notes = ""
     @State private var laundryIntervalDays = 0
-    @State private var wearsBeforeWash = 1
+    @State private var topWearsBeforeWash = 1
+    @State private var bottomWearsBeforeWash = 3
+    @State private var sweaterWearsBeforeWash = 3
+    @State private var jacketWearsBeforeWash = 5
+    @State private var activewearWearsBeforeWash = 1
 
     var body: some View {
         Form {
@@ -89,14 +93,11 @@ private struct TripEditorView: View {
                     }
                 }
 
-                Stepper(value: $wearsBeforeWash, in: 1...5) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Wear before wash")
-                        Text("\(wearsBeforeWash)x per clothing item")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                wearStepper("Shirts", value: $topWearsBeforeWash)
+                wearStepper("Pants / shorts", value: $bottomWearsBeforeWash)
+                wearStepper("Sweaters", value: $sweaterWearsBeforeWash)
+                wearStepper("Jackets", value: $jacketWearsBeforeWash)
+                wearStepper("Exercise clothes", value: $activewearWearsBeforeWash)
             }
         }
         .navigationTitle("Add Trip")
@@ -122,7 +123,12 @@ private struct TripEditorView: View {
             endsAt: maxDate(startsAt, endsAt),
             notes: notes,
             laundryIntervalDays: laundryIntervalDays,
-            wearsBeforeWash: wearsBeforeWash
+            wearsBeforeWash: topWearsBeforeWash,
+            topWearsBeforeWash: topWearsBeforeWash,
+            bottomWearsBeforeWash: bottomWearsBeforeWash,
+            sweaterWearsBeforeWash: sweaterWearsBeforeWash,
+            jacketWearsBeforeWash: jacketWearsBeforeWash,
+            activewearWearsBeforeWash: activewearWearsBeforeWash
         )
         modelContext.insert(trip)
         try? modelContext.save()
@@ -131,6 +137,17 @@ private struct TripEditorView: View {
 
     private func maxDate(_ first: Date, _ second: Date) -> Date {
         first > second ? first : second
+    }
+
+    private func wearStepper(_ title: String, value: Binding<Int>) -> some View {
+        Stepper(value: value, in: 1...7) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text("\(value.wrappedValue)x before wash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 
@@ -181,16 +198,13 @@ private struct TripDetailView: View {
                     }
                 }
 
-                Stepper(value: $trip.wearsBeforeWash, in: 1...5) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Wear before wash")
-                        Text("\(trip.wearsBeforeWash)x per clothing item")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                wearStepper("Shirts", value: $trip.topWearsBeforeWash)
+                wearStepper("Pants / shorts", value: $trip.bottomWearsBeforeWash)
+                wearStepper("Sweaters", value: $trip.sweaterWearsBeforeWash)
+                wearStepper("Jackets", value: $trip.jacketWearsBeforeWash)
+                wearStepper("Exercise clothes", value: $trip.activewearWearsBeforeWash)
 
-                Text("Packing uses these values to reduce overpacking. It chooses enough items to cover the longest stretch between laundry.")
+                Text("Packing uses these values to reduce overpacking. Underwear and socks are still recommended as one per day, plus extras for exercise.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -232,12 +246,12 @@ private struct TripDetailView: View {
                     ForEach(list.items) { packingItem in
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text(packingItem.item?.name ?? "Item")
+                                Text(packingTitle(for: packingItem))
                                 Spacer()
                                 Text("x\(packingItem.quantity)")
                                     .foregroundStyle(.secondary)
                             }
-                            if !packingItem.reason.isEmpty {
+                            if packingItem.item != nil, !packingItem.reason.isEmpty {
                                 Text(packingItem.reason)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -248,6 +262,9 @@ private struct TripDetailView: View {
             }
 
             Section("Itinerary") {
+                Text("Feedback here is saved to the same outfit feedback system used by daily recommendations.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 ForEach(trip.itineraryOutfits.sorted { $0.date < $1.date }) { itinerary in
                     VStack(alignment: .leading, spacing: 4) {
                         Text("\(TripPlannerView.dateFormatter.string(from: itinerary.date)) - \(itinerary.location)")
@@ -265,12 +282,12 @@ private struct TripDetailView: View {
                                 Button {
                                     recordFeedback(for: itinerary, type: .goodOutfit)
                                 } label: {
-                                    Label("Good", systemImage: "hand.thumbsup")
+                                    Label("Good Outfit", systemImage: "hand.thumbsup")
                                 }
                                 Button {
                                     recordFeedback(for: itinerary, type: .badOutfit)
                                 } label: {
-                                    Label("Bad", systemImage: "hand.thumbsdown")
+                                    Label("Bad Outfit", systemImage: "hand.thumbsdown")
                                 }
                                 Menu {
                                     Button("Bad for weather") {
@@ -313,6 +330,22 @@ private struct TripDetailView: View {
         .onChange(of: trip.wearsBeforeWash) { _, _ in
             try? modelContext.save()
         }
+        .onChange(of: trip.topWearsBeforeWash) { _, _ in
+            trip.wearsBeforeWash = trip.topWearsBeforeWash
+            try? modelContext.save()
+        }
+        .onChange(of: trip.bottomWearsBeforeWash) { _, _ in
+            try? modelContext.save()
+        }
+        .onChange(of: trip.sweaterWearsBeforeWash) { _, _ in
+            try? modelContext.save()
+        }
+        .onChange(of: trip.jacketWearsBeforeWash) { _, _ in
+            try? modelContext.save()
+        }
+        .onChange(of: trip.activewearWearsBeforeWash) { _, _ in
+            try? modelContext.save()
+        }
     }
 
     private func recordFeedback(for itinerary: DailyItineraryOutfit, type: FeedbackType) {
@@ -335,6 +368,24 @@ private struct TripDetailView: View {
             .filter { $0.outfit?.id == outfit.id }
             .sorted { $0.createdAt > $1.createdAt }
             .first
+    }
+
+    private func packingTitle(for item: PackingListItem) -> String {
+        if let clothingName = item.item?.name {
+            return clothingName
+        }
+        return item.reason.isEmpty ? "Packing item" : item.reason
+    }
+
+    private func wearStepper(_ title: String, value: Binding<Int>) -> some View {
+        Stepper(value: value, in: 1...7) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text("\(value.wrappedValue)x before wash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

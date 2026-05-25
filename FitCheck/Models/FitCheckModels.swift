@@ -8,6 +8,9 @@ enum ClothingCategory: String, CaseIterable, Codable, Identifiable {
     case shoes
     case jacket
     case sweater
+    case activewear
+    case underwear
+    case socks
     case belt
     case watch
     case accessory
@@ -24,11 +27,30 @@ enum ClothingCategory: String, CaseIterable, Codable, Identifiable {
         case .shoes: "Shoes"
         case .jacket: "Jacket"
         case .sweater: "Sweater"
+        case .activewear: "Exercise Clothes"
+        case .underwear: "Underwear"
+        case .socks: "Socks"
         case .belt: "Belt"
         case .watch: "Watch"
         case .accessory: "Accessory"
         case .bag: "Bag"
         case .other: "Other"
+        }
+    }
+}
+
+enum WearerProfileOption: String, CaseIterable, Codable, Identifiable {
+    case unspecified
+    case male
+    case female
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .unspecified: "Not Set"
+        case .male: "Male"
+        case .female: "Female"
         }
     }
 }
@@ -303,6 +325,11 @@ final class Trip: Identifiable {
     var notes: String
     var laundryIntervalDays: Int = 0
     var wearsBeforeWash: Int = 1
+    var topWearsBeforeWash: Int = 1
+    var bottomWearsBeforeWash: Int = 3
+    var sweaterWearsBeforeWash: Int = 3
+    var jacketWearsBeforeWash: Int = 5
+    var activewearWearsBeforeWash: Int = 1
     @Relationship(deleteRule: .cascade, inverse: \TripStop.trip)
     var stops: [TripStop]
     @Relationship(deleteRule: .cascade, inverse: \PackingList.trip)
@@ -318,6 +345,11 @@ final class Trip: Identifiable {
         notes: String = "",
         laundryIntervalDays: Int = 0,
         wearsBeforeWash: Int = 1,
+        topWearsBeforeWash: Int = 1,
+        bottomWearsBeforeWash: Int = 3,
+        sweaterWearsBeforeWash: Int = 3,
+        jacketWearsBeforeWash: Int = 5,
+        activewearWearsBeforeWash: Int = 1,
         stops: [TripStop] = [],
         packingLists: [PackingList] = [],
         itineraryOutfits: [DailyItineraryOutfit] = []
@@ -329,6 +361,11 @@ final class Trip: Identifiable {
         self.notes = notes
         self.laundryIntervalDays = laundryIntervalDays
         self.wearsBeforeWash = wearsBeforeWash
+        self.topWearsBeforeWash = topWearsBeforeWash
+        self.bottomWearsBeforeWash = bottomWearsBeforeWash
+        self.sweaterWearsBeforeWash = sweaterWearsBeforeWash
+        self.jacketWearsBeforeWash = jacketWearsBeforeWash
+        self.activewearWearsBeforeWash = activewearWearsBeforeWash
         self.stops = stops
         self.packingLists = packingLists
         self.itineraryOutfits = itineraryOutfits

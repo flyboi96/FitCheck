@@ -1,6 +1,6 @@
 # FitCheck AI Proxy
 
-Small local backend for FitCheck AI outfit review, AI-first outfit selection, and clothing photo import. The iPhone app never stores the OpenAI API key; it calls this proxy instead.
+Small local backend for FitCheck AI outfit review, AI-first outfit selection, clothing photo import, and avatar outfit previews. The iPhone app never stores the OpenAI API key; it calls this proxy instead.
 
 ## Run locally
 
@@ -9,7 +9,8 @@ Small local backend for FitCheck AI outfit review, AI-first outfit selection, an
 3. Optional but recommended: set `FITCHECK_PROXY_TOKEN`.
 4. Optional: set `OPENAI_VISION_MODEL` if you want clothing photo import to use a different model than outfit review.
 5. Optional: set `OPENAI_IMAGE_MODEL` for avatar/outfit image previews. The default is `gpt-image-1`.
-6. Run:
+6. Optional: set `OPENAI_IMAGE_QUALITY=low` for faster draft avatar previews, or keep `medium` for better detail.
+7. Run:
 
 ```sh
 cd backend

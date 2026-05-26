@@ -46,6 +46,16 @@ struct AvatarStudioView: View {
             Section("Avatar") {
                 FitCheckPhotoPreview(data: avatar?.avatarImageData ?? avatar?.sourcePhotoData, height: 320)
 
+                if avatar?.avatarImageData != nil {
+                    Label("Saved avatar ready", systemImage: "checkmark.circle")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                } else if avatar?.sourcePhotoData != nil {
+                    Label("Generate once, then outfit previews use the saved avatar", systemImage: "person.crop.rectangle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Button {
                     Task {
                         await generateBaseAvatar()
@@ -218,7 +228,8 @@ struct AvatarStudioView: View {
                     backgroundContext: "Simple neutral indoor studio background.",
                     wearerProfile: currentWearerProfile.displayName,
                     styleDescription: styleDescription,
-                    avatarNotes: avatar?.notes ?? ""
+                    avatarNotes: avatar?.notes ?? "",
+                    usesSavedAvatar: false
                 )
             )
 

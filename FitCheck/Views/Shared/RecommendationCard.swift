@@ -112,7 +112,7 @@ struct RecommendationCard: View {
                                 .controlSize(.small)
                         } else {
                             Button(action: onAvatarPreview) {
-                                Label("Avatar Preview", systemImage: "person.crop.rectangle")
+                                Label("Try On Avatar", systemImage: "person.crop.rectangle")
                             }
                             .buttonStyle(.bordered)
                         }

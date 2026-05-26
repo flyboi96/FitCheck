@@ -328,10 +328,15 @@ struct TodayOutfitView: View {
                     outfitItems: recommendation.items.map(AIClothingItemPayload.init),
                     weatherSummary: currentWeather.summary,
                     location: currentWeather.location,
-                    backgroundContext: "Use a subtle setting that matches today's location and weather without hiding the outfit.",
+                    backgroundContext: avatarBackgroundContext(for: currentWeather, condition: currentWeatherCondition),
                     wearerProfile: currentWearerProfile.displayName,
                     styleDescription: styleDescription,
-                    avatarNotes: avatars.first?.notes ?? ""
+                    avatarNotes: avatars.first?.notes ?? "",
+                    weatherCondition: currentWeatherCondition,
+                    temperatureF: currentWeather.temperatureF,
+                    isRaining: currentWeather.isRaining,
+                    windMph: currentWeather.windMph,
+                    usesSavedAvatar: avatars.first?.avatarImageData != nil
                 )
             )
 
@@ -400,6 +405,36 @@ struct TodayOutfitView: View {
 
     private var currentWearerProfile: WearerProfileOption {
         WearerProfileOption(rawValue: wearerProfile) ?? .unspecified
+    }
+
+    private var currentWeatherCondition: String {
+        weatherLookup.result?.condition ?? ""
+    }
+
+    private func avatarBackgroundContext(for weather: WeatherInput, condition: String) -> String {
+        let conditionText = condition.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rainRule = weather.isRaining
+            ? "Show the real wet-weather conditions, but keep the outfit readable."
+            : "Do not show rain, wet pavement, umbrellas, mist, storm clouds, or heavy overcast."
+        let temperatureRule: String
+        if weather.temperatureF >= 90 {
+            temperatureRule = "Make it visibly hot, bright, dry, and sunlit."
+        } else if weather.temperatureF >= 80 {
+            temperatureRule = "Make it warm and sunlit unless the condition says otherwise."
+        } else if weather.temperatureF <= 45 {
+            temperatureRule = "Make it cool or cold without hiding the outfit."
+        } else {
+            temperatureRule = "Use mild-weather visual cues."
+        }
+
+        return [
+            "Use a location-specific background for \(weather.location), not a generic cloudy city.",
+            "\(Int(weather.temperatureF.rounded()))F\(conditionText.isEmpty ? "" : ", \(conditionText)").",
+            "Wind \(Int(weather.windMph.rounded())) mph.",
+            rainRule,
+            temperatureRule,
+            "For hot, dry places such as Djibouti, use bright arid/coastal light and avoid Seattle-like rain or gray skies unless rain is explicitly reported."
+        ].joined(separator: " ")
     }
 }
 

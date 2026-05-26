@@ -49,6 +49,10 @@ const openAIKey = process.env.OPENAI_API_KEY;
 const openAIModel = process.env.OPENAI_MODEL ?? "gpt-5-mini";
 const openAIVisionModel = process.env.OPENAI_VISION_MODEL ?? openAIModel;
 const openAIImageModel = process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1";
+const requestedImageQuality = String(process.env.OPENAI_IMAGE_QUALITY ?? "medium").toLowerCase();
+const openAIImageQuality = ["low", "medium", "high", "auto"].includes(requestedImageQuality)
+  ? requestedImageQuality
+  : "medium";
 const proxyToken = process.env.FITCHECK_PROXY_TOKEN ?? "";
 const maxBodyBytes = 10_000_000;
 const clothingCategories = [
@@ -189,7 +193,8 @@ const server = http.createServer(async (request, response) => {
       ok: true,
       model: openAIModel,
       visionModel: openAIVisionModel,
-      imageModel: openAIImageModel
+      imageModel: openAIImageModel,
+      imageQuality: openAIImageQuality
     });
     return;
   }
@@ -474,14 +479,19 @@ async function generateAvatarOutfitPreview(requestBody) {
     backgroundContext: requestBody.backgroundContext ?? "",
     wearerProfile: requestBody.wearerProfile ?? "",
     styleDescription: requestBody.styleDescription ?? "",
-    avatarNotes: requestBody.avatarNotes ?? ""
+    avatarNotes: requestBody.avatarNotes ?? "",
+    weatherCondition: requestBody.weatherCondition ?? "",
+    temperatureF: requestBody.temperatureF,
+    isRaining: requestBody.isRaining,
+    windMph: requestBody.windMph,
+    usesSavedAvatar: Boolean(requestBody.usesSavedAvatar)
   });
 
   const formData = new FormData();
   formData.set("model", openAIImageModel);
   formData.set("prompt", prompt);
   formData.set("size", "1024x1536");
-  formData.set("quality", "medium");
+  formData.set("quality", openAIImageQuality);
   formData.set("background", "opaque");
   formData.set("output_format", "png");
   formData.append("image", new Blob([imageBuffer], { type: mimeType }), `fitcheck-avatar-reference.${fileExtension(mimeType)}`);
@@ -519,7 +529,12 @@ function buildAvatarPrompt({
   backgroundContext,
   wearerProfile,
   styleDescription,
-  avatarNotes
+  avatarNotes,
+  weatherCondition,
+  temperatureF,
+  isRaining,
+  windMph,
+  usesSavedAvatar
 }) {
   const outfitDescription = outfitItems.length > 0
     ? outfitItems
@@ -538,15 +553,35 @@ function buildAvatarPrompt({
         })
         .join("\n")
     : "- Plain dark t-shirt, neutral pants, and simple shoes for avatar setup only. Keep the clothing simple and understated.";
+  const temperature = Number(temperatureF);
+  const wind = Number(windMph);
+  const hasTemperature = Number.isFinite(temperature);
+  const hasWind = Number.isFinite(wind);
+  const rainingText = typeof isRaining === "boolean" ? (isRaining ? "yes" : "no") : "unknown";
+  const weatherRules = weatherVisualRules({
+    location,
+    weatherCondition,
+    temperatureF: hasTemperature ? temperature : null,
+    isRaining
+  });
+  const referenceMode = usesSavedAvatar
+    ? "The input image is the user's saved FitCheck avatar. Preserve the avatar's face, hair, body proportions, posture, and head-to-shoes framing; change only the clothing and setting needed for this outfit preview."
+    : "The input image is a user reference photo. Create a reusable, realistic FitCheck avatar while preserving broad facial features, hairstyle impression, skin tone, body proportions, and pose realism.";
 
   return `
 Edit the provided user photo into a realistic, full-body FitCheck avatar preview.
 
 Goal:
-- Preserve the user's broad facial features, hairstyle impression, skin tone, body proportions, and pose realism from the reference photo.
+- ${referenceMode}
 - Show the outfit clearly from head to toe as a practical wardrobe try-on preview.
 - Use a natural, realistic background informed by location and weather.
 - Keep the result private-app appropriate: no text labels, no logos unless they are visible on the listed clothing, no identity documents, no dramatic fashion editorial styling.
+
+Composition requirements:
+- Vertical full-body portrait, camera pulled back far enough to show the complete person.
+- Include the complete hair/top of head and the complete shoes/feet, with a small margin above the hair and below the shoes.
+- No cropped hair, no cropped shoes, no waist-up portrait, no close-up framing, no feet hidden by the image edge.
+- If the reference photo is cropped, conservatively complete the missing hair or shoes so the final preview is still head-to-toe.
 
 Outfit to visualize:
 ${outfitDescription}
@@ -561,14 +596,50 @@ ${String(avatarNotes ?? "").trim() || "No avatar-specific notes."}
 Weather and setting:
 - Location: ${String(location ?? "").trim() || "unspecified"}
 - Weather: ${String(weatherSummary ?? "").trim() || "unspecified"}
+- Condition: ${String(weatherCondition ?? "").trim() || "unspecified"}
+- Temperature: ${hasTemperature ? `${Math.round(temperature)}F` : "unspecified"}
+- Is raining: ${rainingText}
+- Wind: ${hasWind ? `${Math.round(wind)} mph` : "unspecified"}
 - Background guidance: ${String(backgroundContext ?? "").trim() || "Use a subtle outdoor or indoor setting that matches the weather and does not distract from the outfit."}
+- Weather visual rules: ${weatherRules}
 
 Rendering instructions:
 - Realistic smartphone-photo look.
 - The clothing should match the closet item descriptions as closely as possible.
 - If a detail is unknown, make a conservative, ordinary choice instead of adding bold new clothing.
 - Do not duplicate clothing items or add extra accessories unless the outfit list includes them.
+- Do not substitute a generic gray rainy Pacific Northwest city unless the location and weather actually call for that.
 `.trim();
+}
+
+function weatherVisualRules({ location, weatherCondition, temperatureF, isRaining }) {
+  const normalizedLocation = String(location ?? "").toLowerCase();
+  const normalizedCondition = String(weatherCondition ?? "").toLowerCase();
+  const rules = [];
+
+  if (isRaining === false && !normalizedCondition.includes("rain") && !normalizedCondition.includes("storm")) {
+    rules.push("No rain, no wet pavement, no umbrellas, no mist, no storm clouds, and no heavy gray overcast.");
+  } else if (isRaining === true || normalizedCondition.includes("rain") || normalizedCondition.includes("storm")) {
+    rules.push("Show the actual wet-weather context, but keep the outfit visible and not hidden by rain gear unless listed.");
+  }
+
+  if (typeof temperatureF === "number" && temperatureF >= 90) {
+    rules.push("Make the scene visibly hot: bright sun, dry light, heat-appropriate atmosphere, and no cold-weather mood.");
+  } else if (typeof temperatureF === "number" && temperatureF >= 80) {
+    rules.push("Make the scene warm and sunlit unless the condition explicitly says otherwise.");
+  } else if (typeof temperatureF === "number" && temperatureF <= 45) {
+    rules.push("Make the scene cool or cold, but do not obscure the outfit.");
+  }
+
+  if (normalizedCondition.includes("clear")) {
+    rules.push("Use clear sky or strong sunlight cues.");
+  }
+
+  if (normalizedLocation.includes("djibouti")) {
+    rules.push("For Djibouti, use hot, bright, dry, arid/coastal Horn of Africa visual cues; avoid Seattle-like gray rain unless rain is explicitly reported.");
+  }
+
+  return rules.join(" ") || "Match the named location and weather literally, using conservative realistic visual cues.";
 }
 
 function fileExtension(mimeType) {

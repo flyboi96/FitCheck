@@ -76,6 +76,11 @@ struct AIAvatarPreviewRequest: Codable {
     var wearerProfile: String
     var styleDescription: String
     var avatarNotes: String
+    var weatherCondition: String = ""
+    var temperatureF: Double?
+    var isRaining: Bool?
+    var windMph: Double?
+    var usesSavedAvatar: Bool = false
 }
 
 struct AIAvatarPreviewResponse: Codable {

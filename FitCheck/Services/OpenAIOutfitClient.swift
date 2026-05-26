@@ -66,6 +66,24 @@ struct AIClothingImportResponse: Codable {
     var notes: String
 }
 
+struct AIAvatarPreviewRequest: Codable {
+    var userImageBase64: String
+    var mimeType: String
+    var outfitItems: [AIClothingItemPayload]
+    var weatherSummary: String
+    var location: String
+    var backgroundContext: String
+    var wearerProfile: String
+    var styleDescription: String
+    var avatarNotes: String
+}
+
+struct AIAvatarPreviewResponse: Codable {
+    var imageBase64: String
+    var mimeType: String
+    var promptSummary: String
+}
+
 protocol OutfitAIClient {
     func suggestOutfit(request: AIOutfitRequest) async throws -> AIOutfitResponse
 }
@@ -146,5 +164,28 @@ struct BackendOutfitAIClient: OutfitAIClient {
             throw OutfitAIClientError.invalidResponse
         }
         return try JSONDecoder().decode(AIClothingImportResponse.self, from: data)
+    }
+
+    func generateAvatarPreview(request: AIAvatarPreviewRequest) async throws -> AIAvatarPreviewResponse {
+        let endpoint = baseURL.appending(path: "avatar-outfit-preview")
+        var urlRequest = URLRequest(url: endpoint)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let proxyToken, !proxyToken.isEmpty {
+            urlRequest.setValue(proxyToken, forHTTPHeaderField: "X-FitCheck-Token")
+        }
+        urlRequest.httpBody = try JSONEncoder().encode(request)
+
+        let (data, response) = try await session.data(for: urlRequest)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw OutfitAIClientError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            if let proxyError = try? JSONDecoder().decode(AIProxyErrorResponse.self, from: data) {
+                throw OutfitAIClientError.serverMessage(proxyError.error)
+            }
+            throw OutfitAIClientError.invalidResponse
+        }
+        return try JSONDecoder().decode(AIAvatarPreviewResponse.self, from: data)
     }
 }

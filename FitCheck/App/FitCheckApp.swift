@@ -20,6 +20,7 @@ struct FitCheckApp: App {
             WearLog.self,
             Feedback.self,
             StylePreference.self,
+            UserAvatar.self,
             Trip.self,
             TripStop.self,
             PackingList.self,

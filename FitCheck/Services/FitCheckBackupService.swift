@@ -31,6 +31,7 @@ struct FitCheckBackupService {
             wearLogs: try context.fetch(FetchDescriptor<WearLog>()).map { WearLogBackup(log: $0) },
             feedback: try context.fetch(FetchDescriptor<Feedback>()).map { FeedbackBackup(feedback: $0) },
             stylePreferences: try context.fetch(FetchDescriptor<StylePreference>()).map { StylePreferenceBackup(preference: $0) },
+            userAvatars: try context.fetch(FetchDescriptor<UserAvatar>()).map { UserAvatarBackup(avatar: $0) },
             trips: try context.fetch(FetchDescriptor<Trip>()).map { TripBackup(trip: $0) },
             tripStops: try context.fetch(FetchDescriptor<TripStop>()).map { TripStopBackup(stop: $0) },
             packingLists: try context.fetch(FetchDescriptor<PackingList>()).map { PackingListBackup(list: $0) },
@@ -100,6 +101,10 @@ struct FitCheckBackupService {
 
         for preferenceBackup in backup.stylePreferences {
             context.insert(preferenceBackup.model)
+        }
+
+        for avatarBackup in backup.userAvatars {
+            context.insert(avatarBackup.model)
         }
 
         for tripBackup in backup.trips {
@@ -177,6 +182,9 @@ struct FitCheckBackupService {
         for model in try context.fetch(FetchDescriptor<StylePreference>()) {
             context.delete(model)
         }
+        for model in try context.fetch(FetchDescriptor<UserAvatar>()) {
+            context.delete(model)
+        }
         for model in try context.fetch(FetchDescriptor<ClothingItem>()) {
             context.delete(model)
         }
@@ -192,11 +200,57 @@ private struct FitCheckBackup: Codable {
     var wearLogs: [WearLogBackup]
     var feedback: [FeedbackBackup]
     var stylePreferences: [StylePreferenceBackup]
+    var userAvatars: [UserAvatarBackup]
     var trips: [TripBackup]
     var tripStops: [TripStopBackup]
     var packingLists: [PackingListBackup]
     var packingListItems: [PackingListItemBackup]
     var dailyItineraryOutfits: [DailyItineraryOutfitBackup]
+
+    init(
+        exportedAt: Date,
+        clothingItems: [ClothingItemBackup],
+        outfits: [OutfitBackup],
+        wearLogs: [WearLogBackup],
+        feedback: [FeedbackBackup],
+        stylePreferences: [StylePreferenceBackup],
+        userAvatars: [UserAvatarBackup],
+        trips: [TripBackup],
+        tripStops: [TripStopBackup],
+        packingLists: [PackingListBackup],
+        packingListItems: [PackingListItemBackup],
+        dailyItineraryOutfits: [DailyItineraryOutfitBackup]
+    ) {
+        self.exportedAt = exportedAt
+        self.clothingItems = clothingItems
+        self.outfits = outfits
+        self.wearLogs = wearLogs
+        self.feedback = feedback
+        self.stylePreferences = stylePreferences
+        self.userAvatars = userAvatars
+        self.trips = trips
+        self.tripStops = tripStops
+        self.packingLists = packingLists
+        self.packingListItems = packingListItems
+        self.dailyItineraryOutfits = dailyItineraryOutfits
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        exportedAt = try container.decode(Date.self, forKey: .exportedAt)
+        clothingItems = try container.decodeIfPresent([ClothingItemBackup].self, forKey: .clothingItems) ?? []
+        outfits = try container.decodeIfPresent([OutfitBackup].self, forKey: .outfits) ?? []
+        wearLogs = try container.decodeIfPresent([WearLogBackup].self, forKey: .wearLogs) ?? []
+        feedback = try container.decodeIfPresent([FeedbackBackup].self, forKey: .feedback) ?? []
+        stylePreferences = try container.decodeIfPresent([StylePreferenceBackup].self, forKey: .stylePreferences) ?? []
+        userAvatars = try container.decodeIfPresent([UserAvatarBackup].self, forKey: .userAvatars) ?? []
+        trips = try container.decodeIfPresent([TripBackup].self, forKey: .trips) ?? []
+        tripStops = try container.decodeIfPresent([TripStopBackup].self, forKey: .tripStops) ?? []
+        packingLists = try container.decodeIfPresent([PackingListBackup].self, forKey: .packingLists) ?? []
+        packingListItems = try container.decodeIfPresent([PackingListItemBackup].self, forKey: .packingListItems) ?? []
+        dailyItineraryOutfits = try container.decodeIfPresent([DailyItineraryOutfitBackup].self, forKey: .dailyItineraryOutfits) ?? []
+    }
 }
 
 private struct ClothingItemBackup: Codable {
@@ -394,6 +448,38 @@ private struct StylePreferenceBackup: Codable {
             boldness: boldness,
             preferredFit: preferredFit,
             rules: rules,
+            updatedAt: updatedAt
+        )
+    }
+}
+
+private struct UserAvatarBackup: Codable {
+    var id: UUID
+    var sourcePhotoData: Data?
+    var avatarImageData: Data?
+    var latestPreviewData: Data?
+    var notes: String
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(avatar: UserAvatar) {
+        id = avatar.id
+        sourcePhotoData = avatar.sourcePhotoData
+        avatarImageData = avatar.avatarImageData
+        latestPreviewData = avatar.latestPreviewData
+        notes = avatar.notes
+        createdAt = avatar.createdAt
+        updatedAt = avatar.updatedAt
+    }
+
+    var model: UserAvatar {
+        UserAvatar(
+            id: id,
+            sourcePhotoData: sourcePhotoData,
+            avatarImageData: avatarImageData,
+            latestPreviewData: latestPreviewData,
+            notes: notes,
+            createdAt: createdAt,
             updatedAt: updatedAt
         )
     }

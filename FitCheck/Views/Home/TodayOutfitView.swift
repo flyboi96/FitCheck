@@ -6,6 +6,7 @@ struct TodayOutfitView: View {
     @Query(sort: \ClothingItem.name) private var closetItems: [ClothingItem]
     @Query(sort: \Feedback.createdAt, order: .reverse) private var feedback: [Feedback]
     @Query private var stylePreferences: [StylePreference]
+    @Query(sort: \UserAvatar.updatedAt, order: .reverse) private var avatars: [UserAvatar]
 
     @AppStorage("fitcheckWeatherFallbackName") private var fallbackName = WeatherLookupFallback.default.name
     @AppStorage("fitcheckUseAIProxy") private var useAIProxy = false
@@ -20,6 +21,9 @@ struct TodayOutfitView: View {
     @State private var aiReviews: [String: AIOutfitResponse] = [:]
     @State private var aiReviewErrors: [String: String] = [:]
     @State private var reviewingCombinationKeys = Set<String>()
+    @State private var avatarPreviews: [String: Data] = [:]
+    @State private var avatarPreviewErrors: [String: String] = [:]
+    @State private var avatarPreviewingCombinationKeys = Set<String>()
     @State private var lastAction: TodayUndoAction?
 
     private let engine = OutfitRecommendationEngine()
@@ -93,7 +97,11 @@ struct TodayOutfitView: View {
                             aiReview: aiReviews[recommendation.combinationKey],
                             aiReviewError: aiReviewErrors[recommendation.combinationKey],
                             isAIReviewing: reviewingCombinationKeys.contains(recommendation.combinationKey),
-                            onAIReview: aiReviewAction(for: recommendation)
+                            onAIReview: aiReviewAction(for: recommendation),
+                            avatarPreviewData: avatarPreviews[recommendation.combinationKey],
+                            avatarPreviewError: avatarPreviewErrors[recommendation.combinationKey],
+                            isGeneratingAvatarPreview: avatarPreviewingCombinationKeys.contains(recommendation.combinationKey),
+                            onAvatarPreview: avatarPreviewAction(for: recommendation)
                         )
                     }
                 } header: {
@@ -165,6 +173,8 @@ struct TodayOutfitView: View {
         guard weatherLookup.result != nil else { return }
         aiReviews = [:]
         aiReviewErrors = [:]
+        avatarPreviews = [:]
+        avatarPreviewErrors = [:]
         recommendations = engine.recommend(
             closet: closetItems,
             feedback: feedback,
@@ -254,10 +264,24 @@ struct TodayOutfitView: View {
         }
     }
 
+    private func avatarPreviewAction(for recommendation: OutfitRecommendation) -> (() -> Void)? {
+        guard useAIProxy, configuredAIProxyURL != nil, avatarReferencePhoto != nil else { return nil }
+        return {
+            Task {
+                await generateAvatarPreview(for: recommendation)
+            }
+        }
+    }
+
     private var configuredAIProxyURL: URL? {
         let trimmed = aiProxyURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return URL(string: trimmed)
+    }
+
+    private var avatarReferencePhoto: (data: Data, mimeType: String)? {
+        guard let data = avatars.first?.avatarImageData ?? avatars.first?.sourcePhotoData else { return nil }
+        return (data, data.fitcheckImageMimeType)
     }
 
     @MainActor
@@ -279,6 +303,51 @@ struct TodayOutfitView: View {
             aiReviews[key] = response
         } catch {
             aiReviewErrors[key] = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func generateAvatarPreview(for recommendation: OutfitRecommendation) async {
+        guard let baseURL = configuredAIProxyURL, let referencePhoto = avatarReferencePhoto else { return }
+
+        let key = recommendation.combinationKey
+        avatarPreviewingCombinationKeys.insert(key)
+        avatarPreviewErrors[key] = nil
+        defer {
+            avatarPreviewingCombinationKeys.remove(key)
+        }
+
+        let token = aiProxyToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let client = BackendOutfitAIClient(baseURL: baseURL, proxyToken: token.isEmpty ? nil : token)
+
+        do {
+            let response = try await client.generateAvatarPreview(
+                request: AIAvatarPreviewRequest(
+                    userImageBase64: referencePhoto.data.base64EncodedString(),
+                    mimeType: referencePhoto.mimeType,
+                    outfitItems: recommendation.items.map(AIClothingItemPayload.init),
+                    weatherSummary: currentWeather.summary,
+                    location: currentWeather.location,
+                    backgroundContext: "Use a subtle setting that matches today's location and weather without hiding the outfit.",
+                    wearerProfile: currentWearerProfile.displayName,
+                    styleDescription: styleDescription,
+                    avatarNotes: avatars.first?.notes ?? ""
+                )
+            )
+
+            guard let imageData = Data(base64Encoded: response.imageBase64) else {
+                avatarPreviewErrors[key] = "The avatar preview could not be decoded."
+                return
+            }
+
+            avatarPreviews[key] = imageData
+            if let avatar = avatars.first {
+                avatar.latestPreviewData = imageData
+                avatar.updatedAt = Date()
+                try? modelContext.save()
+            }
+        } catch {
+            avatarPreviewErrors[key] = error.localizedDescription
         }
     }
 

@@ -1,6 +1,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import { Blob } from "node:buffer";
 
 function loadDotEnv(filePath = ".env") {
   const fullPath = path.resolve(process.cwd(), filePath);
@@ -47,8 +48,9 @@ const host = process.env.HOST ?? "0.0.0.0";
 const openAIKey = process.env.OPENAI_API_KEY;
 const openAIModel = process.env.OPENAI_MODEL ?? "gpt-5-mini";
 const openAIVisionModel = process.env.OPENAI_VISION_MODEL ?? openAIModel;
+const openAIImageModel = process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1";
 const proxyToken = process.env.FITCHECK_PROXY_TOKEN ?? "";
-const maxBodyBytes = 6_000_000;
+const maxBodyBytes = 10_000_000;
 const clothingCategories = [
   "shirt",
   "blouse",
@@ -183,11 +185,20 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === "GET" && pathname === "/health") {
-    sendJSON(response, 200, { ok: true, model: openAIModel, visionModel: openAIVisionModel });
+    sendJSON(response, 200, {
+      ok: true,
+      model: openAIModel,
+      visionModel: openAIVisionModel,
+      imageModel: openAIImageModel
+    });
     return;
   }
 
-  const supportedPostRoutes = new Set(["/outfit-recommendation", "/clothing-item-description"]);
+  const supportedPostRoutes = new Set([
+    "/outfit-recommendation",
+    "/clothing-item-description",
+    "/avatar-outfit-preview"
+  ]);
 
   if (request.method !== "POST" || !supportedPostRoutes.has(pathname)) {
     sendJSON(response, 404, { error: "Not found" });
@@ -210,6 +221,12 @@ const server = http.createServer(async (request, response) => {
     if (pathname === "/clothing-item-description") {
       const description = await describeClothingItem(body);
       sendJSON(response, 200, description);
+      return;
+    }
+
+    if (pathname === "/avatar-outfit-preview") {
+      const preview = await generateAvatarOutfitPreview(body);
+      sendJSON(response, 200, preview);
       return;
     }
 
@@ -427,6 +444,142 @@ async function describeClothingItem(requestBody) {
     activitySuitability: String(parsed.activitySuitability ?? "").trim(),
     notes: String(parsed.notes ?? "").trim()
   };
+}
+
+async function generateAvatarOutfitPreview(requestBody) {
+  const imageBase64 = String(requestBody.userImageBase64 ?? "").trim();
+
+  if (!imageBase64) {
+    throw httpError(400, "userImageBase64 is required");
+  }
+
+  if (!/^[A-Za-z0-9+/=]+$/.test(imageBase64)) {
+    throw httpError(400, "userImageBase64 must be a base64-encoded image");
+  }
+
+  const requestedMimeType = String(requestBody.mimeType ?? "image/jpeg").toLowerCase();
+  const mimeType = ["image/jpeg", "image/png", "image/webp"].includes(requestedMimeType)
+    ? requestedMimeType
+    : "image/jpeg";
+  const imageBuffer = Buffer.from(imageBase64, "base64");
+  const outfitItems = Array.isArray(requestBody.outfitItems) ? requestBody.outfitItems : [];
+  const promptSummary = outfitItems.length > 0
+    ? `Avatar outfit preview with ${outfitItems.map((item) => item.name).join(", ")}`
+    : "Base realistic FitCheck avatar";
+
+  const prompt = buildAvatarPrompt({
+    outfitItems,
+    weatherSummary: requestBody.weatherSummary ?? "",
+    location: requestBody.location ?? "",
+    backgroundContext: requestBody.backgroundContext ?? "",
+    wearerProfile: requestBody.wearerProfile ?? "",
+    styleDescription: requestBody.styleDescription ?? "",
+    avatarNotes: requestBody.avatarNotes ?? ""
+  });
+
+  const formData = new FormData();
+  formData.set("model", openAIImageModel);
+  formData.set("prompt", prompt);
+  formData.set("size", "1024x1536");
+  formData.set("quality", "medium");
+  formData.set("background", "opaque");
+  formData.set("output_format", "png");
+  formData.append("image", new Blob([imageBuffer], { type: mimeType }), `fitcheck-avatar-reference.${fileExtension(mimeType)}`);
+
+  const openAIResponse = await fetch("https://api.openai.com/v1/images/edits", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${openAIKey}`
+    },
+    body: formData
+  });
+
+  const data = await openAIResponse.json().catch(() => ({}));
+  if (!openAIResponse.ok) {
+    throw httpError(openAIResponse.status, data.error?.message ?? "OpenAI image request failed");
+  }
+
+  const imageData = data.data?.[0]?.b64_json;
+  if (typeof imageData !== "string" || !imageData.trim()) {
+    console.error("OpenAI image response without b64_json:", JSON.stringify(data, null, 2));
+    throw new Error("OpenAI image response did not include image data");
+  }
+
+  return {
+    imageBase64: imageData,
+    mimeType: "image/png",
+    promptSummary
+  };
+}
+
+function buildAvatarPrompt({
+  outfitItems,
+  weatherSummary,
+  location,
+  backgroundContext,
+  wearerProfile,
+  styleDescription,
+  avatarNotes
+}) {
+  const outfitDescription = outfitItems.length > 0
+    ? outfitItems
+        .map((item) => {
+          const details = [
+            item.name,
+            item.category,
+            item.color,
+            item.pattern,
+            item.notes
+          ]
+            .map((value) => String(value ?? "").trim())
+            .filter(Boolean)
+            .join(", ");
+          return `- ${details}`;
+        })
+        .join("\n")
+    : "- Plain dark t-shirt, neutral pants, and simple shoes for avatar setup only. Keep the clothing simple and understated.";
+
+  return `
+Edit the provided user photo into a realistic, full-body FitCheck avatar preview.
+
+Goal:
+- Preserve the user's broad facial features, hairstyle impression, skin tone, body proportions, and pose realism from the reference photo.
+- Show the outfit clearly from head to toe as a practical wardrobe try-on preview.
+- Use a natural, realistic background informed by location and weather.
+- Keep the result private-app appropriate: no text labels, no logos unless they are visible on the listed clothing, no identity documents, no dramatic fashion editorial styling.
+
+Outfit to visualize:
+${outfitDescription}
+
+Wearer profile: ${String(wearerProfile ?? "").trim() || "unspecified"}
+Style preferences:
+${String(styleDescription ?? "").trim() || "No saved style notes."}
+
+Avatar notes:
+${String(avatarNotes ?? "").trim() || "No avatar-specific notes."}
+
+Weather and setting:
+- Location: ${String(location ?? "").trim() || "unspecified"}
+- Weather: ${String(weatherSummary ?? "").trim() || "unspecified"}
+- Background guidance: ${String(backgroundContext ?? "").trim() || "Use a subtle outdoor or indoor setting that matches the weather and does not distract from the outfit."}
+
+Rendering instructions:
+- Realistic smartphone-photo look.
+- The clothing should match the closet item descriptions as closely as possible.
+- If a detail is unknown, make a conservative, ordinary choice instead of adding bold new clothing.
+- Do not duplicate clothing items or add extra accessories unless the outfit list includes them.
+`.trim();
+}
+
+function fileExtension(mimeType) {
+  switch (mimeType) {
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    default:
+      return "jpg";
+  }
 }
 
 function extractOpenAIText(data) {

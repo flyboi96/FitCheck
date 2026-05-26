@@ -89,3 +89,17 @@ extension UIImage {
         }
     }
 }
+
+extension Data {
+    var fitcheckImageMimeType: String {
+        if starts(with: [0x89, 0x50, 0x4E, 0x47]) {
+            return "image/png"
+        }
+
+        if starts(with: [0x52, 0x49, 0x46, 0x46]) {
+            return "image/webp"
+        }
+
+        return "image/jpeg"
+    }
+}

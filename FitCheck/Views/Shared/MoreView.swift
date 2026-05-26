@@ -22,6 +22,12 @@ struct MoreView: View {
             }
 
             NavigationLink {
+                AvatarStudioView()
+            } label: {
+                Label("Avatar Studio", systemImage: "person.crop.rectangle")
+            }
+
+            NavigationLink {
                 ScoringGuideView()
             } label: {
                 Label("Scoring", systemImage: "sum")

@@ -379,6 +379,35 @@ final class StylePreference: Identifiable {
 }
 
 @Model
+final class UserAvatar: Identifiable {
+    var id: UUID
+    var sourcePhotoData: Data?
+    var avatarImageData: Data?
+    var latestPreviewData: Data?
+    var notes: String
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(
+        id: UUID = UUID(),
+        sourcePhotoData: Data? = nil,
+        avatarImageData: Data? = nil,
+        latestPreviewData: Data? = nil,
+        notes: String = "",
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.sourcePhotoData = sourcePhotoData
+        self.avatarImageData = avatarImageData
+        self.latestPreviewData = latestPreviewData
+        self.notes = notes
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+@Model
 final class Trip: Identifiable {
     var id: UUID
     var title: String

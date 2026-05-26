@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct RecommendationCard: View {
     var recommendation: OutfitRecommendation
@@ -10,6 +11,10 @@ struct RecommendationCard: View {
     var aiReviewError: String? = nil
     var isAIReviewing = false
     var onAIReview: (() -> Void)?
+    var avatarPreviewData: Data? = nil
+    var avatarPreviewError: String? = nil
+    var isGeneratingAvatarPreview = false
+    var onAvatarPreview: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -68,14 +73,27 @@ struct RecommendationCard: View {
                     .foregroundStyle(.secondary)
             }
 
+            if let avatarPreviewData {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Avatar Preview", systemImage: "person.crop.rectangle")
+                        .font(.caption.weight(.semibold))
+                    FitCheckPhotoPreview(data: avatarPreviewData, height: 360)
+                }
+            } else if let avatarPreviewError {
+                Label(avatarPreviewError, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    if let primaryTitle, let onPrimary {
-                        Button(action: onPrimary) {
-                            Label(primaryTitle, systemImage: "checkmark")
-                        }
-                        .buttonStyle(.borderedProminent)
+                if let primaryTitle, let onPrimary {
+                    Button(action: onPrimary) {
+                        Label(primaryTitle, systemImage: "checkmark")
                     }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                HStack {
                     if let onAIReview {
                         if isAIReviewing {
                             ProgressView()
@@ -83,6 +101,18 @@ struct RecommendationCard: View {
                         } else {
                             Button(action: onAIReview) {
                                 Label("AI Review", systemImage: "sparkles")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+
+                    if let onAvatarPreview {
+                        if isGeneratingAvatarPreview {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Button(action: onAvatarPreview) {
+                                Label("Avatar Preview", systemImage: "person.crop.rectangle")
                             }
                             .buttonStyle(.bordered)
                         }

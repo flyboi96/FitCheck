@@ -34,6 +34,7 @@
 		FC00011A0000000000000001 /* FirebaseAccountService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC00021B0000000000000001 /* FirebaseAccountService.swift */; };
 		FC00011B0000000000000001 /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC00021C0000000000000001 /* AccountView.swift */; };
 		FC0001200000000000000001 /* BulkWardrobeImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002200000000000000001 /* BulkWardrobeImportView.swift */; };
+		FC0001210000000000000001 /* AvatarStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0002210000000000000001 /* AvatarStudioView.swift */; };
 		FC00011C0000000000000001 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = FC000A010000000000000001 /* FirebaseCore */; };
 		FC00011D0000000000000001 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = FC000A020000000000000001 /* FirebaseAuth */; };
 		FC00011E0000000000000001 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = FC000A030000000000000001 /* FirebaseFirestore */; };
@@ -70,6 +71,7 @@
 		FC00021C0000000000000001 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
 		FC00021D0000000000000001 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		FC0002200000000000000001 /* BulkWardrobeImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkWardrobeImportView.swift; sourceTree = "<group>"; };
+		FC0002210000000000000001 /* AvatarStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarStudioView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -147,6 +149,7 @@
 				FC0004110000000000000001 /* Account */,
 				FC0004080000000000000001 /* Closet */,
 				FC0004090000000000000001 /* Builder */,
+				FC0004120000000000000001 /* Avatar */,
 				FC00040A0000000000000001 /* History */,
 				FC00040B0000000000000001 /* Style */,
 				FC00040D0000000000000001 /* Trips */,
@@ -189,6 +192,14 @@
 				FC00020C0000000000000001 /* OutfitBuilderView.swift */,
 			);
 			path = Builder;
+			sourceTree = "<group>";
+		};
+		FC0004120000000000000001 /* Avatar */ = {
+			isa = PBXGroup;
+			children = (
+				FC0002210000000000000001 /* AvatarStudioView.swift */,
+			);
+			path = Avatar;
 			sourceTree = "<group>";
 		};
 		FC00040A0000000000000001 /* History */ = {
@@ -342,6 +353,7 @@
 				FC0001170000000000000001 /* PhotoImportSupport.swift in Sources */,
 				FC0001180000000000000001 /* WardrobePhotoImportView.swift in Sources */,
 				FC0001200000000000000001 /* BulkWardrobeImportView.swift in Sources */,
+				FC0001210000000000000001 /* AvatarStudioView.swift in Sources */,
 				FC0001190000000000000001 /* FitCheckFirebaseAppDelegate.swift in Sources */,
 				FC00011A0000000000000001 /* FirebaseAccountService.swift in Sources */,
 				FC00011B0000000000000001 /* AccountView.swift in Sources */,
@@ -508,7 +520,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = FitCheck;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
-				INFOPLIST_KEY_NSCameraUsageDescription = "FitCheck uses the camera to photograph clothing items for closet import.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "FitCheck uses the camera to photograph clothing items and avatar reference photos.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FitCheck uses your location to look up local weather for outfit recommendations.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -534,7 +546,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = FitCheck;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
-				INFOPLIST_KEY_NSCameraUsageDescription = "FitCheck uses the camera to photograph clothing items for closet import.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "FitCheck uses the camera to photograph clothing items and avatar reference photos.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FitCheck uses your location to look up local weather for outfit recommendations.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

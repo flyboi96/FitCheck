@@ -8,7 +8,8 @@ Small local backend for FitCheck AI outfit review, AI-first outfit selection, an
 2. Put your OpenAI API key in `OPENAI_API_KEY`.
 3. Optional but recommended: set `FITCHECK_PROXY_TOKEN`.
 4. Optional: set `OPENAI_VISION_MODEL` if you want clothing photo import to use a different model than outfit review.
-5. Run:
+5. Optional: set `OPENAI_IMAGE_MODEL` for avatar/outfit image previews. The default is `gpt-image-1`.
+6. Run:
 
 ```sh
 cd backend
@@ -30,3 +31,4 @@ For a physical iPhone, set `HOST=0.0.0.0` before starting the proxy and use your
 
 - `POST /outfit-recommendation` reviews a locally generated outfit or chooses an outfit from the closet when no candidate item IDs are supplied.
 - `POST /clothing-item-description` accepts a compressed base64 image plus optional user notes and returns an editable clothing-item draft.
+- `POST /avatar-outfit-preview` accepts a compressed user reference photo plus outfit, weather, location, and style context, then returns a base64 PNG preview.

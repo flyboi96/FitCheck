@@ -13,6 +13,7 @@ struct AccountView: View {
     @State private var draft = AccountProfileDraft()
     @State private var statusMessage = ""
     @State private var cloudClosetStatus = ""
+    @State private var isPasswordVisible = false
 
     var body: some View {
         Group {
@@ -72,9 +73,7 @@ struct AccountView: View {
                     .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                SecureField("Password", text: $draft.password)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                passwordField
 
                 if authMode == .register {
                     TextField("Name", text: $draft.displayName)
@@ -107,6 +106,28 @@ struct AccountView: View {
 
                 statusMessages
             }
+        }
+    }
+
+    private var passwordField: some View {
+        HStack {
+            Group {
+                if isPasswordVisible {
+                    TextField("Password", text: $draft.password)
+                } else {
+                    SecureField("Password", text: $draft.password)
+                }
+            }
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+
+            Button {
+                isPasswordVisible.toggle()
+            } label: {
+                Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isPasswordVisible ? "Hide password" : "Show password")
         }
     }
 
@@ -191,6 +212,18 @@ struct AccountView: View {
 
     private var styleProfileFields: some View {
         Section("Style Preferences") {
+            DisclosureGroup("What these mean") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Style summary: the overall vibe FitCheck should aim for.")
+                    Text("Favorite looks: outfits or references you tend to like.")
+                    Text("Preferred colors and fit: what usually feels natural on you.")
+                    Text("Boldness: how experimental recommendations should be.")
+                    Text("Disliked combinations and rules: hard no's the app should avoid.")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("Style summary")
                     .font(.caption)

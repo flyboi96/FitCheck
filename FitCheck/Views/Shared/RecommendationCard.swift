@@ -7,6 +7,7 @@ struct RecommendationCard: View {
     var onPrimary: (() -> Void)?
     var onGood: (() -> Void)?
     var onBad: (() -> Void)?
+    var onFeedback: (() -> Void)?
     var aiReview: AIOutfitResponse? = nil
     var aiReviewError: String? = nil
     var isAIReviewing = false
@@ -132,6 +133,12 @@ struct RecommendationCard: View {
                         }
                         .buttonStyle(.bordered)
                     }
+                    if let onFeedback {
+                        Button(action: onFeedback) {
+                            Label("Feedback", systemImage: "text.bubble")
+                        }
+                        .buttonStyle(.bordered)
+                    }
                 }
             }
         }
@@ -140,5 +147,63 @@ struct RecommendationCard: View {
 
     private func iconName(for category: ClothingCategory) -> String {
         category.systemImageName
+    }
+}
+
+struct OutfitFeedbackEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var title: String
+    var initialType: FeedbackType = .badOutfit
+    var onSave: (FeedbackType, String) -> Void
+
+    @State private var selectedType: FeedbackType
+    @State private var note = ""
+
+    init(
+        title: String,
+        initialType: FeedbackType = .badOutfit,
+        onSave: @escaping (FeedbackType, String) -> Void
+    ) {
+        self.title = title
+        self.initialType = initialType
+        self.onSave = onSave
+        _selectedType = State(initialValue: initialType)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Feedback") {
+                    Picker("Type", selection: $selectedType) {
+                        ForEach(FeedbackType.allCases) { type in
+                            Text(type.displayName).tag(type)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("What should FitCheck remember?")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: $note)
+                            .frame(minHeight: 120)
+                    }
+                }
+            }
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(selectedType, note.trimmingCharacters(in: .whitespacesAndNewlines))
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }

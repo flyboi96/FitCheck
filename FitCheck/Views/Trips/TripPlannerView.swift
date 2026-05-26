@@ -157,11 +157,17 @@ private struct TripDetailView: View {
     @Query(sort: \Feedback.createdAt, order: .reverse) private var feedback: [Feedback]
     @Query private var preferences: [StylePreference]
 
+    @AppStorage("fitcheckUseAIProxy") private var useAIProxy = false
+    @AppStorage("fitcheckAIProxyURL") private var aiProxyURL = ""
+    @AppStorage("fitcheckAIProxyToken") private var aiProxyToken = ""
+    @AppStorage("fitcheckWearerProfile") private var wearerProfile = WearerProfileOption.unspecified.rawValue
+
     @Bindable var trip: Trip
     @State private var showingStopEditor = false
     @State private var isGeneratingPackingList = false
     @State private var isGeneratingItinerary = false
     @State private var feedbackStatus = ""
+    @State private var feedbackItinerary: DailyItineraryOutfit?
 
     private let service = TripPlanningService()
 
@@ -230,13 +236,14 @@ private struct TripDetailView: View {
                             closet: closetItems,
                             feedback: feedback,
                             stylePreference: preferences.first,
-                            context: modelContext
+                            context: modelContext,
+                            aiOptions: tripAIOptions
                         )
                         try? modelContext.save()
                         isGeneratingItinerary = false
                     }
                 } label: {
-                    Label(isGeneratingItinerary ? "Generating Itinerary" : "Outfit Itinerary", systemImage: "calendar")
+                    Label(isGeneratingItinerary ? "Generating Itinerary" : itineraryButtonTitle, systemImage: "calendar")
                 }
                 .disabled(isGeneratingItinerary || trip.stops.isEmpty)
             }
@@ -327,6 +334,11 @@ private struct TripDetailView: View {
                                 } label: {
                                     Label("Issue", systemImage: "exclamationmark.bubble")
                                 }
+                                Button {
+                                    feedbackItinerary = itinerary
+                                } label: {
+                                    Label("Add Note", systemImage: "text.bubble")
+                                }
                             }
                             .font(.caption)
                             .buttonStyle(.borderless)
@@ -344,6 +356,11 @@ private struct TripDetailView: View {
         .sheet(isPresented: $showingStopEditor) {
             NavigationStack {
                 TripStopEditorView(trip: trip)
+            }
+        }
+        .sheet(item: $feedbackItinerary) { itinerary in
+            OutfitFeedbackEditorView(title: "Itinerary Feedback") { type, note in
+                recordFeedback(for: itinerary, type: type, note: note)
             }
         }
         .onChange(of: trip.laundryIntervalDays) { _, _ in
@@ -371,11 +388,16 @@ private struct TripDetailView: View {
     }
 
     private func recordFeedback(for itinerary: DailyItineraryOutfit, type: FeedbackType) {
+        recordFeedback(for: itinerary, type: type, note: "")
+    }
+
+    private func recordFeedback(for itinerary: DailyItineraryOutfit, type: FeedbackType, note: String) {
         guard let outfit = itinerary.outfit else { return }
-        let note = "Trip itinerary: \(trip.title), \(TripPlannerView.dateFormatter.string(from: itinerary.date))"
+        let baseNote = "Trip itinerary: \(trip.title), \(TripPlannerView.dateFormatter.string(from: itinerary.date))"
+        let fullNote = note.isEmpty ? baseNote : "\(baseNote) - \(note)"
         let entry = Feedback(
             type: type,
-            note: note,
+            note: fullNote,
             combinationKey: OutfitRecommendation.combinationKey(for: outfit.items.compactMap(\.item)),
             outfit: outfit
         )
@@ -390,6 +412,55 @@ private struct TripDetailView: View {
             .filter { $0.outfit?.id == outfit.id }
             .sorted { $0.createdAt > $1.createdAt }
             .first
+    }
+
+    private var itineraryButtonTitle: String {
+        tripAIOptions == nil ? "Outfit Itinerary" : "AI Outfit Itinerary"
+    }
+
+    private var tripAIOptions: TripAIOptions? {
+        guard useAIProxy, let baseURL = configuredAIProxyURL else { return nil }
+        let token = aiProxyToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        return TripAIOptions(
+            client: BackendOutfitAIClient(baseURL: baseURL, proxyToken: token.isEmpty ? nil : token),
+            styleDescription: styleDescription,
+            recentFeedback: feedback.prefix(12).map(feedbackSummary)
+        )
+    }
+
+    private var configuredAIProxyURL: URL? {
+        let trimmed = aiProxyURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return URL(string: trimmed)
+    }
+
+    private var styleDescription: String {
+        let currentWearerProfile = WearerProfileOption(rawValue: wearerProfile) ?? .unspecified
+        let wearerLine = currentWearerProfile == .unspecified ? nil : "Wearer profile: \(currentWearerProfile.displayName)"
+        guard let preference = preferences.first else { return wearerLine ?? "" }
+        return [
+            wearerLine,
+            preference.styleDescription,
+            preference.favoriteLooks,
+            preference.preferredColors,
+            preference.preferredFit,
+            preference.rules,
+            preference.dislikedCombinations.isEmpty ? nil : "Avoid: \(preference.dislikedCombinations)"
+        ]
+        .compactMap { $0 }
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .joined(separator: "\n")
+    }
+
+    private func feedbackSummary(_ entry: Feedback) -> String {
+        [
+            entry.type.displayName,
+            entry.note,
+            entry.item?.name
+        ]
+        .compactMap { $0 }
+        .filter { !$0.isEmpty }
+        .joined(separator: " - ")
     }
 
     private func packingTitle(for item: PackingListItem) -> String {
@@ -477,6 +548,7 @@ private struct TripStopEditorView: View {
     @State private var location = ""
     @State private var startsAt: Date
     @State private var endsAt: Date
+    @State private var expectedWeather = ""
     @State private var customsNotes = ""
 
     init(trip: Trip) {
@@ -491,6 +563,8 @@ private struct TripStopEditorView: View {
                 .textInputAutocapitalization(.words)
             DatePicker("Start", selection: $startsAt, displayedComponents: .date)
             DatePicker("End", selection: $endsAt, displayedComponents: .date)
+            TextField("Manual weather if lookup fails", text: $expectedWeather)
+                .textInputAutocapitalization(.sentences)
             TextField("Activities or local notes", text: $customsNotes)
                 .textInputAutocapitalization(.sentences)
         }
@@ -515,7 +589,7 @@ private struct TripStopEditorView: View {
             location: location.trimmingCharacters(in: .whitespacesAndNewlines),
             startsAt: startsAt,
             endsAt: startsAt > endsAt ? startsAt : endsAt,
-            expectedWeather: "",
+            expectedWeather: expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines),
             customsNotes: customsNotes,
             trip: trip
         )

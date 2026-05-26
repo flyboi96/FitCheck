@@ -149,6 +149,33 @@ const clothingDescriptionSchema = {
   }
 };
 
+const styleProfileSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "styleDescription",
+    "favoriteLooks",
+    "preferredColors",
+    "preferredFit",
+    "dislikedCombinations",
+    "rules",
+    "boldness"
+  ],
+  properties: {
+    styleDescription: { type: "string" },
+    favoriteLooks: { type: "string" },
+    preferredColors: { type: "string" },
+    preferredFit: { type: "string" },
+    dislikedCombinations: { type: "string" },
+    rules: { type: "string" },
+    boldness: {
+      type: "integer",
+      minimum: 1,
+      maximum: 5
+    }
+  }
+};
+
 const instructions = `
 You are FitCheck's private outfit reviewer. Review outfits for a single user's real closet.
 Use practical, modern personal style judgment: color harmony, silhouette, material, weather, occasion,
@@ -177,6 +204,18 @@ Rules:
 - If uncertain, say so briefly in notes instead of inventing details.
 `;
 
+const styleProfileInstructions = `
+You are FitCheck's private style profile interviewer. Convert a user's plain-language answers
+and existing profile fields into an editable wardrobe preference profile.
+
+Rules:
+- Keep the profile practical and personal, not generic fashion advice.
+- Preserve any strong existing preferences unless the new answers clearly update them.
+- Use concise phrases that are useful for outfit recommendation.
+- Boldness is 1 for very conservative/classic, 3 for balanced, and 5 for experimental.
+- Put hard no's and repeated issues in dislikedCombinations or rules.
+`;
+
 const server = http.createServer(async (request, response) => {
   setCommonHeaders(response);
   const requestURL = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
@@ -202,6 +241,7 @@ const server = http.createServer(async (request, response) => {
   const supportedPostRoutes = new Set([
     "/outfit-recommendation",
     "/clothing-item-description",
+    "/style-profile-draft",
     "/avatar-outfit-preview"
   ]);
 
@@ -232,6 +272,12 @@ const server = http.createServer(async (request, response) => {
     if (pathname === "/avatar-outfit-preview") {
       const preview = await generateAvatarOutfitPreview(body);
       sendJSON(response, 200, preview);
+      return;
+    }
+
+    if (pathname === "/style-profile-draft") {
+      const profile = await generateStyleProfile(body);
+      sendJSON(response, 200, profile);
       return;
     }
 
@@ -448,6 +494,85 @@ async function describeClothingItem(requestBody) {
     occasionSuitability: String(parsed.occasionSuitability ?? "").trim(),
     activitySuitability: String(parsed.activitySuitability ?? "").trim(),
     notes: String(parsed.notes ?? "").trim()
+  };
+}
+
+async function generateStyleProfile(requestBody) {
+  const questionnaireAnswers = String(requestBody.questionnaireAnswers ?? "").trim();
+  if (!questionnaireAnswers) {
+    throw httpError(400, "questionnaireAnswers is required");
+  }
+
+  const promptPayload = {
+    wearerProfile: requestBody.wearerProfile ?? "",
+    currentProfile: {
+      styleDescription: requestBody.currentStyleDescription ?? "",
+      favoriteLooks: requestBody.currentFavoriteLooks ?? "",
+      preferredColors: requestBody.currentPreferredColors ?? "",
+      preferredFit: requestBody.currentPreferredFit ?? "",
+      dislikedCombinations: requestBody.currentDislikedCombinations ?? "",
+      rules: requestBody.currentRules ?? "",
+      boldness: requestBody.currentBoldness ?? 3
+    },
+    questionnaireAnswers
+  };
+
+  const openAIResponse = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${openAIKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: openAIModel,
+      instructions: styleProfileInstructions,
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: JSON.stringify(promptPayload)
+            }
+          ]
+        }
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "fitcheck_style_profile",
+          strict: true,
+          schema: styleProfileSchema
+        }
+      },
+      max_output_tokens: 1200,
+      store: false
+    })
+  });
+
+  const data = await openAIResponse.json().catch(() => ({}));
+  if (!openAIResponse.ok) {
+    throw httpError(openAIResponse.status, data.error?.message ?? "OpenAI request failed");
+  }
+
+  const outputText = extractOpenAIText(data);
+  if (!outputText) {
+    const refusal = extractOpenAIRefusal(data);
+    if (refusal) {
+      throw new Error(`OpenAI refused the request: ${refusal}`);
+    }
+    throw new Error("OpenAI response did not include output text");
+  }
+
+  const parsed = JSON.parse(outputText);
+  return {
+    styleDescription: String(parsed.styleDescription ?? "").trim(),
+    favoriteLooks: String(parsed.favoriteLooks ?? "").trim(),
+    preferredColors: String(parsed.preferredColors ?? "").trim(),
+    preferredFit: String(parsed.preferredFit ?? "").trim(),
+    dislikedCombinations: String(parsed.dislikedCombinations ?? "").trim(),
+    rules: String(parsed.rules ?? "").trim(),
+    boldness: clampInteger(parsed.boldness, 1, 5, 3)
   };
 }
 

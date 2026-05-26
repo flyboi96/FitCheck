@@ -44,7 +44,7 @@ Firebase is used for optional login and profile sync. SwiftData remains the loca
 4. Add that plist to the FitCheck app target in Xcode. The file is gitignored so local Firebase project details do not need to be committed.
 5. Enable Email/Password under Firebase Authentication.
 6. Create a Cloud Firestore database.
-7. Publish rules equivalent to `firestore.rules` so users can only read and write their own `users/{uid}` document and nested user data.
+7. Publish rules equivalent to `firestore.rules` so users can only read and write their own `users/{uid}` document and nested user data. From this folder, `firebase deploy --only firestore:rules` will use `firebase.json`.
 
 After setup, open More > Account in FitCheck to register or sign in. Saving the account profile writes to Firestore and also applies the same gender/style preferences locally for outfit recommendations. Use the Cloud Personalization section to upload or download closet metadata for that signed-in user.
 

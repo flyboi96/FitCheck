@@ -1,6 +1,12 @@
 import Foundation
 import SwiftData
 
+struct TripAIOptions {
+    var client: BackendOutfitAIClient
+    var styleDescription: String
+    var recentFeedback: [String]
+}
+
 @MainActor
 struct TripPlanningService {
     private let weatherClient = OpenMeteoWeatherClient()
@@ -55,7 +61,8 @@ struct TripPlanningService {
         closet: [ClothingItem],
         feedback: [Feedback],
         stylePreference: StylePreference?,
-        context: ModelContext
+        context: ModelContext,
+        aiOptions: TripAIOptions? = nil
     ) async {
         await refreshStopWeather(for: trip.stops)
 
@@ -97,20 +104,36 @@ struct TripPlanningService {
                 trip: trip
             )
 
-            guard let recommendation = engine.recommend(
+            let localRecommendations = engine.recommend(
                 closet: availableCloset,
                 feedback: feedback,
                 stylePreference: stylePreference,
                 request: request,
-                limit: 1
-            ).first ?? engine.recommend(
+                limit: 3
+            )
+            let fallbackRecommendations = engine.recommend(
                 closet: closet,
                 feedback: feedback,
                 stylePreference: stylePreference,
                 request: request,
-                limit: 1
-            ).first else {
+                limit: 3
+            )
+
+            guard var recommendation = localRecommendations.first ?? fallbackRecommendations.first else {
                 continue
+            }
+
+            if let aiOptions,
+               let aiRecommendation = await aiFilteredRecommendation(
+                localRecommendation: recommendation,
+                closet: availableCloset.isEmpty ? closet : availableCloset,
+                feedback: feedback,
+                stylePreference: stylePreference,
+                request: request,
+                aiOptions: aiOptions,
+                engine: engine
+               ) {
+                recommendation = aiRecommendation
             }
 
             recordPlannedWears(for: recommendation.items, counts: &plannedWearCounts)
@@ -167,6 +190,45 @@ struct TripPlanningService {
 
         var seen = Set<UUID>()
         return chosen.filter { seen.insert($0.id).inserted }
+    }
+
+    private func aiFilteredRecommendation(
+        localRecommendation: OutfitRecommendation,
+        closet: [ClothingItem],
+        feedback: [Feedback],
+        stylePreference: StylePreference?,
+        request: RecommendationRequest,
+        aiOptions: TripAIOptions,
+        engine: OutfitRecommendationEngine
+    ) async -> OutfitRecommendation? {
+        do {
+            let response = try await aiOptions.client.suggestOutfit(
+                request: AIOutfitRequest(
+                    closet: closet.map(AIClothingItemPayload.init),
+                    weatherSummary: request.weather.summary,
+                    occasion: request.occasion,
+                    activity: request.activity,
+                    styleDescription: aiOptions.styleDescription,
+                    selectedItemID: nil,
+                    candidateItemIDs: localRecommendation.items.map(\.id),
+                    localScore: localRecommendation.score,
+                    localNotes: localRecommendation.notes,
+                    recentFeedback: aiOptions.recentFeedback
+                )
+            )
+            let itemsByID = Dictionary(uniqueKeysWithValues: closet.map { ($0.id, $0) })
+            let items = response.itemIDs.compactMap { itemsByID[$0] }
+            guard items.count >= 2 else { return nil }
+            return engine.scoreExistingOutfit(
+                items: items,
+                feedback: feedback,
+                stylePreference: stylePreference,
+                request: request,
+                title: "AI Trip Fit"
+            )
+        } catch {
+            return nil
+        }
     }
 
     private func chooseItems(from closet: [ClothingItem], categories: Set<ClothingCategory>, limit: Int) -> [ClothingItem] {
@@ -310,6 +372,10 @@ struct TripPlanningService {
 
     private func refreshStopWeather(for stops: [TripStop]) async {
         for stop in stops where !stop.location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let hasManualWeather = !stop.expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !stop.expectedWeather.localizedCaseInsensitiveContains("lookup unavailable")
+            guard !hasManualWeather else { continue }
+
             if let result = await weatherResult(for: stop.location, date: stop.startsAt) {
                 stop.expectedWeather = weatherSummaryText(for: result)
             } else {

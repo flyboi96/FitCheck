@@ -16,6 +16,12 @@ struct TodayOutfitView: View {
 
     @StateObject private var weatherLookup = WeatherLookupController()
     @State private var manualLocationQuery = ""
+    @State private var manualWeatherLocation = ""
+    @State private var manualWeatherTemperature = "72"
+    @State private var manualWeatherWind = "5"
+    @State private var manualWeatherCondition = "Clear"
+    @State private var manualWeatherIsRaining = false
+    @State private var manualWeatherOverride: WeatherInput?
     @State private var selectedContext = OutfitContextOption.casualDay.rawValue
     @State private var recommendations: [OutfitRecommendation] = []
     @State private var aiReviews: [String: AIOutfitResponse] = [:]
@@ -24,7 +30,10 @@ struct TodayOutfitView: View {
     @State private var avatarPreviews: [String: Data] = [:]
     @State private var avatarPreviewErrors: [String: String] = [:]
     @State private var avatarPreviewingCombinationKeys = Set<String>()
+    @State private var isAIChoosingOutfit = false
+    @State private var aiBuildError = ""
     @State private var lastAction: TodayUndoAction?
+    @State private var feedbackTarget: OutfitRecommendation?
 
     private let engine = OutfitRecommendationEngine()
     private let historyService = FitCheckHistoryService()
@@ -48,6 +57,8 @@ struct TodayOutfitView: View {
                     Label("Look Up Location", systemImage: "magnifyingglass")
                 }
                 .disabled(weatherLookup.isLoading || manualLocationQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                manualWeatherControls
             }
 
             Section("Context") {
@@ -61,7 +72,26 @@ struct TodayOutfitView: View {
                 } label: {
                     Label("Generate Outfit", systemImage: "wand.and.stars")
                 }
-                .disabled(!hasEnoughItemsForOutfit || weatherLookup.result == nil)
+                .disabled(!hasEnoughItemsForOutfit || effectiveWeather == nil)
+
+                Button {
+                    Task {
+                        await generateWithAIFirst()
+                    }
+                } label: {
+                    if isAIChoosingOutfit {
+                        Label("Asking AI", systemImage: "sparkles")
+                    } else {
+                        Label("Ask AI First", systemImage: "sparkles")
+                    }
+                }
+                .disabled(!canAskAIForOutfit)
+
+                if !aiBuildError.isEmpty {
+                    Text(aiBuildError)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if !hasEnoughItemsForOutfit {
@@ -94,6 +124,7 @@ struct TodayOutfitView: View {
                             onPrimary: { logWear(recommendation, feedbackType: nil) },
                             onGood: { logWear(recommendation, feedbackType: .goodOutfit) },
                             onBad: { recordNegativeFeedback(for: recommendation, type: .badOutfit) },
+                            onFeedback: { feedbackTarget = recommendation },
                             aiReview: aiReviews[recommendation.combinationKey],
                             aiReviewError: aiReviewErrors[recommendation.combinationKey],
                             isAIReviewing: reviewingCombinationKeys.contains(recommendation.combinationKey),
@@ -117,6 +148,11 @@ struct TodayOutfitView: View {
                 refreshWeather()
             }
         }
+        .sheet(item: $feedbackTarget) { recommendation in
+            OutfitFeedbackEditorView(title: "Outfit Feedback") { type, note in
+                recordFeedback(for: recommendation, type: type, note: note)
+            }
+        }
     }
 
     private var activeItems: [ClothingItem] {
@@ -133,12 +169,24 @@ struct TodayOutfitView: View {
     }
 
     private var currentWeather: WeatherInput {
-        weatherLookup.result?.input ?? WeatherLookupFallback.defaultWeather
+        effectiveWeather ?? WeatherLookupFallback.defaultWeather
+    }
+
+    private var effectiveWeather: WeatherInput? {
+        manualWeatherOverride ?? weatherLookup.result?.input
     }
 
     @ViewBuilder
     private var weatherStatus: some View {
-        if weatherLookup.isLoading {
+        if let manualWeatherOverride {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(Int(manualWeatherOverride.temperatureF.rounded()))F · \(manualWeatherCondition)")
+                    .font(.body.weight(.medium))
+                Text("\(manualWeatherOverride.location) · Wind \(Int(manualWeatherOverride.windMph.rounded())) mph · Manual weather")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } else if weatherLookup.isLoading {
             Label("Looking up weather", systemImage: "cloud.sun")
                 .foregroundStyle(.secondary)
         } else if let result = weatherLookup.result {
@@ -161,6 +209,35 @@ struct TodayOutfitView: View {
         }
     }
 
+    private var manualWeatherControls: some View {
+        DisclosureGroup("Manual Weather") {
+            TextField("City or place", text: $manualWeatherLocation)
+                .textInputAutocapitalization(.words)
+            TextField("Temperature F", text: $manualWeatherTemperature)
+                .keyboardType(.numbersAndPunctuation)
+            TextField("Condition", text: $manualWeatherCondition)
+                .textInputAutocapitalization(.words)
+            Toggle("Raining", isOn: $manualWeatherIsRaining)
+            TextField("Wind mph", text: $manualWeatherWind)
+                .keyboardType(.numbersAndPunctuation)
+
+            HStack {
+                Button {
+                    applyManualWeather()
+                } label: {
+                    Label("Use Manual Weather", systemImage: "thermometer.sun")
+                }
+                .disabled(manualWeatherInput == nil)
+
+                if manualWeatherOverride != nil {
+                    Button("Clear") {
+                        manualWeatherOverride = nil
+                    }
+                }
+            }
+        }
+    }
+
     private func refreshWeather() {
         weatherLookup.refresh(defaultLocationName: fallbackName)
     }
@@ -170,11 +247,12 @@ struct TodayOutfitView: View {
     }
 
     private func generate() {
-        guard weatherLookup.result != nil else { return }
+        guard effectiveWeather != nil else { return }
         aiReviews = [:]
         aiReviewErrors = [:]
         avatarPreviews = [:]
         avatarPreviewErrors = [:]
+        aiBuildError = ""
         recommendations = engine.recommend(
             closet: closetItems,
             feedback: feedback,
@@ -186,6 +264,86 @@ struct TodayOutfitView: View {
                 selectedItem: nil
             )
         )
+    }
+
+    private var canAskAIForOutfit: Bool {
+        useAIProxy &&
+        configuredAIProxyURL != nil &&
+        effectiveWeather != nil &&
+        !isAIChoosingOutfit &&
+        activeItems.count >= 3
+    }
+
+    @MainActor
+    private func generateWithAIFirst() async {
+        guard let baseURL = configuredAIProxyURL, effectiveWeather != nil else { return }
+
+        isAIChoosingOutfit = true
+        aiBuildError = ""
+        aiReviews = [:]
+        aiReviewErrors = [:]
+        avatarPreviews = [:]
+        avatarPreviewErrors = [:]
+        defer {
+            isAIChoosingOutfit = false
+        }
+
+        let token = aiProxyToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let client = BackendOutfitAIClient(baseURL: baseURL, proxyToken: token.isEmpty ? nil : token)
+
+        do {
+            let response = try await client.suggestOutfit(
+                request: aiRequest(
+                    candidateItemIDs: [],
+                    localScore: nil,
+                    localNotes: []
+                )
+            )
+            let itemsByID = Dictionary(uniqueKeysWithValues: closetItems.map { ($0.id, $0) })
+            let chosenItems = response.itemIDs.compactMap { itemsByID[$0] }
+
+            guard chosenItems.count >= 2 else {
+                aiBuildError = "AI did not return enough closet items."
+                return
+            }
+
+            let recommendation = engine.scoreExistingOutfit(
+                items: chosenItems,
+                feedback: feedback,
+                stylePreference: stylePreferences.first,
+                request: RecommendationRequest(
+                    weather: currentWeather,
+                    occasion: currentContext.occasion,
+                    activity: currentContext.activity,
+                    selectedItem: nil
+                ),
+                title: "AI Fit"
+            )
+
+            recommendations = [recommendation]
+            aiReviews[recommendation.combinationKey] = response
+        } catch {
+            aiBuildError = error.localizedDescription
+        }
+    }
+
+    private var manualWeatherInput: WeatherInput? {
+        guard let temperature = Double(manualWeatherTemperature.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return nil
+        }
+        let wind = Double(manualWeatherWind.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        let location = manualWeatherLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+        return WeatherInput(
+            temperatureF: temperature,
+            isRaining: manualWeatherIsRaining,
+            windMph: wind,
+            location: location.isEmpty ? "Manual location" : location
+        )
+    }
+
+    private func applyManualWeather() {
+        guard let manualWeatherInput else { return }
+        manualWeatherOverride = manualWeatherInput
     }
 
     private func logWear(_ recommendation: OutfitRecommendation, feedbackType: FeedbackType?) {
@@ -225,10 +383,14 @@ struct TodayOutfitView: View {
     }
 
     private func recordNegativeFeedback(for recommendation: OutfitRecommendation, type: FeedbackType) {
-        let entry = Feedback(type: type, combinationKey: recommendation.combinationKey)
+        recordFeedback(for: recommendation, type: type, note: "")
+    }
+
+    private func recordFeedback(for recommendation: OutfitRecommendation, type: FeedbackType, note: String) {
+        let entry = Feedback(type: type, note: note, combinationKey: recommendation.combinationKey)
         modelContext.insert(entry)
         try? modelContext.save()
-        lastAction = .feedback(entry.id, "Saved rejection feedback.")
+        lastAction = .feedback(entry.id, "Saved \(type.displayName.lowercased()) feedback.")
         generate()
     }
 
@@ -357,16 +519,28 @@ struct TodayOutfitView: View {
     }
 
     private func aiRequest(for recommendation: OutfitRecommendation, selectedItemID: UUID?) -> AIOutfitRequest {
+        aiRequest(
+            candidateItemIDs: recommendation.items.map(\.id),
+            localScore: recommendation.score,
+            localNotes: recommendation.notes
+        )
+    }
+
+    private func aiRequest(
+        candidateItemIDs: [UUID],
+        localScore: Double?,
+        localNotes: [String]
+    ) -> AIOutfitRequest {
         AIOutfitRequest(
             closet: closetItems.map(AIClothingItemPayload.init),
             weatherSummary: currentWeather.summary,
             occasion: currentContext.occasion,
             activity: currentContext.activity,
             styleDescription: styleDescription,
-            selectedItemID: selectedItemID,
-            candidateItemIDs: recommendation.items.map(\.id),
-            localScore: recommendation.score,
-            localNotes: recommendation.notes,
+            selectedItemID: nil,
+            candidateItemIDs: candidateItemIDs,
+            localScore: localScore,
+            localNotes: localNotes,
             recentFeedback: feedback.prefix(12).map(feedbackSummary)
         )
     }
@@ -408,7 +582,7 @@ struct TodayOutfitView: View {
     }
 
     private var currentWeatherCondition: String {
-        weatherLookup.result?.condition ?? ""
+        manualWeatherOverride == nil ? weatherLookup.result?.condition ?? "" : manualWeatherCondition
     }
 
     private func avatarBackgroundContext(for weather: WeatherInput, condition: String) -> String {

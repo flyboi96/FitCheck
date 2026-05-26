@@ -89,6 +89,28 @@ struct AIAvatarPreviewResponse: Codable {
     var promptSummary: String
 }
 
+struct AIStyleProfileRequest: Codable {
+    var wearerProfile: String
+    var currentStyleDescription: String
+    var currentFavoriteLooks: String
+    var currentPreferredColors: String
+    var currentPreferredFit: String
+    var currentDislikedCombinations: String
+    var currentRules: String
+    var currentBoldness: Int
+    var questionnaireAnswers: String
+}
+
+struct AIStyleProfileResponse: Codable {
+    var styleDescription: String
+    var favoriteLooks: String
+    var preferredColors: String
+    var preferredFit: String
+    var dislikedCombinations: String
+    var rules: String
+    var boldness: Int
+}
+
 protocol OutfitAIClient {
     func suggestOutfit(request: AIOutfitRequest) async throws -> AIOutfitResponse
 }
@@ -192,5 +214,28 @@ struct BackendOutfitAIClient: OutfitAIClient {
             throw OutfitAIClientError.invalidResponse
         }
         return try JSONDecoder().decode(AIAvatarPreviewResponse.self, from: data)
+    }
+
+    func generateStyleProfile(request: AIStyleProfileRequest) async throws -> AIStyleProfileResponse {
+        let endpoint = baseURL.appending(path: "style-profile-draft")
+        var urlRequest = URLRequest(url: endpoint)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let proxyToken, !proxyToken.isEmpty {
+            urlRequest.setValue(proxyToken, forHTTPHeaderField: "X-FitCheck-Token")
+        }
+        urlRequest.httpBody = try JSONEncoder().encode(request)
+
+        let (data, response) = try await session.data(for: urlRequest)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw OutfitAIClientError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            if let proxyError = try? JSONDecoder().decode(AIProxyErrorResponse.self, from: data) {
+                throw OutfitAIClientError.serverMessage(proxyError.error)
+            }
+            throw OutfitAIClientError.invalidResponse
+        }
+        return try JSONDecoder().decode(AIStyleProfileResponse.self, from: data)
     }
 }

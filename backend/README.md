@@ -32,4 +32,5 @@ For a physical iPhone, set `HOST=0.0.0.0` before starting the proxy and use your
 
 - `POST /outfit-recommendation` reviews a locally generated outfit or chooses an outfit from the closet when no candidate item IDs are supplied.
 - `POST /clothing-item-description` accepts a compressed base64 image plus optional user notes and returns an editable clothing-item draft.
+- `POST /style-profile-draft` turns guided style answers into editable style-preference fields.
 - `POST /avatar-outfit-preview` accepts a compressed user reference photo plus outfit, weather, location, and style context, then returns a base64 PNG preview.

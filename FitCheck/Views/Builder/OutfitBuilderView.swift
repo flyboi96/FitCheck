@@ -16,6 +16,12 @@ struct OutfitBuilderView: View {
 
     @StateObject private var weatherLookup = WeatherLookupController()
     @State private var manualLocationQuery = ""
+    @State private var manualWeatherLocation = ""
+    @State private var manualWeatherTemperature = "72"
+    @State private var manualWeatherWind = "5"
+    @State private var manualWeatherCondition = "Clear"
+    @State private var manualWeatherIsRaining = false
+    @State private var manualWeatherOverride: WeatherInput?
     @State private var selectedItemID: UUID?
     @State private var itemSearchText = ""
     @State private var selectedCategoryRawValue = "all"
@@ -29,6 +35,7 @@ struct OutfitBuilderView: View {
     @State private var avatarPreviewingCombinationKeys = Set<String>()
     @State private var isAIChoosingOutfit = false
     @State private var aiBuildError = ""
+    @State private var feedbackTarget: OutfitRecommendation?
 
     private let engine = OutfitRecommendationEngine()
 
@@ -64,33 +71,10 @@ struct OutfitBuilderView: View {
                     ContentUnavailableView("No Matching Items", systemImage: "magnifyingglass")
                 }
             } else {
-                ForEach(filteredItemGroups) { group in
-                    Section(group.category.displayName) {
-                        ForEach(group.items) { item in
-                            Button {
-                                selectedItemID = item.id
-                            } label: {
-                                HStack {
-                                    Image(systemName: iconName(for: item.category))
-                                        .frame(width: 24)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.name)
-                                            .font(.body.weight(item.id == selectedItemID ? .semibold : .regular))
-                                        Text(itemDetail(for: item))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    if item.id == selectedItemID {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(.tint)
-                                    }
-                                }
-                            }
-                            .foregroundStyle(.primary)
-                        }
-                    }
-                }
+                BuilderItemSelectionList(
+                    groups: filteredItemGroups,
+                    selectedItemID: $selectedItemID
+                )
             }
 
             Section("Weather") {
@@ -110,6 +94,8 @@ struct OutfitBuilderView: View {
                     Label("Look Up Location", systemImage: "magnifyingglass")
                 }
                 .disabled(weatherLookup.isLoading || manualLocationQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                manualWeatherControls
             }
 
             Section("Context") {
@@ -123,7 +109,7 @@ struct OutfitBuilderView: View {
                 } label: {
                     Label("Build Outfit", systemImage: "wand.and.stars")
                 }
-                .disabled(selectedItem == nil || weatherLookup.result == nil)
+                .disabled(selectedItem == nil || effectiveWeather == nil)
 
                 Button {
                     Task {
@@ -154,6 +140,7 @@ struct OutfitBuilderView: View {
                     ForEach(recommendations) { recommendation in
                         RecommendationCard(
                             recommendation: recommendation,
+                            onFeedback: { feedbackTarget = recommendation },
                             aiReview: aiReviews[recommendation.combinationKey],
                             aiReviewError: aiReviewErrors[recommendation.combinationKey],
                             isAIReviewing: reviewingCombinationKeys.contains(recommendation.combinationKey),
@@ -171,6 +158,11 @@ struct OutfitBuilderView: View {
         .task {
             if weatherLookup.result == nil {
                 refreshWeather()
+            }
+        }
+        .sheet(item: $feedbackTarget) { recommendation in
+            OutfitFeedbackEditorView(title: "Builder Feedback") { type, note in
+                recordFeedback(for: recommendation, type: type, note: note)
             }
         }
     }
@@ -213,7 +205,15 @@ struct OutfitBuilderView: View {
 
     @ViewBuilder
     private var weatherStatus: some View {
-        if weatherLookup.isLoading {
+        if let manualWeatherOverride {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(Int(manualWeatherOverride.temperatureF.rounded()))F · \(manualWeatherCondition)")
+                    .font(.body.weight(.medium))
+                Text("\(manualWeatherOverride.location) · Wind \(Int(manualWeatherOverride.windMph.rounded())) mph · Manual weather")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } else if weatherLookup.isLoading {
             Label("Looking up weather", systemImage: "cloud.sun")
                 .foregroundStyle(.secondary)
         } else if let result = weatherLookup.result {
@@ -236,6 +236,35 @@ struct OutfitBuilderView: View {
         }
     }
 
+    private var manualWeatherControls: some View {
+        DisclosureGroup("Manual Weather") {
+            TextField("City or place", text: $manualWeatherLocation)
+                .textInputAutocapitalization(.words)
+            TextField("Temperature F", text: $manualWeatherTemperature)
+                .keyboardType(.numbersAndPunctuation)
+            TextField("Condition", text: $manualWeatherCondition)
+                .textInputAutocapitalization(.words)
+            Toggle("Raining", isOn: $manualWeatherIsRaining)
+            TextField("Wind mph", text: $manualWeatherWind)
+                .keyboardType(.numbersAndPunctuation)
+
+            HStack {
+                Button {
+                    applyManualWeather()
+                } label: {
+                    Label("Use Manual Weather", systemImage: "thermometer.sun")
+                }
+                .disabled(manualWeatherInput == nil)
+
+                if manualWeatherOverride != nil {
+                    Button("Clear") {
+                        manualWeatherOverride = nil
+                    }
+                }
+            }
+        }
+    }
+
     private func refreshWeather() {
         weatherLookup.refresh(defaultLocationName: fallbackName)
     }
@@ -245,7 +274,7 @@ struct OutfitBuilderView: View {
     }
 
     private func generate() {
-        guard let selectedItem, let weather = weatherLookup.result?.input else { return }
+        guard let selectedItem, let weather = effectiveWeather else { return }
         aiReviews = [:]
         aiReviewErrors = [:]
         avatarPreviews = [:]
@@ -267,14 +296,14 @@ struct OutfitBuilderView: View {
     private var canAskAIForOutfit: Bool {
         useAIProxy &&
         configuredAIProxyURL != nil &&
-        weatherLookup.result != nil &&
+        effectiveWeather != nil &&
         !isAIChoosingOutfit &&
         activeItems.count >= 3
     }
 
     @MainActor
     private func generateWithAIFirst() async {
-        guard let baseURL = configuredAIProxyURL, let weather = weatherLookup.result?.input else { return }
+        guard let baseURL = configuredAIProxyURL, let weather = effectiveWeather else { return }
 
         isAIChoosingOutfit = true
         aiBuildError = ""
@@ -339,6 +368,14 @@ struct OutfitBuilderView: View {
         }
     }
 
+    private func recordFeedback(for recommendation: OutfitRecommendation, type: FeedbackType, note: String) {
+        let entry = Feedback(type: type, note: note, combinationKey: recommendation.combinationKey)
+        modelContext.insert(entry)
+        try? modelContext.save()
+        aiBuildError = "Saved \(type.displayName.lowercased()) feedback."
+        generate()
+    }
+
     private func avatarPreviewAction(for recommendation: OutfitRecommendation) -> (() -> Void)? {
         guard useAIProxy, configuredAIProxyURL != nil, avatarReferencePhoto != nil else { return nil }
         return {
@@ -386,7 +423,7 @@ struct OutfitBuilderView: View {
         guard
             let baseURL = configuredAIProxyURL,
             let referencePhoto = avatarReferencePhoto,
-            let weather = weatherLookup.result?.input
+            let weather = effectiveWeather
         else {
             return
         }
@@ -452,7 +489,7 @@ struct OutfitBuilderView: View {
     ) -> AIOutfitRequest {
         AIOutfitRequest(
             closet: closetItems.map(AIClothingItemPayload.init),
-            weatherSummary: weatherLookup.result?.input.summary ?? "",
+            weatherSummary: effectiveWeather?.summary ?? "",
             occasion: currentContext.occasion,
             activity: currentContext.activity,
             styleDescription: styleDescription,
@@ -501,7 +538,30 @@ struct OutfitBuilderView: View {
     }
 
     private var currentWeatherCondition: String {
-        weatherLookup.result?.condition ?? ""
+        manualWeatherOverride == nil ? weatherLookup.result?.condition ?? "" : manualWeatherCondition
+    }
+
+    private var effectiveWeather: WeatherInput? {
+        manualWeatherOverride ?? weatherLookup.result?.input
+    }
+
+    private var manualWeatherInput: WeatherInput? {
+        guard let temperature = Double(manualWeatherTemperature.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return nil
+        }
+        let wind = Double(manualWeatherWind.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        let location = manualWeatherLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+        return WeatherInput(
+            temperatureF: temperature,
+            isRaining: manualWeatherIsRaining,
+            windMph: wind,
+            location: location.isEmpty ? "Manual location" : location
+        )
+    }
+
+    private func applyManualWeather() {
+        guard let manualWeatherInput else { return }
+        manualWeatherOverride = manualWeatherInput
     }
 
     private func avatarBackgroundContext(for weather: WeatherInput, condition: String) -> String {
@@ -530,16 +590,6 @@ struct OutfitBuilderView: View {
         ].joined(separator: " ")
     }
 
-    private func itemDetail(for item: ClothingItem) -> String {
-        let parts = [
-            ClothingInference.color(for: item),
-            ClothingInference.pattern(for: item)
-        ]
-        .filter { !$0.isEmpty }
-
-        return parts.isEmpty ? item.category.displayName : parts.joined(separator: " · ")
-    }
-
     private func iconName(for category: ClothingCategory) -> String {
         category.systemImageName
     }
@@ -554,4 +604,65 @@ private struct ItemCategoryGroup: Identifiable {
     var items: [ClothingItem]
 
     var id: String { category.rawValue }
+}
+
+private struct BuilderItemSelectionList: View {
+    var groups: [ItemCategoryGroup]
+    @Binding var selectedItemID: UUID?
+
+    var body: some View {
+        ForEach(groups) { group in
+            Section(group.category.displayName) {
+                ForEach(group.items) { item in
+                    Button {
+                        selectedItemID = item.id
+                    } label: {
+                        BuilderClosetItemRow(
+                            name: item.name,
+                            imageName: item.category.systemImageName,
+                            detail: Self.itemDetail(for: item),
+                            isSelected: item.id == selectedItemID
+                        )
+                    }
+                    .foregroundStyle(.primary)
+                }
+            }
+        }
+    }
+
+    private static func itemDetail(for item: ClothingItem) -> String {
+        let parts = [
+            ClothingInference.color(for: item),
+            ClothingInference.pattern(for: item)
+        ]
+        .filter { !$0.isEmpty }
+
+        return parts.isEmpty ? item.category.displayName : parts.joined(separator: " · ")
+    }
+}
+
+private struct BuilderClosetItemRow: View {
+    var name: String
+    var imageName: String
+    var detail: String
+    var isSelected: Bool
+
+    var body: some View {
+        HStack {
+            Image(systemName: imageName)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.body.weight(isSelected ? .semibold : .regular))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.tint)
+            }
+        }
+    }
 }

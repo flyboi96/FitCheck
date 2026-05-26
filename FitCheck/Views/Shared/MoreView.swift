@@ -3,40 +3,46 @@ import SwiftUI
 struct MoreView: View {
     var body: some View {
         List {
-            NavigationLink {
-                AccountView()
-            } label: {
-                Label("Account", systemImage: "person.crop.circle")
+            Section("Personal") {
+                NavigationLink {
+                    AccountView()
+                } label: {
+                    Label("Account", systemImage: "person.crop.circle")
+                }
+
+                NavigationLink {
+                    StylePreferencesView()
+                } label: {
+                    Label("Style Preferences", systemImage: "person.crop.square")
+                }
+
+                NavigationLink {
+                    AvatarStudioView()
+                } label: {
+                    Label("Avatar Studio", systemImage: "person.crop.rectangle")
+                }
             }
 
-            NavigationLink {
-                OutfitHistoryView()
-            } label: {
-                Label("Outfit History", systemImage: "calendar")
+            Section("Records") {
+                NavigationLink {
+                    OutfitHistoryView()
+                } label: {
+                    Label("Outfit History", systemImage: "calendar")
+                }
+
+                NavigationLink {
+                    ScoringGuideView()
+                } label: {
+                    Label("Scoring", systemImage: "sum")
+                }
             }
 
-            NavigationLink {
-                StylePreferencesView()
-            } label: {
-                Label("Style Preferences", systemImage: "person.crop.square")
-            }
-
-            NavigationLink {
-                AvatarStudioView()
-            } label: {
-                Label("Avatar Studio", systemImage: "person.crop.rectangle")
-            }
-
-            NavigationLink {
-                ScoringGuideView()
-            } label: {
-                Label("Scoring", systemImage: "sum")
-            }
-
-            NavigationLink {
-                SettingsView()
-            } label: {
-                Label("Settings", systemImage: "gear")
+            Section("App") {
+                NavigationLink {
+                    SettingsView()
+                } label: {
+                    Label("Settings", systemImage: "gear")
+                }
             }
         }
         .navigationTitle("More")

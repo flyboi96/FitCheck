@@ -74,6 +74,7 @@ struct SettingsView: View {
                 }
 
                 Button(role: .destructive) {
+                    backupStatus = "Choose a backup file to import."
                     isConfirmingImport = true
                 } label: {
                     Label("Import Backup", systemImage: "square.and.arrow.down")
@@ -90,9 +91,21 @@ struct SettingsView: View {
                 }
             }
 
+            Section("TestFlight") {
+                Label("Release build ready", systemImage: "checkmark.seal")
+                    .foregroundStyle(.secondary)
+                Text("Archive from Xcode with an iPhone device destination, then upload to App Store Connect and add your wife as a TestFlight tester.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Before uploading: confirm Firebase rules are deployed, the AI proxy URL works from a real iPhone, and the build number is higher than any previous TestFlight upload.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("App") {
                 LabeledContent("Storage", value: "Local")
-                LabeledContent("Version", value: "1.0")
+                LabeledContent("Version", value: appVersion)
+                LabeledContent("Build", value: buildNumber)
             }
         }
         .navigationTitle("Settings")
@@ -129,6 +142,7 @@ struct SettingsView: View {
 
     private func exportBackup() {
         do {
+            backupStatus = "Preparing backup."
             let data = try backupService.exportData(context: modelContext)
             backupDocument = FitCheckBackupDocument(data: data)
             isExportingBackup = true
@@ -153,5 +167,13 @@ struct SettingsView: View {
         } catch {
             backupStatus = "Import failed: \(error.localizedDescription)"
         }
+    }
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    }
+
+    private var buildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "2"
     }
 }

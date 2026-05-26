@@ -57,3 +57,7 @@ The backend reads `OPENAI_API_KEY` and optional `FITCHECK_PROXY_TOKEN` from envi
 ## Open In Xcode
 
 Open `FitCheck.xcodeproj` in Xcode and run the `FitCheck` scheme on an iPhone simulator.
+
+## TestFlight
+
+See `TESTFLIGHT.md` for the archive, upload, and smoke-test checklist.

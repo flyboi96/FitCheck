@@ -97,8 +97,11 @@ struct RecommendationCard: View {
                 HStack {
                     if let onAIReview {
                         if isAIReviewing {
-                            ProgressView()
-                                .controlSize(.small)
+                            FitCheckButtonLabel(
+                                title: "Reviewing",
+                                systemImage: "sparkles",
+                                isLoading: true
+                            )
                         } else {
                             Button(action: onAIReview) {
                                 Label("AI Review", systemImage: "sparkles")
@@ -109,8 +112,11 @@ struct RecommendationCard: View {
 
                     if let onAvatarPreview {
                         if isGeneratingAvatarPreview {
-                            ProgressView()
-                                .controlSize(.small)
+                            FitCheckButtonLabel(
+                                title: "Generating Preview",
+                                systemImage: "person.crop.rectangle",
+                                isLoading: true
+                            )
                         } else {
                             Button(action: onAvatarPreview) {
                                 Label("Try On Avatar", systemImage: "person.crop.rectangle")

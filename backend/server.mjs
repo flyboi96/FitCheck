@@ -690,8 +690,8 @@ function buildAvatarPrompt({
     isRaining
   });
   const referenceMode = usesSavedAvatar
-    ? "The input image is the user's saved FitCheck avatar. Preserve the avatar's face, hair, body proportions, posture, and head-to-shoes framing; change only the clothing and setting needed for this outfit preview."
-    : "The input image is a user reference photo. Create a reusable, realistic FitCheck avatar while preserving broad facial features, hairstyle impression, skin tone, body proportions, and pose realism.";
+    ? "The input image is the user's saved FitCheck avatar. Preserve the avatar's face, hair or hat, body proportions, posture, and full head-to-shoes framing; change only the clothing and setting needed for this outfit preview."
+    : "The input image is a user reference photo. Create a reusable, realistic full-body FitCheck avatar while preserving broad facial features, hairstyle or hat impression, skin tone, body proportions, and pose realism.";
 
   return `
 Edit the provided user photo into a realistic, full-body FitCheck avatar preview.
@@ -703,10 +703,12 @@ Goal:
 - Keep the result private-app appropriate: no text labels, no logos unless they are visible on the listed clothing, no identity documents, no dramatic fashion editorial styling.
 
 Composition requirements:
-- Vertical full-body portrait, camera pulled back far enough to show the complete person.
-- Include the complete hair/top of head and the complete shoes/feet, with a small margin above the hair and below the shoes.
-- No cropped hair, no cropped shoes, no waist-up portrait, no close-up framing, no feet hidden by the image edge.
-- If the reference photo is cropped, conservatively complete the missing hair or shoes so the final preview is still head-to-toe.
+- Vertical full-body standing portrait, camera pulled back far enough to show the complete person from the top of hair or hat through the soles of both shoes.
+- The person must occupy about 70-85% of image height, leaving visible margin above the hair/hat and below the shoes.
+- Include the complete neck, shoulders, arms/hands, legs, ankles, shoes, and feet.
+- No cropped hair, no cropped hat, no cropped neck, no cropped shoes, no below-knee crop, no waist-up portrait, no close-up framing, and no feet hidden by the image edge.
+- If the reference photo is cropped, conservatively complete the missing head, hair/hat, neck, lower legs, or shoes so the final preview is still head-to-toe.
+- If necessary, zoom the camera out and use a simpler background instead of cropping the person.
 
 Outfit to visualize:
 ${outfitDescription}

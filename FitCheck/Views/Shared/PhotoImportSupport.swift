@@ -54,7 +54,7 @@ struct FitCheckPhotoPreview: View {
             if let data, let uiImage = UIImage(data: data) {
                 Image(uiImage: uiImage)
                     .resizable()
-                    .scaledToFill()
+                    .scaledToFit()
             } else {
                 Image(systemName: "photo")
                     .font(.system(size: 40))
@@ -66,7 +66,49 @@ struct FitCheckPhotoPreview: View {
         .frame(height: height)
         .background(.quaternary)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .clipped()
+    }
+}
+
+struct FitCheckInlineStatus: View {
+    var message: String
+    var isLoading = false
+    var systemImage = "info.circle"
+
+    var body: some View {
+        if !message.isEmpty || isLoading {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: systemImage)
+                        .foregroundStyle(.secondary)
+                }
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+struct FitCheckButtonLabel: View {
+    var title: String
+    var systemImage: String
+    var isLoading = false
+
+    var body: some View {
+        if isLoading {
+            HStack {
+                ProgressView()
+                    .controlSize(.small)
+                Text(title)
+            }
+        } else {
+            Label(title, systemImage: systemImage)
+        }
     }
 }
 

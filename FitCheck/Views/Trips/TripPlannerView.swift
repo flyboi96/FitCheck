@@ -167,6 +167,7 @@ private struct TripDetailView: View {
     @State private var isGeneratingPackingList = false
     @State private var isGeneratingItinerary = false
     @State private var feedbackStatus = ""
+    @State private var generationStatus = ""
     @State private var feedbackItinerary: DailyItineraryOutfit?
 
     private let service = TripPlanningService()
@@ -219,18 +220,28 @@ private struct TripDetailView: View {
                 Button {
                     Task { @MainActor in
                         isGeneratingPackingList = true
+                        generationStatus = "Generating packing list from your closet and trip stops."
                         await service.rebuildPackingList(for: trip, closet: closetItems, context: modelContext)
                         try? modelContext.save()
+                        generationStatus = "Packing list updated with \(trip.packingLists.flatMap(\.items).count) item rows."
                         isGeneratingPackingList = false
                     }
                 } label: {
-                    Label(isGeneratingPackingList ? "Generating Packing List" : "Packing List", systemImage: "checklist")
+                    FitCheckButtonLabel(
+                        title: isGeneratingPackingList ? "Generating Packing List" : "Packing List",
+                        systemImage: "checklist",
+                        isLoading: isGeneratingPackingList
+                    )
                 }
+                .buttonStyle(.borderedProminent)
                 .disabled(isGeneratingPackingList || trip.stops.isEmpty)
 
                 Button {
                     Task { @MainActor in
                         isGeneratingItinerary = true
+                        generationStatus = tripAIOptions == nil
+                            ? "Generating outfit itinerary with local scoring."
+                            : "Generating outfit itinerary with AI filtering and local scoring."
                         await service.rebuildItinerary(
                             for: trip,
                             closet: closetItems,
@@ -240,12 +251,22 @@ private struct TripDetailView: View {
                             aiOptions: tripAIOptions
                         )
                         try? modelContext.save()
+                        generationStatus = "Itinerary updated with \(trip.itineraryOutfits.count) daily outfit\(trip.itineraryOutfits.count == 1 ? "" : "s")."
                         isGeneratingItinerary = false
                     }
                 } label: {
-                    Label(isGeneratingItinerary ? "Generating Itinerary" : itineraryButtonTitle, systemImage: "calendar")
+                    FitCheckButtonLabel(
+                        title: isGeneratingItinerary ? "Generating Itinerary" : itineraryButtonTitle,
+                        systemImage: "calendar",
+                        isLoading: isGeneratingItinerary
+                    )
                 }
                 .disabled(isGeneratingItinerary || trip.stops.isEmpty)
+
+                FitCheckInlineStatus(
+                    message: generationStatus,
+                    isLoading: isGeneratingPackingList || isGeneratingItinerary
+                )
             }
 
             Section("Export") {

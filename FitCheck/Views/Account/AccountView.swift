@@ -165,7 +165,11 @@ struct AccountView: View {
                         await uploadCloset()
                     }
                 } label: {
-                    Label("Upload Closet Metadata", systemImage: "icloud.and.arrow.up")
+                    FitCheckButtonLabel(
+                        title: accountStore.isLoading ? "Uploading Closet" : "Upload Closet Metadata",
+                        systemImage: "icloud.and.arrow.up",
+                        isLoading: accountStore.isLoading
+                    )
                 }
                 .disabled(accountStore.isLoading || closetItems.isEmpty)
 
@@ -174,7 +178,11 @@ struct AccountView: View {
                         await downloadCloset()
                     }
                 } label: {
-                    Label("Download Closet Metadata", systemImage: "icloud.and.arrow.down")
+                    FitCheckButtonLabel(
+                        title: accountStore.isLoading ? "Downloading Closet" : "Download Closet Metadata",
+                        systemImage: "icloud.and.arrow.down",
+                        isLoading: accountStore.isLoading
+                    )
                 }
                 .disabled(accountStore.isLoading)
 

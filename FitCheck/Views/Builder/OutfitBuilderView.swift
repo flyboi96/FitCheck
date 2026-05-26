@@ -35,6 +35,8 @@ struct OutfitBuilderView: View {
     @State private var avatarPreviewingCombinationKeys = Set<String>()
     @State private var isAIChoosingOutfit = false
     @State private var aiBuildError = ""
+    @State private var weatherActionStatus = ""
+    @State private var builderStatus = ""
     @State private var feedbackTarget: OutfitRecommendation?
 
     private let engine = OutfitRecommendationEngine()
@@ -84,18 +86,30 @@ struct OutfitBuilderView: View {
                 Button {
                     refreshWeather()
                 } label: {
-                    Label("Use Current Location", systemImage: "location")
+                    FitCheckButtonLabel(
+                        title: weatherLookup.isLoading ? "Looking Up Weather" : "Use Current Location",
+                        systemImage: "location",
+                        isLoading: weatherLookup.isLoading
+                    )
                 }
                 .disabled(weatherLookup.isLoading)
 
                 Button {
                     lookupManualWeather()
                 } label: {
-                    Label("Look Up Location", systemImage: "magnifyingglass")
+                    FitCheckButtonLabel(
+                        title: weatherLookup.isLoading ? "Looking Up Location" : "Look Up Location",
+                        systemImage: "magnifyingglass",
+                        isLoading: weatherLookup.isLoading
+                    )
                 }
                 .disabled(weatherLookup.isLoading || manualLocationQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                 manualWeatherControls
+                FitCheckInlineStatus(
+                    message: weatherLookup.isLoading ? weatherLoadingMessage : weatherActionStatus,
+                    isLoading: weatherLookup.isLoading
+                )
             }
 
             Section("Context") {
@@ -109,6 +123,7 @@ struct OutfitBuilderView: View {
                 } label: {
                     Label("Build Outfit", systemImage: "wand.and.stars")
                 }
+                .buttonStyle(.borderedProminent)
                 .disabled(selectedItem == nil || effectiveWeather == nil)
 
                 Button {
@@ -116,11 +131,11 @@ struct OutfitBuilderView: View {
                         await generateWithAIFirst()
                     }
                 } label: {
-                    if isAIChoosingOutfit {
-                        Label("Asking AI", systemImage: "sparkles")
-                    } else {
-                        Label("Ask AI First", systemImage: "sparkles")
-                    }
+                    FitCheckButtonLabel(
+                        title: isAIChoosingOutfit ? "Asking AI" : "Ask AI First",
+                        systemImage: "sparkles",
+                        isLoading: isAIChoosingOutfit
+                    )
                 }
                 .disabled(!canAskAIForOutfit)
 
@@ -133,6 +148,7 @@ struct OutfitBuilderView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                FitCheckInlineStatus(message: builderStatus)
             }
 
             if !recommendations.isEmpty {
@@ -159,6 +175,9 @@ struct OutfitBuilderView: View {
             if weatherLookup.result == nil {
                 refreshWeather()
             }
+        }
+        .onChange(of: weatherLookup.isLoading) { _, isLoading in
+            updateWeatherActionStatus(isLoading: isLoading)
         }
         .sheet(item: $feedbackTarget) { recommendation in
             OutfitFeedbackEditorView(title: "Builder Feedback") { type, note in
@@ -266,10 +285,13 @@ struct OutfitBuilderView: View {
     }
 
     private func refreshWeather() {
+        weatherActionStatus = "Looking up weather from current location or default city."
         weatherLookup.refresh(defaultLocationName: fallbackName)
     }
 
     private func lookupManualWeather() {
+        let query = manualLocationQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        weatherActionStatus = "Looking up weather for \(query)."
         weatherLookup.refresh(searchText: manualLocationQuery)
     }
 
@@ -291,6 +313,9 @@ struct OutfitBuilderView: View {
                 selectedItem: selectedItem
             )
         )
+        builderStatus = recommendations.isEmpty
+            ? "No outfit matched this item and context."
+            : "Built \(recommendations.count) outfit\(recommendations.count == 1 ? "" : "s") around \(selectedItem.name)."
     }
 
     private var canAskAIForOutfit: Bool {
@@ -307,6 +332,7 @@ struct OutfitBuilderView: View {
 
         isAIChoosingOutfit = true
         aiBuildError = ""
+        builderStatus = "Asking AI to build around your selected item."
         aiReviews = [:]
         aiReviewErrors = [:]
         avatarPreviews = [:]
@@ -335,6 +361,7 @@ struct OutfitBuilderView: View {
 
             guard chosenItems.count >= 2 else {
                 aiBuildError = "AI did not return enough closet items."
+                builderStatus = "AI did not return enough closet items."
                 return
             }
 
@@ -354,8 +381,10 @@ struct OutfitBuilderView: View {
 
             recommendations = [recommendation]
             aiReviews[recommendation.combinationKey] = response
+            builderStatus = "AI picked an outfit and FitCheck scored it locally."
         } catch {
             aiBuildError = error.localizedDescription
+            builderStatus = "AI outfit request failed."
         }
     }
 
@@ -372,7 +401,7 @@ struct OutfitBuilderView: View {
         let entry = Feedback(type: type, note: note, combinationKey: recommendation.combinationKey)
         modelContext.insert(entry)
         try? modelContext.save()
-        aiBuildError = "Saved \(type.displayName.lowercased()) feedback."
+        builderStatus = "Saved \(type.displayName.lowercased()) feedback and refreshed outfits."
         generate()
     }
 
@@ -562,6 +591,20 @@ struct OutfitBuilderView: View {
     private func applyManualWeather() {
         guard let manualWeatherInput else { return }
         manualWeatherOverride = manualWeatherInput
+        weatherActionStatus = "Manual weather applied for \(manualWeatherInput.location)."
+    }
+
+    private var weatherLoadingMessage: String {
+        weatherActionStatus.isEmpty ? "Looking up weather." : weatherActionStatus
+    }
+
+    private func updateWeatherActionStatus(isLoading: Bool) {
+        guard !isLoading else { return }
+        if let result = weatherLookup.result {
+            weatherActionStatus = "Weather ready for \(result.input.location)."
+        } else if let message = weatherLookup.errorMessage {
+            weatherActionStatus = message
+        }
     }
 
     private func avatarBackgroundContext(for weather: WeatherInput, condition: String) -> String {

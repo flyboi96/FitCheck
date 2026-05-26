@@ -17,11 +17,12 @@ struct AvatarStudioView: View {
     @State private var showingCamera = false
     @State private var isGeneratingBaseAvatar = false
     @State private var errorMessage = ""
+    @State private var avatarStatus = ""
 
     var body: some View {
         List {
             Section {
-                FitCheckPhotoPreview(data: avatar?.sourcePhotoData, height: 320)
+                FitCheckPhotoPreview(data: avatar?.sourcePhotoData, height: 420)
 
                 HStack {
                     Button {
@@ -40,11 +41,11 @@ struct AvatarStudioView: View {
             } header: {
                 Text("Reference Photo")
             } footer: {
-                Text("Use a clear recent photo with as much of your body visible as possible.")
+                Text("Use a clear recent head-to-toe photo when possible. Include hair or hat, neck, hands, legs, and shoes.")
             }
 
             Section("Avatar") {
-                FitCheckPhotoPreview(data: avatar?.avatarImageData ?? avatar?.sourcePhotoData, height: 320)
+                FitCheckPhotoPreview(data: avatar?.avatarImageData ?? avatar?.sourcePhotoData, height: 460)
 
                 if avatar?.avatarImageData != nil {
                     Label("Saved avatar ready", systemImage: "checkmark.circle")
@@ -61,13 +62,19 @@ struct AvatarStudioView: View {
                         await generateBaseAvatar()
                     }
                 } label: {
-                    if isGeneratingBaseAvatar {
-                        Label("Generating Avatar", systemImage: "sparkles")
-                    } else {
-                        Label("Generate Base Avatar", systemImage: "sparkles")
-                    }
+                    FitCheckButtonLabel(
+                        title: isGeneratingBaseAvatar ? "Generating Avatar" : "Generate Base Avatar",
+                        systemImage: "sparkles",
+                        isLoading: isGeneratingBaseAvatar
+                    )
                 }
+                .buttonStyle(.borderedProminent)
                 .disabled(!canGenerateBaseAvatar)
+
+                FitCheckInlineStatus(
+                    message: avatarStatus,
+                    isLoading: isGeneratingBaseAvatar
+                )
 
                 if !useAIProxy || configuredAIProxyURL == nil {
                     Label("Enable the AI proxy in Settings to generate an avatar.", systemImage: "exclamationmark.triangle")
@@ -185,6 +192,7 @@ struct AvatarStudioView: View {
             selectedPhotoItem = nil
         } catch {
             errorMessage = error.localizedDescription
+            avatarStatus = "Photo load failed."
         }
     }
 
@@ -202,6 +210,7 @@ struct AvatarStudioView: View {
         avatar.updatedAt = Date()
         try? modelContext.save()
         errorMessage = ""
+        avatarStatus = "Reference photo saved."
     }
 
     @MainActor
@@ -210,6 +219,7 @@ struct AvatarStudioView: View {
 
         isGeneratingBaseAvatar = true
         errorMessage = ""
+        avatarStatus = "Generating a full-body avatar. This can take a minute."
         defer {
             isGeneratingBaseAvatar = false
         }
@@ -225,16 +235,17 @@ struct AvatarStudioView: View {
                     outfitItems: [],
                     weatherSummary: "",
                     location: "",
-                    backgroundContext: "Simple neutral indoor studio background.",
+                    backgroundContext: "Simple neutral indoor studio background. Use a camera distance that shows the complete person from hair or hat to shoes.",
                     wearerProfile: currentWearerProfile.displayName,
                     styleDescription: styleDescription,
-                    avatarNotes: avatar?.notes ?? "",
+                    avatarNotes: fullBodyAvatarNotes,
                     usesSavedAvatar: false
                 )
             )
 
             guard let imageData = Data(base64Encoded: response.imageBase64) else {
                 errorMessage = "The avatar image could not be decoded."
+                avatarStatus = "Avatar generation failed."
                 return
             }
 
@@ -243,8 +254,19 @@ struct AvatarStudioView: View {
             avatar.latestPreviewData = imageData
             avatar.updatedAt = Date()
             try? modelContext.save()
+            avatarStatus = "Full-body avatar saved."
         } catch {
             errorMessage = error.localizedDescription
+            avatarStatus = "Avatar generation failed."
         }
+    }
+
+    private var fullBodyAvatarNotes: String {
+        [
+            avatar?.notes ?? "",
+            "Critical framing: final avatar must be full body, head-to-toe, including complete hair or hat, neck, hands, lower legs, socks if visible, and complete shoes with margin above and below."
+        ]
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .joined(separator: "\n")
     }
 }

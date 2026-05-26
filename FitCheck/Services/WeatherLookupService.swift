@@ -63,7 +63,7 @@ struct OpenMeteoWeatherClient {
         components?.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
-            URLQueryItem(name: "current", value: "temperature_2m,precipitation,rain,weather_code,wind_speed_10m"),
+            URLQueryItem(name: "current", value: "temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
             URLQueryItem(name: "wind_speed_unit", value: "mph"),
             URLQueryItem(name: "precipitation_unit", value: "inch"),
@@ -86,7 +86,8 @@ struct OpenMeteoWeatherClient {
             temperatureF: current.temperature,
             isRaining: isRaining,
             windMph: current.windSpeed,
-            location: locationName
+            location: locationName,
+            humidityPercent: current.relativeHumidity
         )
 
         return WeatherLookupResult(
@@ -104,6 +105,7 @@ struct OpenMeteoWeatherClient {
             URLQueryItem(name: "latitude", value: String(location.latitude)),
             URLQueryItem(name: "longitude", value: String(location.longitude)),
             URLQueryItem(name: "daily", value: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,rain_sum,wind_speed_10m_max"),
+            URLQueryItem(name: "hourly", value: "relative_humidity_2m"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
             URLQueryItem(name: "wind_speed_unit", value: "mph"),
             URLQueryItem(name: "precipitation_unit", value: "inch"),
@@ -137,7 +139,8 @@ struct OpenMeteoWeatherClient {
             temperatureF: (high + low) / 2,
             isRaining: Self.isWetWeather(code: weatherCode) || rain > 0 || precipitation > 0,
             windMph: windSpeed,
-            location: location.displayName
+            location: location.displayName,
+            humidityPercent: decoded.hourly?.averageHumidity
         )
 
         return WeatherLookupResult(
@@ -380,6 +383,7 @@ private struct OpenMeteoResponse: Decodable {
 
     struct Current: Decodable {
         var temperature: Double
+        var relativeHumidity: Double?
         var precipitation: Double
         var rain: Double
         var weatherCode: Int
@@ -387,6 +391,7 @@ private struct OpenMeteoResponse: Decodable {
 
         enum CodingKeys: String, CodingKey {
             case temperature = "temperature_2m"
+            case relativeHumidity = "relative_humidity_2m"
             case precipitation
             case rain
             case weatherCode = "weather_code"
@@ -401,6 +406,7 @@ private struct OpenMeteoGeocodingResponse: Decodable {
 
 private struct OpenMeteoDailyResponse: Decodable {
     var daily: Daily
+    var hourly: Hourly?
 
     struct Daily: Decodable {
         var weatherCode: [Int]
@@ -417,6 +423,20 @@ private struct OpenMeteoDailyResponse: Decodable {
             case precipitationSum = "precipitation_sum"
             case rainSum = "rain_sum"
             case windSpeedMax = "wind_speed_10m_max"
+        }
+    }
+
+    struct Hourly: Decodable {
+        var relativeHumidity: [Double?]
+
+        var averageHumidity: Double? {
+            let values = relativeHumidity.compactMap { $0 }
+            guard !values.isEmpty else { return nil }
+            return values.reduce(0, +) / Double(values.count)
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case relativeHumidity = "relative_humidity_2m"
         }
     }
 }

@@ -609,6 +609,7 @@ async function generateAvatarOutfitPreview(requestBody) {
     temperatureF: requestBody.temperatureF,
     isRaining: requestBody.isRaining,
     windMph: requestBody.windMph,
+    humidityPercent: requestBody.humidityPercent,
     usesSavedAvatar: Boolean(requestBody.usesSavedAvatar)
   });
 
@@ -659,6 +660,7 @@ function buildAvatarPrompt({
   temperatureF,
   isRaining,
   windMph,
+  humidityPercent,
   usesSavedAvatar
 }) {
   const outfitDescription = outfitItems.length > 0
@@ -680,14 +682,17 @@ function buildAvatarPrompt({
     : "- Plain dark t-shirt, neutral pants, and simple shoes for avatar setup only. Keep the clothing simple and understated.";
   const temperature = Number(temperatureF);
   const wind = Number(windMph);
+  const humidity = Number(humidityPercent);
   const hasTemperature = Number.isFinite(temperature);
   const hasWind = Number.isFinite(wind);
+  const hasHumidity = Number.isFinite(humidity);
   const rainingText = typeof isRaining === "boolean" ? (isRaining ? "yes" : "no") : "unknown";
   const weatherRules = weatherVisualRules({
     location,
     weatherCondition,
     temperatureF: hasTemperature ? temperature : null,
-    isRaining
+    isRaining,
+    humidityPercent: hasHumidity ? humidity : null
   });
   const referenceMode = usesSavedAvatar
     ? "The input image is the user's saved FitCheck avatar. Preserve the avatar's face, hair or hat, body proportions, posture, and full head-to-shoes framing; change only the clothing and setting needed for this outfit preview."
@@ -727,6 +732,7 @@ Weather and setting:
 - Temperature: ${hasTemperature ? `${Math.round(temperature)}F` : "unspecified"}
 - Is raining: ${rainingText}
 - Wind: ${hasWind ? `${Math.round(wind)} mph` : "unspecified"}
+- Humidity: ${hasHumidity ? `${Math.round(humidity)}%` : "unspecified"}
 - Background guidance: ${String(backgroundContext ?? "").trim() || "Use a subtle outdoor or indoor setting that matches the weather and does not distract from the outfit."}
 - Weather visual rules: ${weatherRules}
 
@@ -739,7 +745,7 @@ Rendering instructions:
 `.trim();
 }
 
-function weatherVisualRules({ location, weatherCondition, temperatureF, isRaining }) {
+function weatherVisualRules({ location, weatherCondition, temperatureF, isRaining, humidityPercent }) {
   const normalizedLocation = String(location ?? "").toLowerCase();
   const normalizedCondition = String(weatherCondition ?? "").toLowerCase();
   const rules = [];
@@ -756,6 +762,10 @@ function weatherVisualRules({ location, weatherCondition, temperatureF, isRainin
     rules.push("Make the scene warm and sunlit unless the condition explicitly says otherwise.");
   } else if (typeof temperatureF === "number" && temperatureF <= 45) {
     rules.push("Make the scene cool or cold, but do not obscure the outfit.");
+  }
+
+  if (typeof humidityPercent === "number" && humidityPercent >= 70 && typeof temperatureF === "number" && temperatureF >= 75) {
+    rules.push("Use humid warm-weather cues without making the scene rainy unless rain is explicitly reported.");
   }
 
   if (normalizedCondition.includes("clear")) {

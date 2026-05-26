@@ -80,6 +80,7 @@ struct AIAvatarPreviewRequest: Codable {
     var temperatureF: Double?
     var isRaining: Bool?
     var windMph: Double?
+    var humidityPercent: Double? = nil
     var usesSavedAvatar: Bool = false
 }
 
@@ -148,7 +149,7 @@ struct BackendOutfitAIClient: OutfitAIClient {
     var session: URLSession = .shared
 
     func suggestOutfit(request: AIOutfitRequest) async throws -> AIOutfitResponse {
-        let endpoint = baseURL.appending(path: "outfit-recommendation")
+        let endpoint = endpointURL("outfit-recommendation")
         var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -162,16 +163,13 @@ struct BackendOutfitAIClient: OutfitAIClient {
             throw OutfitAIClientError.invalidResponse
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
-            if let proxyError = try? JSONDecoder().decode(AIProxyErrorResponse.self, from: data) {
-                throw OutfitAIClientError.serverMessage(proxyError.error)
-            }
-            throw OutfitAIClientError.invalidResponse
+            throw proxyError(statusCode: httpResponse.statusCode, data: data)
         }
         return try JSONDecoder().decode(AIOutfitResponse.self, from: data)
     }
 
     func describeClothingItem(request: AIClothingImportRequest) async throws -> AIClothingImportResponse {
-        let endpoint = baseURL.appending(path: "clothing-item-description")
+        let endpoint = endpointURL("clothing-item-description")
         var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -185,16 +183,13 @@ struct BackendOutfitAIClient: OutfitAIClient {
             throw OutfitAIClientError.invalidResponse
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
-            if let proxyError = try? JSONDecoder().decode(AIProxyErrorResponse.self, from: data) {
-                throw OutfitAIClientError.serverMessage(proxyError.error)
-            }
-            throw OutfitAIClientError.invalidResponse
+            throw proxyError(statusCode: httpResponse.statusCode, data: data)
         }
         return try JSONDecoder().decode(AIClothingImportResponse.self, from: data)
     }
 
     func generateAvatarPreview(request: AIAvatarPreviewRequest) async throws -> AIAvatarPreviewResponse {
-        let endpoint = baseURL.appending(path: "avatar-outfit-preview")
+        let endpoint = endpointURL("avatar-outfit-preview")
         var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -208,16 +203,13 @@ struct BackendOutfitAIClient: OutfitAIClient {
             throw OutfitAIClientError.invalidResponse
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
-            if let proxyError = try? JSONDecoder().decode(AIProxyErrorResponse.self, from: data) {
-                throw OutfitAIClientError.serverMessage(proxyError.error)
-            }
-            throw OutfitAIClientError.invalidResponse
+            throw proxyError(statusCode: httpResponse.statusCode, data: data)
         }
         return try JSONDecoder().decode(AIAvatarPreviewResponse.self, from: data)
     }
 
     func generateStyleProfile(request: AIStyleProfileRequest) async throws -> AIStyleProfileResponse {
-        let endpoint = baseURL.appending(path: "style-profile-draft")
+        let endpoint = endpointURL("style-profile-draft")
         var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -231,11 +223,39 @@ struct BackendOutfitAIClient: OutfitAIClient {
             throw OutfitAIClientError.invalidResponse
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
-            if let proxyError = try? JSONDecoder().decode(AIProxyErrorResponse.self, from: data) {
-                throw OutfitAIClientError.serverMessage(proxyError.error)
-            }
-            throw OutfitAIClientError.invalidResponse
+            throw proxyError(statusCode: httpResponse.statusCode, data: data)
         }
         return try JSONDecoder().decode(AIStyleProfileResponse.self, from: data)
+    }
+
+    private func endpointURL(_ route: String) -> URL {
+        var url = baseURL
+        let knownRoutes = Set([
+            "outfit-recommendation",
+            "clothing-item-description",
+            "style-profile-draft",
+            "avatar-outfit-preview"
+        ])
+
+        while knownRoutes.contains(url.lastPathComponent) {
+            url.deleteLastPathComponent()
+        }
+
+        return url.appending(path: route)
+    }
+
+    private func proxyError(statusCode: Int, data: Data) -> OutfitAIClientError {
+        if let proxyError = try? JSONDecoder().decode(AIProxyErrorResponse.self, from: data) {
+            if statusCode == 404 || proxyError.error.localizedCaseInsensitiveContains("not found") {
+                return .serverMessage("AI proxy route not found. In Settings, use the base proxy URL like http://127.0.0.1:8787, then restart or redeploy the latest backend.")
+            }
+            return .serverMessage(proxyError.error)
+        }
+
+        if statusCode == 404 {
+            return .serverMessage("AI proxy route not found. Restart or redeploy the latest backend.")
+        }
+
+        return .invalidResponse
     }
 }

@@ -9,12 +9,12 @@ FitCheck is a personal iPhone wardrobe and outfit planning app built with SwiftU
 - Photo-based closet import with optional notes and AI-generated item drafts
 - Bulk text import for quickly entering a starting wardrobe
 - Today's outfit recommendations from the clothes stored on device
-- Current weather lookup with Core Location and Open-Meteo, plus a fallback location in Settings
+- Current weather lookup with Core Location and Open-Meteo, including humidity, plus a fallback location in Settings
 - Build an outfit around a selected item
 - Outfit wear history, wear counts, and feedback
 - Deletable outfit history, grouped wear logs by item, and clear-history controls
 - Personal style preferences
-- Trip stops, packing lists, socks/underwear estimates, laundry-aware packing, separate trip packing/itinerary export, itinerary feedback, and basic outfit itineraries
+- Plans for travel or normal weeks, with stops, packing lists, socks/underwear estimates, laundry-aware packing, separate packing/itinerary export, itinerary scoring comments, and itinerary feedback
 - Wearer profile setting for male/female/unset personalization context
 - Firebase Auth account screen for registering, signing in, and saving a cloud user profile
 - Firestore user profile document for name, gender, and style preferences, plus optional per-user closet metadata sync
@@ -26,7 +26,7 @@ FitCheck is a personal iPhone wardrobe and outfit planning app built with SwiftU
 
 The first version stores data locally with SwiftData and uses a rules-based recommendation engine. The scoring engine considers weather, a combined context picker, color palette harmony, inferred dressiness, rotation history, style preferences, positive and negative feedback, and required-item bonuses.
 
-Weather lookup uses Open-Meteo directly from the app. No weather API key is required for this MVP. The app asks for location permission by default, falls back to the default city saved in Settings if permission is denied or location lookup fails, and also supports typing a city or place for manual weather lookup.
+Weather lookup uses Open-Meteo directly from the app. No weather API key is required for this MVP. The app asks for location permission by default, falls back to the default city saved in Settings if permission is denied or location lookup fails, and also supports typing a city or place for manual weather lookup. Manual weather also supports humidity.
 
 OpenAI integration is intentionally behind an app-owned backend/proxy abstraction in `FitCheck/Services/OpenAIOutfitClient.swift`. Do not put an OpenAI API key in the iPhone app. For local prototyping, keep the key in a backend environment variable such as `OPENAI_API_KEY`, run `backend/server.mjs`, and point the app at that backend from Settings. The proxy supports outfit review, AI-first outfit selection, and clothing photo import.
 

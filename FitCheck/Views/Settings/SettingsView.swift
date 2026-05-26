@@ -49,7 +49,7 @@ struct SettingsView: View {
                 SecureField("Proxy token", text: $aiProxyToken)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                Text("Optional. The iPhone app calls your backend proxy for outfit review and photo import. Do not put an OpenAI API key in the app.")
+                Text("Optional. Enter the base proxy URL, not a route. The iPhone app calls your backend proxy for outfit review and photo import. Do not put an OpenAI API key in the app.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -59,7 +59,8 @@ struct SettingsView: View {
                         Text("2. Start the proxy with `node backend/server.mjs`.")
                         Text("3. In the simulator, use `http://127.0.0.1:8787` as the proxy endpoint.")
                         Text("4. On a physical iPhone, use your Mac/server address, such as `http://192.168.1.25:8787`.")
-                        Text("5. Put the same `FITCHECK_PROXY_TOKEN` in Proxy token.")
+                        Text("5. Do not add `/outfit-recommendation` or another route to the endpoint.")
+                        Text("6. Put the same `FITCHECK_PROXY_TOKEN` in Proxy token.")
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)

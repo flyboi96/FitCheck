@@ -19,6 +19,7 @@ struct TodayOutfitView: View {
     @State private var manualWeatherLocation = ""
     @State private var manualWeatherTemperature = "72"
     @State private var manualWeatherWind = "5"
+    @State private var manualWeatherHumidity = ""
     @State private var manualWeatherCondition = "Clear"
     @State private var manualWeatherIsRaining = false
     @State private var manualWeatherOverride: WeatherInput?
@@ -201,7 +202,7 @@ struct TodayOutfitView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(Int(manualWeatherOverride.temperatureF.rounded()))F · \(manualWeatherCondition)")
                     .font(.body.weight(.medium))
-                Text("\(manualWeatherOverride.location) · Wind \(Int(manualWeatherOverride.windMph.rounded())) mph · Manual weather")
+                Text("\(manualWeatherOverride.location) · Wind \(Int(manualWeatherOverride.windMph.rounded())) mph\(humidityStatusText(for: manualWeatherOverride)) · Manual weather")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -212,7 +213,7 @@ struct TodayOutfitView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(Int(result.input.temperatureF.rounded()))F · \(result.condition)")
                     .font(.body.weight(.medium))
-                Text("\(result.input.location) · Wind \(Int(result.input.windMph.rounded())) mph · \(result.sourceDescription)")
+                Text("\(result.input.location) · Wind \(Int(result.input.windMph.rounded())) mph\(humidityStatusText(for: result.input)) · \(result.sourceDescription)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -238,6 +239,8 @@ struct TodayOutfitView: View {
                 .textInputAutocapitalization(.words)
             Toggle("Raining", isOn: $manualWeatherIsRaining)
             TextField("Wind mph", text: $manualWeatherWind)
+                .keyboardType(.numbersAndPunctuation)
+            TextField("Humidity %", text: $manualWeatherHumidity)
                 .keyboardType(.numbersAndPunctuation)
 
             HStack {
@@ -361,12 +364,15 @@ struct TodayOutfitView: View {
             return nil
         }
         let wind = Double(manualWeatherWind.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        let humidity = Double(manualWeatherHumidity.trimmingCharacters(in: .whitespacesAndNewlines))
+            .map { min(100, max(0, $0)) }
         let location = manualWeatherLocation.trimmingCharacters(in: .whitespacesAndNewlines)
         return WeatherInput(
             temperatureF: temperature,
             isRaining: manualWeatherIsRaining,
             windMph: wind,
-            location: location.isEmpty ? "Manual location" : location
+            location: location.isEmpty ? "Manual location" : location,
+            humidityPercent: humidity
         )
     }
 
@@ -530,6 +536,7 @@ struct TodayOutfitView: View {
                     temperatureF: currentWeather.temperatureF,
                     isRaining: currentWeather.isRaining,
                     windMph: currentWeather.windMph,
+                    humidityPercent: currentWeather.humidityPercent,
                     usesSavedAvatar: avatars.first?.avatarImageData != nil
                 )
             )
@@ -630,6 +637,11 @@ struct TodayOutfitView: View {
         }
     }
 
+    private func humidityStatusText(for weather: WeatherInput) -> String {
+        guard let humidity = weather.humidityPercent else { return "" }
+        return " · Humidity \(Int(humidity.rounded()))%"
+    }
+
     private func avatarBackgroundContext(for weather: WeatherInput, condition: String) -> String {
         let conditionText = condition.trimmingCharacters(in: .whitespacesAndNewlines)
         let rainRule = weather.isRaining
@@ -650,10 +662,11 @@ struct TodayOutfitView: View {
             "Use a location-specific background for \(weather.location), not a generic cloudy city.",
             "\(Int(weather.temperatureF.rounded()))F\(conditionText.isEmpty ? "" : ", \(conditionText)").",
             "Wind \(Int(weather.windMph.rounded())) mph.",
+            weather.humidityPercent.map { "Humidity \(Int($0.rounded()))%." },
             rainRule,
             temperatureRule,
             "For hot, dry places such as Djibouti, use bright arid/coastal light and avoid Seattle-like rain or gray skies unless rain is explicitly reported."
-        ].joined(separator: " ")
+        ].compactMap { $0 }.joined(separator: " ")
     }
 }
 

@@ -143,7 +143,8 @@ struct TripPlanningService {
                 occasion: request.occasion,
                 activity: request.activity,
                 weatherSummary: request.weather.summary,
-                score: recommendation.score
+                score: recommendation.score,
+                notes: recommendation.notes.joined(separator: "\n")
             )
             context.insert(outfit)
 
@@ -219,13 +220,16 @@ struct TripPlanningService {
             let itemsByID = Dictionary(uniqueKeysWithValues: closet.map { ($0.id, $0) })
             let items = response.itemIDs.compactMap { itemsByID[$0] }
             guard items.count >= 2 else { return nil }
-            return engine.scoreExistingOutfit(
+            var recommendation = engine.scoreExistingOutfit(
                 items: items,
                 feedback: feedback,
                 stylePreference: stylePreference,
                 request: request,
                 title: "AI Trip Fit"
             )
+            recommendation.notes.append("AI: \(response.rationale)")
+            recommendation.notes.append(contentsOf: response.cautions.map { "AI caution: \($0)" })
+            return recommendation
         } catch {
             return nil
         }
@@ -417,7 +421,8 @@ struct TripPlanningService {
             temperatureF: inferredTemperature(from: stop.expectedWeather),
             isRaining: stop.expectedWeather.localizedCaseInsensitiveContains("rain"),
             windMph: inferredWind(from: stop.expectedWeather),
-            location: locationLabel
+            location: locationLabel,
+            humidityPercent: inferredHumidity(from: stop.expectedWeather)
         )
     }
 
@@ -429,7 +434,14 @@ struct TripPlanningService {
     }
 
     private func weatherSummaryText(for result: WeatherLookupResult) -> String {
-        "\(Int(result.input.temperatureF.rounded()))F, \(result.condition), wind \(Int(result.input.windMph.rounded())) mph"
+        [
+            "\(Int(result.input.temperatureF.rounded()))F",
+            result.condition,
+            "wind \(Int(result.input.windMph.rounded())) mph",
+            result.input.humidityPercent.map { "humidity \(Int($0.rounded()))%" }
+        ]
+        .compactMap { $0 }
+        .joined(separator: ", ")
     }
 
     private func activity(for stops: [TripStop]) -> String {
@@ -473,6 +485,14 @@ struct TripPlanningService {
             return numbers[1]
         }
         return text.localizedCaseInsensitiveContains("wind") ? 18 : 5
+    }
+
+    private func inferredHumidity(from text: String) -> Double? {
+        let lowercased = text.lowercased()
+        guard lowercased.contains("humid") || lowercased.contains("humidity") || lowercased.contains("%") else {
+            return nil
+        }
+        return text.split { !$0.isNumber && $0 != "." }.compactMap { Double($0) }.last
     }
 }
 

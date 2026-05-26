@@ -23,8 +23,10 @@ node server.mjs
 In FitCheck Settings:
 
 - Turn on `Use AI proxy`.
-- Set `Proxy endpoint` to `http://127.0.0.1:8787` for the iOS Simulator.
+- Set `Proxy endpoint` to the base URL, such as `http://127.0.0.1:8787` for the iOS Simulator. Do not include a route like `/outfit-recommendation`.
 - Set `Proxy token` to the same value as `FITCHECK_PROXY_TOKEN`.
+
+If the app says a route was not found, restart this backend from the latest code and confirm the base URL in Settings.
 
 For a physical iPhone, set `HOST=0.0.0.0` before starting the proxy and use your Mac's LAN address instead of `127.0.0.1`.
 

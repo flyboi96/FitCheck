@@ -10,7 +10,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     static var primaryTabs: [AppTab] {
-        [.today, .closet, .builder, .trips, .more]
+        [.today, .trips, .closet, .builder, .more]
     }
 
     @ViewBuilder
@@ -37,9 +37,9 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .closet:
             Label("Closet", systemImage: "tshirt")
         case .builder:
-            Label("Builder", systemImage: "wand.and.stars")
+            Label("Build", systemImage: "wand.and.stars")
         case .trips:
-            Label("Trips", systemImage: "suitcase.rolling")
+            Label("Plans", systemImage: "calendar")
         case .more:
             Label("More", systemImage: "ellipsis.circle")
         }

@@ -19,6 +19,7 @@ struct OutfitBuilderView: View {
     @State private var manualWeatherLocation = ""
     @State private var manualWeatherTemperature = "72"
     @State private var manualWeatherWind = "5"
+    @State private var manualWeatherHumidity = ""
     @State private var manualWeatherCondition = "Clear"
     @State private var manualWeatherIsRaining = false
     @State private var manualWeatherOverride: WeatherInput?
@@ -170,7 +171,7 @@ struct OutfitBuilderView: View {
                 }
             }
         }
-        .navigationTitle("Builder")
+        .navigationTitle("Build")
         .task {
             if weatherLookup.result == nil {
                 refreshWeather()
@@ -228,7 +229,7 @@ struct OutfitBuilderView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(Int(manualWeatherOverride.temperatureF.rounded()))F · \(manualWeatherCondition)")
                     .font(.body.weight(.medium))
-                Text("\(manualWeatherOverride.location) · Wind \(Int(manualWeatherOverride.windMph.rounded())) mph · Manual weather")
+                Text("\(manualWeatherOverride.location) · Wind \(Int(manualWeatherOverride.windMph.rounded())) mph\(humidityStatusText(for: manualWeatherOverride)) · Manual weather")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -239,7 +240,7 @@ struct OutfitBuilderView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(Int(result.input.temperatureF.rounded()))F · \(result.condition)")
                     .font(.body.weight(.medium))
-                Text("\(result.input.location) · Wind \(Int(result.input.windMph.rounded())) mph")
+                Text("\(result.input.location) · Wind \(Int(result.input.windMph.rounded())) mph\(humidityStatusText(for: result.input))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -265,6 +266,8 @@ struct OutfitBuilderView: View {
                 .textInputAutocapitalization(.words)
             Toggle("Raining", isOn: $manualWeatherIsRaining)
             TextField("Wind mph", text: $manualWeatherWind)
+                .keyboardType(.numbersAndPunctuation)
+            TextField("Humidity %", text: $manualWeatherHumidity)
                 .keyboardType(.numbersAndPunctuation)
 
             HStack {
@@ -483,6 +486,7 @@ struct OutfitBuilderView: View {
                     temperatureF: weather.temperatureF,
                     isRaining: weather.isRaining,
                     windMph: weather.windMph,
+                    humidityPercent: weather.humidityPercent,
                     usesSavedAvatar: avatars.first?.avatarImageData != nil
                 )
             )
@@ -579,12 +583,15 @@ struct OutfitBuilderView: View {
             return nil
         }
         let wind = Double(manualWeatherWind.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        let humidity = Double(manualWeatherHumidity.trimmingCharacters(in: .whitespacesAndNewlines))
+            .map { min(100, max(0, $0)) }
         let location = manualWeatherLocation.trimmingCharacters(in: .whitespacesAndNewlines)
         return WeatherInput(
             temperatureF: temperature,
             isRaining: manualWeatherIsRaining,
             windMph: wind,
-            location: location.isEmpty ? "Manual location" : location
+            location: location.isEmpty ? "Manual location" : location,
+            humidityPercent: humidity
         )
     }
 
@@ -607,6 +614,11 @@ struct OutfitBuilderView: View {
         }
     }
 
+    private func humidityStatusText(for weather: WeatherInput) -> String {
+        guard let humidity = weather.humidityPercent else { return "" }
+        return " · Humidity \(Int(humidity.rounded()))%"
+    }
+
     private func avatarBackgroundContext(for weather: WeatherInput, condition: String) -> String {
         let conditionText = condition.trimmingCharacters(in: .whitespacesAndNewlines)
         let rainRule = weather.isRaining
@@ -627,10 +639,11 @@ struct OutfitBuilderView: View {
             "Use a location-specific background for \(weather.location), not a generic cloudy city.",
             "\(Int(weather.temperatureF.rounded()))F\(conditionText.isEmpty ? "" : ", \(conditionText)").",
             "Wind \(Int(weather.windMph.rounded())) mph.",
+            weather.humidityPercent.map { "Humidity \(Int($0.rounded()))%." },
             rainRule,
             temperatureRule,
             "For hot, dry places such as Djibouti, use bright arid/coastal light and avoid Seattle-like rain or gray skies unless rain is explicitly reported."
-        ].joined(separator: " ")
+        ].compactMap { $0 }.joined(separator: " ")
     }
 
     private func iconName(for category: ClothingCategory) -> String {

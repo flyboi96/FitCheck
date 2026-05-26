@@ -72,13 +72,20 @@ private struct StylePreferenceForm: View {
                         await generateProfileWithAI()
                     }
                 } label: {
-                    if isGeneratingProfile {
-                        Label("Building Profile", systemImage: "sparkles")
-                    } else {
-                        Label("Build Profile from Answers", systemImage: "sparkles")
-                    }
+                    FitCheckButtonLabel(
+                        title: isGeneratingProfile ? "Building Profile" : "Build Profile from Answers",
+                        systemImage: "sparkles",
+                        isLoading: isGeneratingProfile
+                    )
                 }
+                .buttonStyle(.borderedProminent)
                 .disabled(!canGenerateProfile)
+
+                if !useAIProxy || configuredAIProxyURL == nil {
+                    Text("Enable the AI proxy in Settings and use the base URL, for example http://127.0.0.1:8787.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 if !profileStatus.isEmpty {
                     Text(profileStatus)
@@ -171,7 +178,7 @@ private struct StylePreferenceForm: View {
         guard let baseURL = configuredAIProxyURL else { return }
 
         isGeneratingProfile = true
-        profileStatus = ""
+        profileStatus = "Asking AI to draft your editable style profile."
         defer {
             isGeneratingProfile = false
         }
@@ -205,7 +212,15 @@ private struct StylePreferenceForm: View {
             try? modelContext.save()
             profileStatus = "Profile draft applied. You can edit anything."
         } catch {
-            profileStatus = error.localizedDescription
+            profileStatus = styleProfileErrorMessage(for: error)
         }
+    }
+
+    private func styleProfileErrorMessage(for error: Error) -> String {
+        let message = error.localizedDescription
+        if message.localizedCaseInsensitiveContains("not found") {
+            return "AI style route not found. Use the base proxy URL in Settings and restart or redeploy the latest backend."
+        }
+        return message
     }
 }

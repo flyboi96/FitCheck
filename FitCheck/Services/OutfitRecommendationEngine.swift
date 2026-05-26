@@ -323,6 +323,7 @@ struct WeatherInput: Equatable {
     var isRaining: Bool
     var windMph: Double
     var location: String
+    var humidityPercent: Double? = nil
 
     var summary: String {
         var parts = ["\(Int(temperatureF.rounded()))F"]
@@ -331,6 +332,9 @@ struct WeatherInput: Equatable {
         }
         if windMph >= 15 {
             parts.append("\(Int(windMph.rounded())) mph wind")
+        }
+        if let humidityPercent {
+            parts.append("\(Int(humidityPercent.rounded()))% humidity")
         }
         if !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             parts.append(location)
@@ -665,6 +669,13 @@ struct OutfitRecommendationEngine {
 
         if weather.windMph >= 18 {
             value += weatherTags.contains("wind") ? 8 : 0
+        }
+
+        if let humidity = weather.humidityPercent, humidity >= 70, weather.temperatureF >= 75 {
+            value += weatherTags.contains("hot") ? 6 : 0
+            if item.category == .jacket || item.category == .sweater {
+                value -= 8
+            }
         }
 
         return value

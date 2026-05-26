@@ -10,7 +10,11 @@ struct TripPlannerView: View {
     var body: some View {
         List {
             if trips.isEmpty {
-                ContentUnavailableView("No Trips", systemImage: "suitcase.rolling")
+                ContentUnavailableView(
+                    "No Plans",
+                    systemImage: "calendar.badge.plus",
+                    description: Text("Plan travel packing or a week of outfits ahead of time.")
+                )
             } else {
                 ForEach(trips) { trip in
                     NavigationLink {
@@ -28,13 +32,13 @@ struct TripPlannerView: View {
                 .onDelete(perform: deleteTrips)
             }
         }
-        .navigationTitle("Trips")
+        .navigationTitle("Plans")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showingTripEditor = true
                 } label: {
-                    Label("Add Trip", systemImage: "plus")
+                    Label("Add Plan", systemImage: "plus")
                 }
             }
         }
@@ -76,12 +80,17 @@ private struct TripEditorView: View {
 
     var body: some View {
         Form {
-            TextField("Title", text: $title)
-                .textInputAutocapitalization(.words)
-            DatePicker("Start", selection: $startsAt, displayedComponents: .date)
-            DatePicker("End", selection: $endsAt, displayedComponents: .date)
-            TextEditor(text: $notes)
-                .frame(minHeight: 96)
+            Section("Plan") {
+                TextField("Title", text: $title, prompt: Text("Rome trip or Work week outfits"))
+                    .textInputAutocapitalization(.words)
+                DatePicker("Start", selection: $startsAt, displayedComponents: .date)
+                DatePicker("End", selection: $endsAt, displayedComponents: .date)
+                TextEditor(text: $notes)
+                    .frame(minHeight: 96)
+                Text("Use this for travel, packing, or a normal week of planned outfits.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Section("Laundry & Rewear") {
                 Stepper(value: $laundryIntervalDays, in: 0...14) {
@@ -100,7 +109,7 @@ private struct TripEditorView: View {
                 wearStepper("Exercise clothes", value: $activewearWearsBeforeWash)
             }
         }
-        .navigationTitle("Add Trip")
+        .navigationTitle("Add Plan")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
@@ -175,6 +184,9 @@ private struct TripDetailView: View {
     var body: some View {
         List {
             Section("Stops") {
+                Text("Stops can be cities for travel or your home city for a regular week.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 ForEach(trip.stops.sorted { $0.startsAt < $1.startsAt }) { stop in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(stop.location)
@@ -267,6 +279,10 @@ private struct TripDetailView: View {
                     message: generationStatus,
                     isLoading: isGeneratingPackingList || isGeneratingItinerary
                 )
+
+                Text("For a normal week, add one stop for your city across the whole date range, then generate an itinerary.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Export") {
@@ -323,6 +339,25 @@ private struct TripDetailView: View {
                             Text(outfit.items.compactMap { $0.item?.name }.joined(separator: ", "))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            Text("Score \(Int(outfit.score))")
+                                .font(.caption.weight(.semibold))
+                            if !outfit.weatherSummary.isEmpty {
+                                Text(outfit.weatherSummary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if !outfit.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                DisclosureGroup("Scoring comments") {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        ForEach(outfit.notes.fitcheckLines, id: \.self) { note in
+                                            Label(note, systemImage: "checkmark.circle")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                                .font(.caption)
+                            }
                             if let latestFeedback = latestFeedback(for: outfit) {
                                 Text("Feedback: \(latestFeedback.type.displayName)")
                                     .font(.caption)
@@ -537,8 +572,17 @@ private struct TripDetailView: View {
             }
             if let outfit = itinerary.outfit {
                 lines.append("Score: \(Int(outfit.score))")
+                if !outfit.weatherSummary.isEmpty {
+                    lines.append("Weather: \(outfit.weatherSummary)")
+                }
                 for item in outfit.items.compactMap(\.item).sorted(by: { $0.category.displayName < $1.category.displayName }) {
                     lines.append("- \(item.category.displayName): \(item.name)")
+                }
+                if !outfit.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    lines.append("Comments:")
+                    for note in outfit.notes.fitcheckLines {
+                        lines.append("- \(note)")
+                    }
                 }
             } else {
                 lines.append("No outfit generated")
@@ -584,7 +628,7 @@ private struct TripStopEditorView: View {
                 .textInputAutocapitalization(.words)
             DatePicker("Start", selection: $startsAt, displayedComponents: .date)
             DatePicker("End", selection: $endsAt, displayedComponents: .date)
-            TextField("Manual weather if lookup fails", text: $expectedWeather)
+            TextField("Manual weather if lookup fails", text: $expectedWeather, prompt: Text("88F, sunny, wind 6 mph, humidity 70%"))
                 .textInputAutocapitalization(.sentences)
             TextField("Activities or local notes", text: $customsNotes)
                 .textInputAutocapitalization(.sentences)
@@ -618,5 +662,13 @@ private struct TripStopEditorView: View {
         trip.stops.append(stop)
         try? modelContext.save()
         dismiss()
+    }
+}
+
+private extension String {
+    var fitcheckLines: [String] {
+        split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 }

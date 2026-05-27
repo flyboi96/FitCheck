@@ -160,6 +160,14 @@ private struct TripEditorView: View {
     }
 }
 
+private struct TripPlanDay: Identifiable {
+    var date: Date
+
+    var id: TimeInterval {
+        Calendar.current.startOfDay(for: date).timeIntervalSinceReferenceDate
+    }
+}
+
 private struct TripDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ClothingItem.name) private var closetItems: [ClothingItem]
@@ -180,13 +188,14 @@ private struct TripDetailView: View {
     @State private var generationStatus = ""
     @State private var feedbackItinerary: DailyItineraryOutfit?
     @State private var editingItinerary: DailyItineraryOutfit?
+    @State private var editingDayPlan: TripPlanDay?
 
     private let service = TripPlanningService()
 
     var body: some View {
         List {
             Section("Stops") {
-                Text("Stops can be cities for travel or your home city for a regular week.")
+                Text("Use stops for broad location ranges. Use Daily Plan below for exact outfit requests by date.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 ForEach(sortedStops) { stop in
@@ -225,6 +234,30 @@ private struct TripDetailView: View {
                 }
             }
 
+            Section("Daily Plan") {
+                Text("Set where you will be and the exact outfit types you want for each date. Itinerary generation only uses the selected outfit types when any daily plan has selections.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(planDays) { day in
+                    Button {
+                        editingDayPlan = day
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(TripPlannerView.dateFormatter.string(from: day.date))
+                                .font(.body.weight(.medium))
+                            Text(locationLabel(for: day.date).isEmpty ? "Set location" : locationLabel(for: day.date))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            let contexts = requestedContexts(on: day.date)
+                            Text(contexts.isEmpty ? "No outfits selected" : contexts.map(\.displayName).joined(separator: ", "))
+                                .font(.caption)
+                                .foregroundStyle(contexts.isEmpty ? .tertiary : .secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
             Section("Laundry & Rewear") {
                 Stepper(value: $trip.laundryIntervalDays, in: 0...14) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -250,11 +283,11 @@ private struct TripDetailView: View {
                 Button {
                     Task { @MainActor in
                         isGeneratingPackingList = true
+                        defer { isGeneratingPackingList = false }
                         generationStatus = "Generating packing list from your closet and trip stops."
                         await service.rebuildPackingList(for: trip, closet: closetItems, context: modelContext)
                         try? modelContext.save()
                         generationStatus = "Packing list updated with \(trip.packingLists.flatMap(\.items).count) item rows."
-                        isGeneratingPackingList = false
                     }
                 } label: {
                     FitCheckButtonLabel(
@@ -269,6 +302,7 @@ private struct TripDetailView: View {
                 Button {
                     Task { @MainActor in
                         isGeneratingItinerary = true
+                        defer { isGeneratingItinerary = false }
                         generationStatus = tripAIOptions == nil
                             ? "Generating outfit itinerary with local scoring."
                             : "Generating outfit itinerary with AI filtering and local scoring."
@@ -282,7 +316,6 @@ private struct TripDetailView: View {
                         )
                         try? modelContext.save()
                         generationStatus = "Itinerary updated with \(trip.itineraryOutfits.count) daily outfit\(trip.itineraryOutfits.count == 1 ? "" : "s")."
-                        isGeneratingItinerary = false
                     }
                 } label: {
                     FitCheckButtonLabel(
@@ -291,14 +324,20 @@ private struct TripDetailView: View {
                         isLoading: isGeneratingItinerary
                     )
                 }
+                .buttonStyle(.borderedProminent)
                 .disabled(isGeneratingItinerary || trip.stops.isEmpty)
+
+                if isGeneratingItinerary {
+                    ProgressView("Generating itinerary")
+                        .controlSize(.regular)
+                }
 
                 FitCheckInlineStatus(
                     message: generationStatus,
                     isLoading: isGeneratingPackingList || isGeneratingItinerary
                 )
 
-                Text("For a normal week, add one stop for your city across the whole date range, then generate an itinerary.")
+                Text("For a normal week, add one stop for your city across the whole date range, then use Daily Plan to choose outfits for each date.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -425,6 +464,16 @@ private struct TripDetailView: View {
                 ItineraryOutfitEditorView(itinerary: itinerary)
             }
         }
+        .sheet(item: $editingDayPlan) { day in
+            NavigationStack {
+                TripDayPlanEditorView(
+                    trip: trip,
+                    date: day.date,
+                    existingStop: dailyPlanStop(on: day.date),
+                    fallbackLocation: locationLabel(for: day.date)
+                )
+            }
+        }
         .onChange(of: trip.laundryIntervalDays) { _, _ in
             try? modelContext.save()
         }
@@ -451,6 +500,56 @@ private struct TripDetailView: View {
 
     private var sortedStops: [TripStop] {
         trip.stops.sorted { $0.startsAt < $1.startsAt }
+    }
+
+    private var planDays: [TripPlanDay] {
+        dates(from: trip.startsAt, through: trip.endsAt).map(TripPlanDay.init)
+    }
+
+    private func requestedContexts(on date: Date) -> [OutfitContextOption] {
+        stops(on: date).flatMap(\.requestedContexts)
+    }
+
+    private func locationLabel(for date: Date) -> String {
+        var seen = Set<String>()
+        let locations = stops(on: date).compactMap { stop -> String? in
+            let location = stop.location.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !location.isEmpty, seen.insert(location).inserted else { return nil }
+            return location
+        }
+        return locations.joined(separator: " -> ")
+    }
+
+    private func dailyPlanStop(on date: Date) -> TripStop? {
+        let startOfDay = Calendar.current.startOfDay(for: date)
+        return trip.stops.first { stop in
+            Calendar.current.startOfDay(for: stop.startsAt) == startOfDay &&
+                Calendar.current.startOfDay(for: stop.endsAt) == startOfDay &&
+                (!stop.requestedContexts.isEmpty || !stop.customsNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+
+    private func stops(on date: Date) -> [TripStop] {
+        let startOfDay = Calendar.current.startOfDay(for: date)
+        return trip.stops
+            .filter { stop in
+                Calendar.current.startOfDay(for: stop.startsAt) <= startOfDay &&
+                    Calendar.current.startOfDay(for: stop.endsAt) >= startOfDay
+            }
+            .sorted { $0.startsAt < $1.startsAt }
+    }
+
+    private func dates(from start: Date, through end: Date) -> [Date] {
+        var result: [Date] = []
+        var cursor = Calendar.current.startOfDay(for: start)
+        let final = Calendar.current.startOfDay(for: end)
+
+        while cursor <= final {
+            result.append(cursor)
+            guard let next = Calendar.current.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+        return result
     }
 
     private func deleteStops(at offsets: IndexSet) {
@@ -831,6 +930,112 @@ private struct ItineraryOutfitEditorView: View {
     }
 }
 
+private struct TripDayPlanEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
+    @Bindable var trip: Trip
+    let date: Date
+    private let existingStop: TripStop?
+
+    @State private var location = ""
+    @State private var expectedWeather = ""
+    @State private var notes = ""
+    @State private var selectedContextRawValues: Set<String>
+
+    init(trip: Trip, date: Date, existingStop: TripStop?, fallbackLocation: String) {
+        self.trip = trip
+        self.date = Calendar.current.startOfDay(for: date)
+        self.existingStop = existingStop
+        _location = State(initialValue: existingStop?.location ?? fallbackLocation)
+        _expectedWeather = State(initialValue: existingStop?.expectedWeather ?? "")
+        _notes = State(initialValue: existingStop?.customsNotes ?? "")
+        _selectedContextRawValues = State(initialValue: Set(existingStop?.requestedContexts.map(\.rawValue) ?? []))
+    }
+
+    var body: some View {
+        Form {
+            Section("Day") {
+                LabeledContent("Date", value: TripPlannerView.dateFormatter.string(from: date))
+                TextField("Location", text: $location)
+                    .textInputAutocapitalization(.words)
+                TextField("Manual weather if lookup fails", text: $expectedWeather, prompt: Text("88F, sunny, wind 6 mph, humidity 70%"))
+                    .textInputAutocapitalization(.sentences)
+            }
+
+            Section("Outfits Needed") {
+                Text("Select only the outfit types you want generated for this date.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(fitCheckPlanContextOptions) { option in
+                    Toggle(option.displayName, isOn: contextBinding(for: option))
+                }
+            }
+
+            Section("Notes") {
+                TextField("Plans for this date", text: $notes, prompt: Text("Work day, dinner, run before work"))
+                    .textInputAutocapitalization(.sentences)
+            }
+        }
+        .navigationTitle("Daily Plan")
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    dismiss()
+                }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") {
+                    save()
+                }
+                .disabled(location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+    }
+
+    private func save() {
+        let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let existingStop {
+            existingStop.location = trimmedLocation
+            existingStop.startsAt = date
+            existingStop.endsAt = date
+            existingStop.expectedWeather = expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines)
+            existingStop.customsNotes = notes
+            existingStop.requestedContexts = selectedContexts
+        } else {
+            let stop = TripStop(
+                location: trimmedLocation,
+                startsAt: date,
+                endsAt: date,
+                expectedWeather: expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines),
+                customsNotes: notes,
+                requestedContextRawValues: selectedContexts.map(\.rawValue).joined(separator: "\n"),
+                trip: trip
+            )
+            modelContext.insert(stop)
+            trip.stops.append(stop)
+        }
+        try? modelContext.save()
+        dismiss()
+    }
+
+    private var selectedContexts: [OutfitContextOption] {
+        fitCheckPlanContextOptions.filter { selectedContextRawValues.contains($0.rawValue) }
+    }
+
+    private func contextBinding(for option: OutfitContextOption) -> Binding<Bool> {
+        Binding {
+            selectedContextRawValues.contains(option.rawValue)
+        } set: { isSelected in
+            if isSelected {
+                selectedContextRawValues.insert(option.rawValue)
+            } else {
+                selectedContextRawValues.remove(option.rawValue)
+            }
+        }
+    }
+}
+
 private struct TripStopEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -867,10 +1072,10 @@ private struct TripStopEditorView: View {
             }
 
             Section("Outfits Needed") {
-                Text("Pick the exact outfit types for these dates. Leave blank to infer from notes.")
+                Text("Pick outfit types only if this stop should apply them to every date in the range. For exact day-by-day control, use Daily Plan.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                ForEach(Self.planContextOptions) { option in
+                ForEach(fitCheckPlanContextOptions) { option in
                     Toggle(option.displayName, isOn: contextBinding(for: option))
                 }
             }
@@ -927,7 +1132,7 @@ private struct TripStopEditorView: View {
     }
 
     private var selectedContexts: [OutfitContextOption] {
-        Self.planContextOptions.filter { selectedContextRawValues.contains($0.rawValue) }
+        fitCheckPlanContextOptions.filter { selectedContextRawValues.contains($0.rawValue) }
     }
 
     private func contextBinding(for option: OutfitContextOption) -> Binding<Bool> {
@@ -942,19 +1147,20 @@ private struct TripStopEditorView: View {
         }
     }
 
-    private static let planContextOptions: [OutfitContextOption] = [
-        .workDay,
-        .travelDay,
-        .casualDay,
-        .walkingAroundCity,
-        .dinner,
-        .dateNight,
-        .runningDay,
-        .liftingDay,
-        .gym,
-        .wedding
-    ]
 }
+
+private let fitCheckPlanContextOptions: [OutfitContextOption] = [
+    .workDay,
+    .travelDay,
+    .casualDay,
+    .walkingAroundCity,
+    .dinner,
+    .dateNight,
+    .runningDay,
+    .liftingDay,
+    .gym,
+    .wedding
+]
 
 private extension String {
     var fitcheckLines: [String] {

@@ -109,8 +109,10 @@ struct TripPlanningService {
         let stopsByDay = stopsGroupedByDay(stops)
         let tripDates = stopsByDay.keys.sorted()
         var plannedWearCounts: [UUID: Int] = [:]
-        let exerciseTargetDays = exerciseTargetDays(for: trip, days: tripDates.count)
-        var plannedExerciseDays = 0
+        let explicitDailyPlanning = tripUsesExplicitContexts(trip)
+        let activeCloset = closet.filter { $0.status == .active }
+        let preferredPackingCloset = packingCandidates(from: activeCloset, trip: trip, days: max(1, tripDates.count))
+        let preferredPackingIDs = Set(preferredPackingCloset.map(\.id))
 
         for (dayIndex, date) in tripDates.enumerated() {
             if shouldResetLaundryCounts(for: trip, dayIndex: dayIndex) {
@@ -124,14 +126,12 @@ struct TripPlanningService {
             let locationLabel = locations.joined(separator: " -> ")
             let isTravelDay = locations.count > 1
             let weather = await weatherInput(for: primaryStop, date: date, locationLabel: locationLabel)
-            var contexts = itineraryContexts(for: dayStops, trip: trip, isTravelDay: isTravelDay)
-            if contexts.contains(where: isExerciseContext) {
-                plannedExerciseDays += 1
-            } else if plannedExerciseDays < exerciseTargetDays {
-                contexts.append(exerciseContext(for: dayStops, trip: trip))
-                plannedExerciseDays += 1
-            }
-            contexts = deduplicatedContexts(contexts)
+            let contexts = deduplicatedContexts(itineraryContexts(
+                for: dayStops,
+                trip: trip,
+                isTravelDay: isTravelDay,
+                explicitDailyPlanning: explicitDailyPlanning
+            ))
 
             for outfitContext in contexts {
                 let request = RecommendationRequest(
@@ -145,15 +145,25 @@ struct TripPlanningService {
                     plannedWearCounts: plannedWearCounts,
                     trip: trip
                 )
+                let availablePackingCloset = availableCloset.filter { preferredPackingIDs.contains($0.id) }
+                let primaryCloset = availablePackingCloset.isEmpty ? availableCloset : availablePackingCloset
+                let fallbackCloset = preferredPackingCloset.isEmpty ? closet : preferredPackingCloset
 
                 let localRecommendations = engine.recommend(
-                    closet: availableCloset,
+                    closet: primaryCloset,
                     feedback: feedback,
                     stylePreference: stylePreference,
                     request: request,
                     limit: 3
                 )
                 let fallbackRecommendations = engine.recommend(
+                    closet: fallbackCloset,
+                    feedback: feedback,
+                    stylePreference: stylePreference,
+                    request: request,
+                    limit: 3
+                )
+                let fullClosetRecommendations = engine.recommend(
                     closet: closet,
                     feedback: feedback,
                     stylePreference: stylePreference,
@@ -161,7 +171,7 @@ struct TripPlanningService {
                     limit: 3
                 )
 
-                guard var recommendation = localRecommendations.first ?? fallbackRecommendations.first else {
+                guard var recommendation = localRecommendations.first ?? fallbackRecommendations.first ?? fullClosetRecommendations.first else {
                     continue
                 }
                 guard engine.isAcceptableOutfit(recommendation.items, request: request, stylePreference: stylePreference) else {
@@ -169,9 +179,9 @@ struct TripPlanningService {
                 }
 
                 if let aiOptions,
-                   let aiRecommendation = await aiFilteredRecommendation(
+                    let aiRecommendation = await aiFilteredRecommendation(
                     localRecommendation: recommendation,
-                    closet: availableCloset.isEmpty ? closet : availableCloset,
+                    closet: primaryCloset.isEmpty ? closet : primaryCloset,
                     feedback: feedback,
                     stylePreference: stylePreference,
                     request: request,
@@ -328,6 +338,10 @@ struct TripPlanningService {
     }
 
     private func packingReason(for item: ClothingItem, trip: Trip, days: Int) -> String {
+        if !isLaundryTrackedCategory(item.category) {
+            return "Reusable item; no laundry limit"
+        }
+
         let weatherText = trip.stops.map(\.expectedWeather).joined(separator: " ")
         if !weatherText.isEmpty, ClothingInference.weatherTags(for: item).contains(where: { weatherText.localizedCaseInsensitiveContains($0) }) {
             return "Weather match"
@@ -360,7 +374,7 @@ struct TripPlanningService {
             guard availableQuantity > 0 else { continue }
 
             let quantity = min(availableQuantity, remaining)
-            let reason = "Pack \(quantity) of \(needed) \(purpose.reasonLabel(for: category)); saved quantity \(max(1, item.quantity))"
+            let reason = "\(purpose.displayName(for: category)): target \(needed); this item has \(max(1, item.quantity)) available"
             let packingItem = PackingListItem(quantity: quantity, reason: reason, item: item, packingList: list)
             context.insert(packingItem)
             list.items.append(packingItem)
@@ -371,7 +385,7 @@ struct TripPlanningService {
         if remaining > 0 {
             let packingItem = PackingListItem(
                 quantity: remaining,
-                reason: "Add \(remaining) more \(purpose.reasonLabel(for: category))",
+                reason: "Add \(purpose.reasonLabel(for: category))",
                 item: nil,
                 packingList: list
             )
@@ -397,7 +411,7 @@ struct TripPlanningService {
         case .daily:
             preferredItems = dailyItems.isEmpty ? categoryItems : dailyItems
         case .exercise:
-            preferredItems = exerciseItems.isEmpty ? categoryItems : exerciseItems
+            preferredItems = exerciseItems
         }
 
         return preferredItems.sorted {
@@ -451,6 +465,10 @@ struct TripPlanningService {
         return text.containsAny(["gym", "workout", "exercise", "run", "running", "lift", "lifting", "weights", "strength", "training", "hike", "hiking"])
     }
 
+    private func tripUsesExplicitContexts(_ trip: Trip) -> Bool {
+        trip.stops.contains { !$0.requestedContexts.isEmpty }
+    }
+
     private func wearLimit(for category: ClothingCategory, trip: Trip) -> Int {
         switch category {
         case .shirt, .blouse, .dress:
@@ -466,7 +484,7 @@ struct TripPlanningService {
         case .underwear, .socks:
             return 1
         case .shoes, .heels, .flats, .belt, .watch, .jewelry, .accessory, .bag, .purse, .other:
-            return max(1, trip.wearsBeforeWash)
+            return Int.max
         }
     }
 
@@ -492,7 +510,11 @@ struct TripPlanningService {
     }
 
     private func isLaundryTracked(_ item: ClothingItem) -> Bool {
-        switch item.category {
+        isLaundryTrackedCategory(item.category)
+    }
+
+    private func isLaundryTrackedCategory(_ category: ClothingCategory) -> Bool {
+        switch category {
         case .shirt, .blouse, .pants, .shorts, .dress, .skirt, .jacket, .sweater, .activewear, .underwear, .socks:
             return true
         case .shoes, .heels, .flats, .belt, .watch, .jewelry, .accessory, .bag, .purse, .other:
@@ -570,13 +592,21 @@ struct TripPlanningService {
         .joined(separator: ", ")
     }
 
-    private func itineraryContexts(for stops: [TripStop], trip: Trip, isTravelDay: Bool) -> [OutfitContextOption] {
+    private func itineraryContexts(
+        for stops: [TripStop],
+        trip: Trip,
+        isTravelDay: Bool,
+        explicitDailyPlanning: Bool
+    ) -> [OutfitContextOption] {
         let requestedContexts = stops.flatMap(\.requestedContexts)
+        if explicitDailyPlanning {
+            return requestedContexts
+        }
         if !requestedContexts.isEmpty {
             return requestedContexts
         }
 
-        let text = ([trip.notes] + stops.map(\.customsNotes))
+        let text = stops.map(\.customsNotes)
             .joined(separator: " ")
             .lowercased()
         var contexts: [OutfitContextOption] = []
@@ -772,6 +802,21 @@ private struct PackingExtra {
 private enum BaseLayerPurpose {
     case daily
     case exercise
+
+    func displayName(for category: ClothingCategory) -> String {
+        switch (self, category) {
+        case (.daily, .underwear):
+            return "Daily underwear"
+        case (.daily, .socks):
+            return "Daily socks"
+        case (.exercise, .underwear):
+            return "Exercise underwear"
+        case (.exercise, .socks):
+            return "Exercise socks"
+        default:
+            return category.displayName
+        }
+    }
 
     func reasonLabel(for category: ClothingCategory) -> String {
         switch (self, category) {

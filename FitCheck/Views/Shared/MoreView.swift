@@ -57,7 +57,7 @@ private struct ScoringGuideView: View {
             }
 
             Section("Weather") {
-                Text("Cold weather rewards wool, merino, fleece, sweaters, jackets, boots, and coats. Hot weather rewards linen, tees, lightweight items, and shorts. Rain rewards rain shells, waterproof items, and weather-safe shoes.")
+                Text("Cold weather rewards wool, merino, fleece, sweaters, jackets, boots, and coats. Hot weather rewards linen, tees, lightweight items, and shorts. Rain rewards rain shells, waterproof items, and weather-safe shoes. Your temperature comfort setting shifts this: if you run hot, warm and humid days push harder toward shorts, tees, and fewer layers.")
             }
 
             Section("Context") {
@@ -77,7 +77,11 @@ private struct ScoringGuideView: View {
             }
 
             Section("Style and Feedback") {
-                Text("Preferred colors and rules from your style profile can add points. Liked combinations get a boost. Bad feedback on a full combination or item removes points so it is less likely to appear again.")
+                Text("Preferred colors and rules from your style profile can add points without adding filler comments. Statement-piece preferences tell FitCheck and AI when a bold item is welcome. Liked combinations get a boost. Bad feedback on a full combination or item removes points so it is less likely to appear again.")
+            }
+
+            Section("Hard Rules") {
+                Text("Some rules block an outfit even if the numeric score would otherwise be good. Current hard rules include no shorts with boots and no non-rain-shell jacket in hot, humid weather.")
             }
 
             Section("AI Review") {

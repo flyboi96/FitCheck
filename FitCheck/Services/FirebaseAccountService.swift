@@ -20,6 +20,8 @@ struct CloudUserProfile: Equatable {
     var preferredColors: String
     var boldness: Int
     var preferredFit: String
+    var temperatureSensitivity: TemperatureSensitivityOption
+    var statementPiecePreference: String
     var rules: String
     var createdAt: Date
     var updatedAt: Date
@@ -35,6 +37,8 @@ struct CloudUserProfile: Equatable {
         preferredColors: String = "",
         boldness: Int = 3,
         preferredFit: String = "",
+        temperatureSensitivity: TemperatureSensitivityOption = .balanced,
+        statementPiecePreference: String = "",
         rules: String = "",
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -49,6 +53,8 @@ struct CloudUserProfile: Equatable {
         self.preferredColors = preferredColors
         self.boldness = boldness
         self.preferredFit = preferredFit
+        self.temperatureSensitivity = temperatureSensitivity
+        self.statementPiecePreference = statementPiecePreference
         self.rules = rules
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -66,6 +72,8 @@ struct CloudUserProfile: Equatable {
             preferredColors: draft.preferredColors,
             boldness: draft.boldness,
             preferredFit: draft.preferredFit,
+            temperatureSensitivity: draft.temperatureSensitivity,
+            statementPiecePreference: draft.statementPiecePreference,
             rules: draft.rules
         )
     }
@@ -82,6 +90,8 @@ struct CloudUserProfile: Equatable {
             "preferredColors": preferredColors,
             "boldness": boldness,
             "preferredFit": preferredFit,
+            "temperatureSensitivity": temperatureSensitivity.rawValue,
+            "statementPiecePreference": statementPiecePreference,
             "rules": rules,
             "createdAt": createdAt,
             "updatedAt": updatedAt
@@ -100,6 +110,8 @@ struct CloudUserProfile: Equatable {
             preferredColors: stringValue(data["preferredColors"]) ?? "",
             boldness: intValue(data["boldness"]) ?? 3,
             preferredFit: stringValue(data["preferredFit"]) ?? "",
+            temperatureSensitivity: TemperatureSensitivityOption(rawValue: stringValue(data["temperatureSensitivity"]) ?? "") ?? .balanced,
+            statementPiecePreference: stringValue(data["statementPiecePreference"]) ?? "",
             rules: stringValue(data["rules"]) ?? "",
             createdAt: dateValue(data["createdAt"]) ?? Date(),
             updatedAt: dateValue(data["updatedAt"]) ?? Date()
@@ -317,6 +329,8 @@ struct AccountProfileDraft: Equatable {
     var preferredColors: String = ""
     var boldness: Int = 3
     var preferredFit: String = ""
+    var temperatureSensitivity: TemperatureSensitivityOption = .balanced
+    var statementPiecePreference: String = ""
     var rules: String = ""
 
     init() { }
@@ -331,6 +345,8 @@ struct AccountProfileDraft: Equatable {
         preferredColors = profile.preferredColors
         boldness = profile.boldness
         preferredFit = profile.preferredFit
+        temperatureSensitivity = profile.temperatureSensitivity
+        statementPiecePreference = profile.statementPiecePreference
         rules = profile.rules
     }
 
@@ -343,6 +359,8 @@ struct AccountProfileDraft: Equatable {
         preferredColors = preference?.preferredColors ?? ""
         boldness = preference?.boldness ?? 3
         preferredFit = preference?.preferredFit ?? ""
+        temperatureSensitivity = preference?.temperatureSensitivity ?? .balanced
+        statementPiecePreference = preference?.statementPiecePreference ?? ""
         rules = preference?.rules ?? ""
     }
 }
@@ -462,6 +480,8 @@ final class FirebaseAccountStore: ObservableObject {
                 preferredColors: draft.preferredColors,
                 boldness: draft.boldness,
                 preferredFit: draft.preferredFit,
+                temperatureSensitivity: draft.temperatureSensitivity,
+                statementPiecePreference: draft.statementPiecePreference,
                 rules: draft.rules,
                 createdAt: currentCreatedAt,
                 updatedAt: Date()

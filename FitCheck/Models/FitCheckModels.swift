@@ -162,6 +162,22 @@ enum FeedbackType: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+enum TemperatureSensitivityOption: String, CaseIterable, Codable, Identifiable {
+    case balanced
+    case runsHot
+    case runsCold
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .balanced: "Balanced"
+        case .runsHot: "I run hot"
+        case .runsCold: "I run cold"
+        }
+    }
+}
+
 @Model
 final class ClothingItem: Identifiable {
     var id: UUID
@@ -355,6 +371,8 @@ final class StylePreference: Identifiable {
     var preferredColors: String
     var boldness: Int
     var preferredFit: String
+    var temperatureSensitivityRawValue: String = TemperatureSensitivityOption.balanced.rawValue
+    var statementPiecePreference: String = ""
     var rules: String
     var updatedAt: Date
 
@@ -366,6 +384,8 @@ final class StylePreference: Identifiable {
         preferredColors: String = "",
         boldness: Int = 3,
         preferredFit: String = "",
+        temperatureSensitivity: TemperatureSensitivityOption = .balanced,
+        statementPiecePreference: String = "",
         rules: String = "",
         updatedAt: Date = Date()
     ) {
@@ -376,8 +396,15 @@ final class StylePreference: Identifiable {
         self.preferredColors = preferredColors
         self.boldness = boldness
         self.preferredFit = preferredFit
+        self.temperatureSensitivityRawValue = temperatureSensitivity.rawValue
+        self.statementPiecePreference = statementPiecePreference
         self.rules = rules
         self.updatedAt = updatedAt
+    }
+
+    var temperatureSensitivity: TemperatureSensitivityOption {
+        get { TemperatureSensitivityOption(rawValue: temperatureSensitivityRawValue) ?? .balanced }
+        set { temperatureSensitivityRawValue = newValue.rawValue }
     }
 }
 

@@ -57,6 +57,8 @@ private struct StylePreferenceForm: View {
                         Text("What outfits make you feel most like yourself?")
                         Text("What do you wear most often now?")
                         Text("What colors, fits, or brands do you usually like?")
+                        Text("Do you run hot or cold compared with other people?")
+                        Text("How often should one bold item show up?")
                         Text("What feels too flashy, too formal, too casual, or just wrong?")
                         Text("Are there any hard rules FitCheck should follow?")
                     }
@@ -122,6 +124,20 @@ private struct StylePreferenceForm: View {
                     .textInputAutocapitalization(.sentences)
                 TextField("Preferred fit", text: $preference.preferredFit)
                     .textInputAutocapitalization(.sentences)
+
+                Picker("Temperature comfort", selection: $preference.temperatureSensitivity) {
+                    ForEach(TemperatureSensitivityOption.allCases) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Statement pieces")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: $preference.statementPiecePreference)
+                        .frame(minHeight: 80)
+                }
             }
 
             Section("Avoid") {
@@ -207,6 +223,11 @@ private struct StylePreferenceForm: View {
             preference.preferredFit = response.preferredFit
             preference.dislikedCombinations = response.dislikedCombinations
             preference.rules = response.rules
+            if preference.statementPiecePreference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                preference.statementPiecePreference = response.boldness >= 4
+                    ? "Use one bold item occasionally, balanced by neutral pieces."
+                    : "Keep bold items occasional and intentional."
+            }
             preference.boldness = response.boldness
             preference.updatedAt = Date()
             try? modelContext.save()

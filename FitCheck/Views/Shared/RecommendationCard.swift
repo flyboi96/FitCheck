@@ -48,13 +48,15 @@ struct RecommendationCard: View {
             }
 
             if !recommendation.notes.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                DisclosureGroup("Why this scored this way") {
                     ForEach(recommendation.notes, id: \.self) { note in
                         Label(note, systemImage: "checkmark.circle")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
             }
 
             if let aiReview {
@@ -235,10 +237,14 @@ struct RecommendationDraftEditorView: View {
                 Section("Score") {
                     Text("Score \(Int(recommendation.score))")
                         .font(.headline)
-                    ForEach(recommendation.notes, id: \.self) { note in
-                        Label(note, systemImage: "checkmark.circle")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    if !recommendation.notes.isEmpty {
+                        DisclosureGroup("Why this scored this way") {
+                            ForEach(recommendation.notes, id: \.self) { note in
+                                Label(note, systemImage: "checkmark.circle")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                     if !status.isEmpty {
                         Text(status)

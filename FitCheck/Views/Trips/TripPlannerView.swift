@@ -524,6 +524,8 @@ private struct TripDetailView: View {
             preference.favoriteLooks,
             preference.preferredColors,
             preference.preferredFit,
+            "Temperature comfort: \(preference.temperatureSensitivity.displayName)",
+            preference.statementPiecePreference.isEmpty ? nil : "Statement pieces: \(preference.statementPiecePreference)",
             preference.rules,
             preference.dislikedCombinations.isEmpty ? nil : "Avoid: \(preference.dislikedCombinations)"
         ]

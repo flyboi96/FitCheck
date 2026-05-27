@@ -225,7 +225,8 @@ struct AccountView: View {
                     Text("Style summary: the overall vibe FitCheck should aim for.")
                     Text("Favorite looks: outfits or references you tend to like.")
                     Text("Preferred colors and fit: what usually feels natural on you.")
-                    Text("Boldness: how experimental recommendations should be.")
+                    Text("Temperature comfort: whether FitCheck should dress you warmer or cooler than the forecast suggests.")
+                    Text("Statement pieces: how often bold items should be used.")
                     Text("Disliked combinations and rules: hard no's the app should avoid.")
                 }
                 .font(.caption)
@@ -253,8 +254,18 @@ struct AccountView: View {
             TextField("Preferred fit", text: $draft.preferredFit)
                 .textInputAutocapitalization(.sentences)
 
-            Stepper(value: $draft.boldness, in: 1...5) {
-                LabeledContent("Boldness", value: "\(draft.boldness)/5")
+            Picker("Temperature comfort", selection: $draft.temperatureSensitivity) {
+                ForEach(TemperatureSensitivityOption.allCases) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Statement pieces")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $draft.statementPiecePreference)
+                    .frame(minHeight: 72)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -381,7 +392,8 @@ struct AccountView: View {
             profile.preferredColors,
             profile.preferredFit,
             profile.dislikedCombinations,
-            profile.rules
+            profile.rules,
+            profile.statementPiecePreference
         ]
         .contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         let localHasStyle = [
@@ -390,7 +402,8 @@ struct AccountView: View {
             localPreference.preferredColors,
             localPreference.preferredFit,
             localPreference.dislikedCombinations,
-            localPreference.rules
+            localPreference.rules,
+            localPreference.statementPiecePreference
         ]
         .contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         let localIsNewer = localPreference.updatedAt > profile.updatedAt
@@ -402,6 +415,8 @@ struct AccountView: View {
             draft.preferredColors = localPreference.preferredColors
             draft.boldness = localPreference.boldness
             draft.preferredFit = localPreference.preferredFit
+            draft.temperatureSensitivity = localPreference.temperatureSensitivity
+            draft.statementPiecePreference = localPreference.statementPiecePreference
             draft.rules = localPreference.rules
         }
 
@@ -426,6 +441,8 @@ struct AccountView: View {
         preference.preferredColors = draft.preferredColors
         preference.boldness = draft.boldness
         preference.preferredFit = draft.preferredFit
+        preference.temperatureSensitivity = draft.temperatureSensitivity
+        preference.statementPiecePreference = draft.statementPiecePreference
         preference.rules = draft.rules
         preference.updatedAt = Date()
         try? modelContext.save()

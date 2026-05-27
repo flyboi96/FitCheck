@@ -427,8 +427,24 @@ private struct StylePreferenceBackup: Codable {
     var preferredColors: String
     var boldness: Int
     var preferredFit: String
+    var temperatureSensitivityRawValue: String
+    var statementPiecePreference: String
     var rules: String
     var updatedAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case styleDescription
+        case favoriteLooks
+        case dislikedCombinations
+        case preferredColors
+        case boldness
+        case preferredFit
+        case temperatureSensitivityRawValue
+        case statementPiecePreference
+        case rules
+        case updatedAt
+    }
 
     init(preference: StylePreference) {
         id = preference.id
@@ -438,8 +454,25 @@ private struct StylePreferenceBackup: Codable {
         preferredColors = preference.preferredColors
         boldness = preference.boldness
         preferredFit = preference.preferredFit
+        temperatureSensitivityRawValue = preference.temperatureSensitivityRawValue
+        statementPiecePreference = preference.statementPiecePreference
         rules = preference.rules
         updatedAt = preference.updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        styleDescription = try container.decode(String.self, forKey: .styleDescription)
+        favoriteLooks = try container.decode(String.self, forKey: .favoriteLooks)
+        dislikedCombinations = try container.decode(String.self, forKey: .dislikedCombinations)
+        preferredColors = try container.decode(String.self, forKey: .preferredColors)
+        boldness = try container.decode(Int.self, forKey: .boldness)
+        preferredFit = try container.decode(String.self, forKey: .preferredFit)
+        temperatureSensitivityRawValue = try container.decodeIfPresent(String.self, forKey: .temperatureSensitivityRawValue) ?? TemperatureSensitivityOption.balanced.rawValue
+        statementPiecePreference = try container.decodeIfPresent(String.self, forKey: .statementPiecePreference) ?? ""
+        rules = try container.decode(String.self, forKey: .rules)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
 
     var model: StylePreference {
@@ -451,6 +484,8 @@ private struct StylePreferenceBackup: Codable {
             preferredColors: preferredColors,
             boldness: boldness,
             preferredFit: preferredFit,
+            temperatureSensitivity: TemperatureSensitivityOption(rawValue: temperatureSensitivityRawValue) ?? .balanced,
+            statementPiecePreference: statementPiecePreference,
             rules: rules,
             updatedAt: updatedAt
         )

@@ -403,7 +403,7 @@ struct OutfitBuilderView: View {
                 selectedItem: selectedItem
             )
 
-            guard engine.isAcceptableOutfit(chosenItems, request: request) else {
+            guard engine.isAcceptableOutfit(chosenItems, request: request, stylePreference: stylePreferences.first) else {
                 aiBuildError = "AI returned an incomplete outfit or broke a hard style/weather rule. Try Ask AI First again or use Build Outfit."
                 builderStatus = "AI returned an unusable outfit."
                 return
@@ -589,6 +589,8 @@ struct OutfitBuilderView: View {
             stylePreference.favoriteLooks,
             stylePreference.preferredColors,
             stylePreference.preferredFit,
+            "Temperature comfort: \(stylePreference.temperatureSensitivity.displayName)",
+            stylePreference.statementPiecePreference.isEmpty ? nil : "Statement pieces: \(stylePreference.statementPiecePreference)",
             stylePreference.rules,
             stylePreference.dislikedCombinations.isEmpty ? nil : "Avoid: \(stylePreference.dislikedCombinations)"
         ]

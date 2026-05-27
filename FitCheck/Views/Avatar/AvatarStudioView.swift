@@ -155,6 +155,8 @@ struct AvatarStudioView: View {
             stylePreference.favoriteLooks,
             stylePreference.preferredColors,
             stylePreference.preferredFit,
+            "Temperature comfort: \(stylePreference.temperatureSensitivity.displayName)",
+            stylePreference.statementPiecePreference.isEmpty ? nil : "Statement pieces: \(stylePreference.statementPiecePreference)",
             stylePreference.rules,
             stylePreference.dislikedCombinations.isEmpty ? nil : "Avoid: \(stylePreference.dislikedCombinations)"
         ]

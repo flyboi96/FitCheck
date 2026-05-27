@@ -131,7 +131,7 @@ struct TripPlanningService {
                 guard var recommendation = localRecommendations.first ?? fallbackRecommendations.first else {
                     continue
                 }
-                guard engine.isAcceptableOutfit(recommendation.items, request: request) else {
+                guard engine.isAcceptableOutfit(recommendation.items, request: request, stylePreference: stylePreference) else {
                     continue
                 }
 
@@ -232,7 +232,7 @@ struct TripPlanningService {
             )
             let itemsByID = Dictionary(uniqueKeysWithValues: closet.map { ($0.id, $0) })
             let items = response.itemIDs.compactMap { itemsByID[$0] }
-            guard engine.isAcceptableOutfit(items, request: request) else { return nil }
+            guard engine.isAcceptableOutfit(items, request: request, stylePreference: stylePreference) else { return nil }
             var recommendation = engine.scoreExistingOutfit(
                 items: items,
                 feedback: feedback,
@@ -462,11 +462,12 @@ struct TripPlanningService {
             .joined(separator: " ")
             .lowercased()
         var contexts: [OutfitContextOption] = []
+        let hasWorkContext = text.containsAny(["work", "office", "business", "conference", "meeting", "pilot", "flight", "flying", "airline", "duty"])
 
-        if isTravelDay {
+        if isTravelDay && !hasWorkContext {
             contexts.append(.travelDay)
         }
-        if text.containsAny(["work", "office", "business", "conference", "meeting"]) {
+        if hasWorkContext {
             contexts.append(.workDay)
         }
         if text.containsAny(["wedding", "formal", "ceremony"]) {

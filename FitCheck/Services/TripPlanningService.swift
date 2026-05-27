@@ -78,6 +78,8 @@ struct TripPlanningService {
         let stopsByDay = stopsGroupedByDay(stops)
         let tripDates = stopsByDay.keys.sorted()
         var plannedWearCounts: [UUID: Int] = [:]
+        let exerciseTargetDays = exerciseTargetDays(for: trip, days: tripDates.count)
+        var plannedExerciseDays = 0
 
         for (dayIndex, date) in tripDates.enumerated() {
             if shouldResetLaundryCounts(for: trip, dayIndex: dayIndex) {
@@ -91,72 +93,80 @@ struct TripPlanningService {
             let locationLabel = locations.joined(separator: " -> ")
             let isTravelDay = locations.count > 1
             let weather = await weatherInput(for: primaryStop, date: date, locationLabel: locationLabel)
-            let activity = isTravelDay ? ActivityOption.travel.rawValue : activity(for: dayStops)
-            let request = RecommendationRequest(
-                weather: weather,
-                occasion: isTravelDay ? OccasionOption.travelDay.rawValue : OccasionOption.casual.rawValue,
-                activity: activity,
-                selectedItem: nil
-            )
-            let availableCloset = closetAvailableForTripDay(
-                closet: closet,
-                plannedWearCounts: plannedWearCounts,
-                trip: trip
-            )
-
-            let localRecommendations = engine.recommend(
-                closet: availableCloset,
-                feedback: feedback,
-                stylePreference: stylePreference,
-                request: request,
-                limit: 3
-            )
-            let fallbackRecommendations = engine.recommend(
-                closet: closet,
-                feedback: feedback,
-                stylePreference: stylePreference,
-                request: request,
-                limit: 3
-            )
-
-            guard var recommendation = localRecommendations.first ?? fallbackRecommendations.first else {
-                continue
+            var contexts = itineraryContexts(for: dayStops, trip: trip, isTravelDay: isTravelDay)
+            if plannedExerciseDays < exerciseTargetDays {
+                contexts.append(.gym)
+                plannedExerciseDays += 1
             }
+            contexts = deduplicatedContexts(contexts)
 
-            if let aiOptions,
-               let aiRecommendation = await aiFilteredRecommendation(
-                localRecommendation: recommendation,
-                closet: availableCloset.isEmpty ? closet : availableCloset,
-                feedback: feedback,
-                stylePreference: stylePreference,
-                request: request,
-                aiOptions: aiOptions,
-                engine: engine
-               ) {
-                recommendation = aiRecommendation
+            for outfitContext in contexts {
+                let request = RecommendationRequest(
+                    weather: weather,
+                    occasion: outfitContext.occasion,
+                    activity: outfitContext.activity,
+                    selectedItem: nil
+                )
+                let availableCloset = closetAvailableForTripDay(
+                    closet: closet,
+                    plannedWearCounts: plannedWearCounts,
+                    trip: trip
+                )
+
+                let localRecommendations = engine.recommend(
+                    closet: availableCloset,
+                    feedback: feedback,
+                    stylePreference: stylePreference,
+                    request: request,
+                    limit: 3
+                )
+                let fallbackRecommendations = engine.recommend(
+                    closet: closet,
+                    feedback: feedback,
+                    stylePreference: stylePreference,
+                    request: request,
+                    limit: 3
+                )
+
+                guard var recommendation = localRecommendations.first ?? fallbackRecommendations.first else {
+                    continue
+                }
+
+                if let aiOptions,
+                   let aiRecommendation = await aiFilteredRecommendation(
+                    localRecommendation: recommendation,
+                    closet: availableCloset.isEmpty ? closet : availableCloset,
+                    feedback: feedback,
+                    stylePreference: stylePreference,
+                    request: request,
+                    aiOptions: aiOptions,
+                    engine: engine
+                   ) {
+                    recommendation = aiRecommendation
+                }
+
+                recordPlannedWears(for: recommendation.items, counts: &plannedWearCounts)
+
+                let outfit = Outfit(
+                    name: "\(locationLabel) \(outfitContext.displayName) Outfit",
+                    occasion: request.occasion,
+                    activity: request.activity,
+                    weatherSummary: request.weather.summary,
+                    score: recommendation.score,
+                    notes: recommendation.notes.joined(separator: "\n")
+                )
+                context.insert(outfit)
+
+                for item in recommendation.items {
+                    let link = OutfitItemLink(slot: item.category.displayName, outfit: outfit, item: item)
+                    context.insert(link)
+                    outfit.items.append(link)
+                }
+
+                let itinerary = DailyItineraryOutfit(date: date, location: locationLabel, activity: outfitContext.displayName, trip: trip, outfit: outfit)
+                context.insert(itinerary)
+                trip.itineraryOutfits.append(itinerary)
             }
-
-            recordPlannedWears(for: recommendation.items, counts: &plannedWearCounts)
-
-            let outfit = Outfit(
-                name: "\(locationLabel) Outfit",
-                occasion: request.occasion,
-                activity: request.activity,
-                weatherSummary: request.weather.summary,
-                score: recommendation.score,
-                notes: recommendation.notes.joined(separator: "\n")
-            )
-            context.insert(outfit)
-
-            for item in recommendation.items {
-                let link = OutfitItemLink(slot: item.category.displayName, outfit: outfit, item: item)
-                context.insert(link)
-                outfit.items.append(link)
-            }
-
-            let itinerary = DailyItineraryOutfit(date: date, location: locationLabel, activity: request.activity, trip: trip, outfit: outfit)
-            context.insert(itinerary)
-            trip.itineraryOutfits.append(itinerary)
         }
     }
 
@@ -219,7 +229,7 @@ struct TripPlanningService {
             )
             let itemsByID = Dictionary(uniqueKeysWithValues: closet.map { ($0.id, $0) })
             let items = response.itemIDs.compactMap { itemsByID[$0] }
-            guard items.count >= 2 else { return nil }
+            guard engine.isCompleteOutfit(items, request: request) else { return nil }
             var recommendation = engine.scoreExistingOutfit(
                 items: items,
                 feedback: feedback,
@@ -268,7 +278,7 @@ struct TripPlanningService {
     }
 
     private func baseLayerQuantityNeeded(for trip: Trip, days: Int) -> Int {
-        let exerciseDays = tripHasExercise(trip) ? max(1, min(days, trip.stops.count)) : 0
+        let exerciseDays = exerciseTargetDays(for: trip, days: days)
         return days + exerciseDays
     }
 
@@ -311,7 +321,7 @@ struct TripPlanningService {
         var extras: [PackingExtra] = []
 
         if tripHasExercise(trip), !chosenItems.contains(where: { $0.category == .activewear }) {
-            let exerciseDays = max(1, min(days, trip.stops.count))
+            let exerciseDays = max(1, exerciseTargetDays(for: trip, days: days))
             extras.append(PackingExtra(title: "Exercise outfit\(exerciseDays > 1 ? "s" : "")", quantity: exerciseDays))
         }
 
@@ -444,11 +454,53 @@ struct TripPlanningService {
         .joined(separator: ", ")
     }
 
-    private func activity(for stops: [TripStop]) -> String {
-        stops
-            .map(\.customsNotes)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty } ?? ActivityOption.walkingAroundCity.rawValue
+    private func itineraryContexts(for stops: [TripStop], trip: Trip, isTravelDay: Bool) -> [OutfitContextOption] {
+        let text = ([trip.notes] + stops.map(\.customsNotes))
+            .joined(separator: " ")
+            .lowercased()
+        var contexts: [OutfitContextOption] = []
+
+        if isTravelDay {
+            contexts.append(.travelDay)
+        }
+        if text.containsAny(["work", "office", "business", "conference", "meeting"]) {
+            contexts.append(.workDay)
+        }
+        if text.containsAny(["wedding", "formal", "ceremony"]) {
+            contexts.append(.wedding)
+        }
+        if text.containsAny(["date", "date night"]) {
+            contexts.append(.dateNight)
+        } else if text.containsAny(["dinner", "night", "restaurant", "evening"]) {
+            contexts.append(.dinner)
+        }
+        if text.containsAny(["casual", "fun", "sightseeing", "walking", "tour", "errands"]) {
+            contexts.append(.walkingAroundCity)
+        }
+
+        if contexts.isEmpty {
+            contexts.append(isTravelDay ? .travelDay : .casualDay)
+        }
+
+        return contexts
+    }
+
+    private func deduplicatedContexts(_ contexts: [OutfitContextOption]) -> [OutfitContextOption] {
+        var seen = Set<String>()
+        return contexts.filter { seen.insert($0.rawValue).inserted }
+    }
+
+    private func exerciseTargetDays(for trip: Trip, days: Int) -> Int {
+        guard tripHasExercise(trip) else { return 0 }
+        let text = ([trip.notes] + trip.stops.map(\.customsNotes))
+            .joined(separator: " ")
+            .lowercased()
+        let numbers = text
+            .split { !$0.isNumber }
+            .compactMap { Int($0) }
+            .filter { (1...max(1, days)).contains($0) }
+
+        return min(days, numbers.first ?? 1)
     }
 
     private func dates(from start: Date, through end: Date) -> [Date] {

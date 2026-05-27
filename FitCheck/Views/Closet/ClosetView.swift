@@ -13,6 +13,7 @@ struct ClosetView: View {
     @State private var showingPhotoImport = false
     @State private var showingBulkImport = false
     @State private var editingItem: ClothingItem?
+    @State private var searchText = ""
 
     var body: some View {
         List {
@@ -25,22 +26,26 @@ struct ClosetView: View {
                 }
             }
 
-            ForEach(groupedCategories, id: \.self) { category in
-                Section(category) {
-                    ForEach(groupedItems[category] ?? []) { item in
-                        Button {
-                            editingItem = item
-                        } label: {
-                            ClosetItemRow(item: item)
-                        }
-                        .buttonStyle(.plain)
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                item.status = .archived
-                                item.updatedAt = Date()
-                                try? modelContext.save()
+            if groupedCategories.isEmpty {
+                ContentUnavailableView("No Matching Items", systemImage: "magnifyingglass")
+            } else {
+                ForEach(groupedCategories, id: \.self) { category in
+                    Section(category) {
+                        ForEach(groupedItems[category] ?? []) { item in
+                            Button {
+                                editingItem = item
                             } label: {
-                                Label("Archive", systemImage: "archivebox")
+                                ClosetItemRow(item: item)
+                            }
+                            .buttonStyle(.plain)
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    item.status = .archived
+                                    item.updatedAt = Date()
+                                    try? modelContext.save()
+                                } label: {
+                                    Label("Archive", systemImage: "archivebox")
+                                }
                             }
                         }
                     }
@@ -48,6 +53,7 @@ struct ClosetView: View {
             }
         }
         .navigationTitle("Closet")
+        .searchable(text: $searchText, prompt: "Search closet")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -96,12 +102,14 @@ struct ClosetView: View {
     }
 
     private var filteredItems: [ClothingItem] {
-        items.filter { item in
+        let search = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return items.filter { item in
             guard item.status != .archived else { return false }
             if let selectedCategory {
-                return item.category == selectedCategory
+                guard item.category == selectedCategory else { return false }
             }
-            return true
+            guard !search.isEmpty else { return true }
+            return searchableText(for: item).localizedCaseInsensitiveContains(search)
         }
     }
 
@@ -121,6 +129,21 @@ struct ClosetView: View {
 
     private var currentWearerProfile: WearerProfileOption {
         WearerProfileOption(rawValue: wearerProfile) ?? .unspecified
+    }
+
+    private func searchableText(for item: ClothingItem) -> String {
+        [
+            item.name,
+            item.category.displayName,
+            ClothingInference.color(for: item),
+            ClothingInference.pattern(for: item),
+            item.weatherSuitability,
+            item.occasionSuitability,
+            item.activitySuitability,
+            item.notes,
+            item.status.displayName
+        ]
+        .joined(separator: " ")
     }
 }
 

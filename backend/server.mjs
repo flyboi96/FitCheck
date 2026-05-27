@@ -369,24 +369,7 @@ async function reviewOutfit(requestBody) {
     throw httpError(openAIResponse.status, data.error?.message ?? "OpenAI request failed");
   }
 
-  const outputText = extractOpenAIText(data);
-
-  if (!outputText) {
-    console.error("OpenAI response without extractable text:", JSON.stringify(data, null, 2));
-
-    if (data.status === "incomplete") {
-      throw new Error(`OpenAI response incomplete: ${data.incomplete_details?.reason ?? "unknown reason"}`);
-    }
-
-    const refusal = extractOpenAIRefusal(data);
-    if (refusal) {
-      throw new Error(`OpenAI refused the request: ${refusal}`);
-    }
-
-    throw new Error("OpenAI response did not include output text");
-  }
-
-  const parsed = JSON.parse(outputText);
+  const parsed = parseOpenAIJSON(data, "OpenAI outfit review");
   const itemIDs = Array.isArray(parsed.itemIDs)
     ? parsed.itemIDs.filter((id) => knownIDs.has(id))
     : [];
@@ -464,24 +447,7 @@ async function describeClothingItem(requestBody) {
     throw httpError(openAIResponse.status, data.error?.message ?? "OpenAI request failed");
   }
 
-  const outputText = extractOpenAIText(data);
-
-  if (!outputText) {
-    console.error("OpenAI clothing response without extractable text:", JSON.stringify(data, null, 2));
-
-    if (data.status === "incomplete") {
-      throw new Error(`OpenAI response incomplete: ${data.incomplete_details?.reason ?? "unknown reason"}`);
-    }
-
-    const refusal = extractOpenAIRefusal(data);
-    if (refusal) {
-      throw new Error(`OpenAI refused the request: ${refusal}`);
-    }
-
-    throw new Error("OpenAI response did not include output text");
-  }
-
-  const parsed = JSON.parse(outputText);
+  const parsed = parseOpenAIJSON(data, "OpenAI clothing import");
   const category = clothingCategories.includes(parsed.category) ? parsed.category : "other";
 
   return {
@@ -545,7 +511,7 @@ async function generateStyleProfile(requestBody) {
           schema: styleProfileSchema
         }
       },
-      max_output_tokens: 1200,
+      max_output_tokens: 3000,
       store: false
     })
   });
@@ -555,16 +521,7 @@ async function generateStyleProfile(requestBody) {
     throw httpError(openAIResponse.status, data.error?.message ?? "OpenAI request failed");
   }
 
-  const outputText = extractOpenAIText(data);
-  if (!outputText) {
-    const refusal = extractOpenAIRefusal(data);
-    if (refusal) {
-      throw new Error(`OpenAI refused the request: ${refusal}`);
-    }
-    throw new Error("OpenAI response did not include output text");
-  }
-
-  const parsed = JSON.parse(outputText);
+  const parsed = parseOpenAIJSON(data, "OpenAI style profile");
   return {
     styleDescription: String(parsed.styleDescription ?? "").trim(),
     favoriteLooks: String(parsed.favoriteLooks ?? "").trim(),
@@ -817,6 +774,33 @@ function extractOpenAIText(data) {
   }
 
   return textParts.join("\n").trim();
+}
+
+function parseOpenAIJSON(data, contextLabel) {
+  const outputText = extractOpenAIText(data);
+
+  if (data.status === "incomplete") {
+    const reason = data.incomplete_details?.reason ?? "unknown reason";
+    throw new Error(`${contextLabel} response was cut off before it finished (${reason}). Try again, or shorten the answers.`);
+  }
+
+  if (!outputText) {
+    console.error(`${contextLabel} response without extractable text:`, JSON.stringify(data, null, 2));
+
+    const refusal = extractOpenAIRefusal(data);
+    if (refusal) {
+      throw new Error(`OpenAI refused the request: ${refusal}`);
+    }
+
+    throw new Error(`${contextLabel} did not include output text`);
+  }
+
+  try {
+    return JSON.parse(outputText);
+  } catch (error) {
+    console.error(`${contextLabel} returned invalid JSON:`, outputText.slice(0, 2000));
+    throw new Error(`${contextLabel} returned incomplete JSON. Try again; if it repeats, shorten the answers or use a model with a larger output limit.`);
+  }
 }
 
 function extractOpenAIRefusal(data) {

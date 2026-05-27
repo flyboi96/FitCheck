@@ -8,6 +8,7 @@ struct RecommendationCard: View {
     var onGood: (() -> Void)?
     var onBad: (() -> Void)?
     var onFeedback: (() -> Void)?
+    var onEdit: (() -> Void)?
     var aiReview: AIOutfitResponse? = nil
     var aiReviewError: String? = nil
     var isAIReviewing = false
@@ -145,6 +146,12 @@ struct RecommendationCard: View {
                         }
                         .buttonStyle(.bordered)
                     }
+                    if let onEdit {
+                        Button(action: onEdit) {
+                            Label("Edit", systemImage: "slider.horizontal.3")
+                        }
+                        .buttonStyle(.bordered)
+                    }
                 }
             }
         }
@@ -153,6 +160,159 @@ struct RecommendationCard: View {
 
     private func iconName(for category: ClothingCategory) -> String {
         category.systemImageName
+    }
+}
+
+struct RecommendationDraftEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var closetItems: [ClothingItem]
+    var feedback: [Feedback]
+    var stylePreference: StylePreference?
+    var request: RecommendationRequest
+    var onSave: (OutfitRecommendation) -> Void
+
+    @State private var recommendation: OutfitRecommendation
+    @State private var searchText = ""
+    @State private var status = ""
+
+    private let engine = OutfitRecommendationEngine()
+
+    init(
+        recommendation: OutfitRecommendation,
+        closetItems: [ClothingItem],
+        feedback: [Feedback],
+        stylePreference: StylePreference?,
+        request: RecommendationRequest,
+        onSave: @escaping (OutfitRecommendation) -> Void
+    ) {
+        _recommendation = State(initialValue: recommendation)
+        self.closetItems = closetItems
+        self.feedback = feedback
+        self.stylePreference = stylePreference
+        self.request = request
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Current Outfit") {
+                    ForEach(recommendation.items) { item in
+                        HStack {
+                            Label(item.name, systemImage: item.category.systemImageName)
+                            Spacer()
+                            Button(role: .destructive) {
+                                remove(item)
+                            } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+
+                Section("Add Item") {
+                    TextField("Search closet", text: $searchText)
+                        .textInputAutocapitalization(.words)
+                    ForEach(Array(addableItems.prefix(30))) { item in
+                        Button {
+                            add(item)
+                        } label: {
+                            HStack {
+                                Label(item.name, systemImage: item.category.systemImageName)
+                                Spacer()
+                                Text(item.category.displayName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                Section("Score") {
+                    Text("Score \(Int(recommendation.score))")
+                        .font(.headline)
+                    ForEach(recommendation.notes, id: \.self) { note in
+                        Label(note, systemImage: "checkmark.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !status.isEmpty {
+                        Text(status)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Edit Outfit")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        onSave(recommendation)
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var addableItems: [ClothingItem] {
+        let selectedIDs = Set(recommendation.items.map(\.id))
+        let search = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return closetItems
+            .filter { $0.status == .active && !selectedIDs.contains($0.id) }
+            .filter { search.isEmpty || searchableText(for: $0).localizedCaseInsensitiveContains(search) }
+            .sorted {
+                if $0.category == $1.category {
+                    return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
+                return categorySortIndex($0.category) < categorySortIndex($1.category)
+            }
+    }
+
+    private func add(_ item: ClothingItem) {
+        recommendation.items.append(item)
+        rescore(message: "Added \(item.name).")
+    }
+
+    private func remove(_ item: ClothingItem) {
+        recommendation.items.removeAll { $0.id == item.id }
+        rescore(message: "Removed \(item.name).")
+    }
+
+    private func rescore(message: String) {
+        let originalID = recommendation.id
+        var updated = engine.scoreExistingOutfit(
+            items: recommendation.items,
+            feedback: feedback,
+            stylePreference: stylePreference,
+            request: request,
+            title: recommendation.title
+        )
+        updated.id = originalID
+        recommendation = updated
+        status = "\(message) Score updated."
+    }
+
+    private func searchableText(for item: ClothingItem) -> String {
+        [
+            item.name,
+            item.category.displayName,
+            ClothingInference.color(for: item),
+            ClothingInference.pattern(for: item),
+            item.notes
+        ]
+        .joined(separator: " ")
+    }
+
+    private func categorySortIndex(_ category: ClothingCategory) -> Int {
+        ClothingCategory.allCases.firstIndex(of: category) ?? ClothingCategory.allCases.count
     }
 }
 

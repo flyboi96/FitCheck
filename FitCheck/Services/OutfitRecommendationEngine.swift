@@ -351,7 +351,7 @@ struct RecommendationRequest: Equatable {
 }
 
 struct OutfitRecommendation: Identifiable {
-    let id = UUID()
+    var id = UUID()
     var title: String
     var items: [ClothingItem]
     var score: Double
@@ -392,6 +392,10 @@ struct OutfitRecommendationEngine {
         )
     }
 
+    func isCompleteOutfit(_ items: [ClothingItem], request: RecommendationRequest? = nil) -> Bool {
+        completenessIssues(for: items, request: request).isEmpty
+    }
+
     func recommend(
         closet: [ClothingItem],
         feedback: [Feedback],
@@ -401,18 +405,29 @@ struct OutfitRecommendationEngine {
     ) -> [OutfitRecommendation] {
         let activeItems = closet.filter { $0.status == .active }
         let selected = request.selectedItem
+        let needsExerciseClothing = isExerciseContext(request)
+        let topCategories: Set<ClothingCategory> = needsExerciseClothing
+            ? [.shirt, .blouse, .sweater, .dress, .activewear]
+            : [.shirt, .blouse, .sweater, .dress]
+        let bottomCategories: Set<ClothingCategory> = needsExerciseClothing
+            ? [.pants, .shorts, .skirt, .activewear]
+            : [.pants, .shorts, .skirt]
+        let flexibleSelectedActivewear = needsExerciseClothing && selected?.category == .activewear
 
         let tops = constrainedPool(
-            categories: [.shirt, .blouse, .sweater, .dress],
+            categories: topCategories,
             items: activeItems,
             selectedItem: selected
         )
         let bottomPool = constrainedBottomPool(
-            categories: [.pants, .shorts, .skirt],
+            categories: bottomCategories,
             items: activeItems,
-            selectedItem: selected
+            selectedItem: flexibleSelectedActivewear ? nil : selected
         )
-        let bottoms = bottomPool.isEmpty && tops.contains(where: { $0.category == .dress }) ? [nil] : bottomPool
+        let adjustedBottomPool = flexibleSelectedActivewear
+            ? bottomPool.filter { $0?.id != selected?.id }
+            : bottomPool
+        let bottoms = adjustedBottomPool.isEmpty && tops.contains(where: { $0.category == .dress }) ? [nil] : adjustedBottomPool
         let shoes = constrainedPool(
             categories: [.shoes, .heels, .flats],
             items: activeItems,
@@ -441,9 +456,28 @@ struct OutfitRecommendationEngine {
         for top in tops.prefix(8) {
             let bottomOptions = top.category == .dress ? [nil] : Array(bottoms.prefix(8))
             for bottom in bottomOptions {
+                if let bottom, bottom.id == top.id {
+                    continue
+                }
                 for shoe in shoes.prefix(6) {
+                    if shoe.id == top.id || bottom.map({ shoe.id == $0.id }) == true {
+                        continue
+                    }
                     for jacket in jackets.prefix(4) {
+                        if let jacket,
+                           jacket.id == top.id ||
+                            bottom.map({ jacket.id == $0.id }) == true ||
+                            jacket.id == shoe.id {
+                            continue
+                        }
                         for accessory in accessories.prefix(4) {
+                            if let accessory,
+                               accessory.id == top.id ||
+                                bottom.map({ accessory.id == $0.id }) == true ||
+                                accessory.id == shoe.id ||
+                                jacket.map({ accessory.id == $0.id }) == true {
+                                    continue
+                            }
                             var outfitItems = [top, shoe]
                             if let bottom {
                                 outfitItems.append(bottom)
@@ -456,6 +490,9 @@ struct OutfitRecommendationEngine {
                             }
                             if let selected, !outfitItems.contains(where: { $0.id == selected.id }) {
                                 outfitItems.append(selected)
+                            }
+                            if needsExerciseClothing && !outfitItems.contains(where: { $0.category == .activewear }) {
+                                continue
                             }
 
                             let scored = score(
@@ -530,13 +567,28 @@ struct OutfitRecommendationEngine {
             .filter { categories.contains($0.category) }
             .filter { item in
                 if item.category == .jacket {
-                    return weather.temperatureF <= 68 || weather.isRaining || ClothingInference.weatherTags(for: item).contains("rain")
+                    return shouldConsiderJacket(item, weather: weather)
                 }
                 return true
             }
             .sorted { itemSortScore($0) > itemSortScore($1) }
 
         return [nil] + pool.map { Optional($0) }
+    }
+
+    private func shouldConsiderJacket(_ item: ClothingItem, weather: WeatherInput) -> Bool {
+        let hotAndHumid = weather.temperatureF >= 75 && (weather.humidityPercent ?? 0) >= 65
+        let hot = weather.temperatureF >= 82
+
+        if hot || hotAndHumid {
+            guard weather.isRaining || weather.windMph >= 18 else { return false }
+            return isLightWeatherShell(item)
+        }
+
+        return weather.temperatureF <= 68 ||
+            weather.isRaining ||
+            weather.windMph >= 18 ||
+            ClothingInference.weatherTags(for: item).contains("rain")
     }
 
     private func score(
@@ -547,6 +599,9 @@ struct OutfitRecommendationEngine {
     ) -> (value: Double, notes: [String]) {
         var value = 50.0
         var notes: [String] = []
+        let completeness = completenessScore(items: items, request: request)
+        value += completeness.value
+        notes.append(contentsOf: completeness.notes)
 
         for item in items {
             let itemValue = itemScore(item, request: request, stylePreference: stylePreference)
@@ -567,7 +622,9 @@ struct OutfitRecommendationEngine {
         value += feedbackValue.value
         notes.append(contentsOf: feedbackValue.notes)
 
-        value -= formalitySpreadPenalty(items)
+        let formalityValue = formalityScore(items: items, request: request)
+        value += formalityValue.value
+        notes.append(contentsOf: formalityValue.notes)
 
         return (value.rounded(), Array(notes.prefix(5)))
     }
@@ -581,27 +638,16 @@ struct OutfitRecommendationEngine {
         var notes: [String] = []
 
         value += weatherScore(item, weather: request.weather)
+        notes.append(contentsOf: weatherNotes(for: item, weather: request.weather, request: request))
 
         let occasionTags = ClothingInference.occasionTags(for: item)
         let activityTags = ClothingInference.activityTags(for: item)
         value += tagScore(occasionTags, target: request.occasion, matchedNote: "\(item.name) suits \(request.occasion)")
         value += tagScore(activityTags, target: request.activity, matchedNote: "\(item.name) works for \(request.activity)")
 
-        if tagsMatch(occasionTags, target: request.occasion) {
-            notes.append("\(item.name) suits \(request.occasion)")
-        }
-        if request.activity != request.occasion, tagsMatch(activityTags, target: request.activity) {
-            notes.append("\(item.name) works for \(request.activity)")
-        }
-
         let targetFormality = targetFormality(for: request.occasion)
         let formalityDistance = abs(ClothingInference.formalityLevel(for: item) - targetFormality)
         value -= Double(formalityDistance * 4)
-        if formalityDistance == 0 {
-            notes.append("\(item.name) matches \(contextLabel(for: request)) dressiness")
-        } else if formalityDistance == 1 {
-            notes.append("\(item.name) is close enough for \(contextLabel(for: request))")
-        }
 
         if let lastWornAt = item.lastWornAt {
             let days = Calendar.current.dateComponents([.day], from: lastWornAt, to: Date()).day ?? 0
@@ -651,7 +697,7 @@ struct OutfitRecommendationEngine {
         } else if weather.temperatureF >= 82 {
             value += weatherTags.contains("hot") ? 16 : 0
             if item.category == .jacket || item.category == .sweater {
-                value -= 22
+                value -= isLightWeatherShell(item) && weather.isRaining ? 14 : 30
             }
             if item.category == .shorts || item.category == .skirt {
                 value += 10
@@ -674,11 +720,98 @@ struct OutfitRecommendationEngine {
         if let humidity = weather.humidityPercent, humidity >= 70, weather.temperatureF >= 75 {
             value += weatherTags.contains("hot") ? 6 : 0
             if item.category == .jacket || item.category == .sweater {
-                value -= 8
+                value -= isLightWeatherShell(item) && weather.isRaining ? 10 : 24
             }
         }
 
         return value
+    }
+
+    private func weatherNotes(for item: ClothingItem, weather: WeatherInput, request: RecommendationRequest) -> [String] {
+        var notes: [String] = []
+        let weatherTags = ClothingInference.weatherTags(for: item)
+
+        if isExerciseContext(request), item.category == .activewear {
+            notes.append("Exercise-specific clothing included")
+        }
+
+        if weather.temperatureF >= 82, weatherTags.contains("hot") {
+            notes.append("\(item.name) is heat-friendly")
+        }
+
+        if weather.isRaining, weatherTags.contains("rain"), [.shoes, .heels, .flats, .jacket].contains(item.category) {
+            notes.append("\(item.name) handles wet weather")
+        }
+
+        if weather.temperatureF <= 50, weatherTags.contains("cold") {
+            notes.append("\(item.name) adds cold-weather warmth")
+        }
+
+        if let humidity = weather.humidityPercent, humidity >= 70, weather.temperatureF >= 75, item.category == .jacket, !isLightWeatherShell(item) {
+            notes.append("\(item.name) is a poor hot-humidity layer")
+        }
+
+        return notes
+    }
+
+    private func completenessScore(items: [ClothingItem], request: RecommendationRequest) -> (value: Double, notes: [String]) {
+        let issues = completenessIssues(for: items, request: request)
+        if issues.isEmpty {
+            return (10, [completeOutfitNote(for: items)])
+        }
+
+        return (-Double(issues.count * 45), issues)
+    }
+
+    private func completenessIssues(for items: [ClothingItem], request: RecommendationRequest?) -> [String] {
+        let hasDress = items.contains { $0.category == .dress }
+        let hasTop = items.contains { isTopItem($0, request: request) }
+        let hasBottom = items.contains { isBottomItem($0, request: request) }
+        let hasShoes = items.contains { [.shoes, .heels, .flats].contains($0.category) }
+        var issues: [String] = []
+
+        if !hasDress && !hasTop {
+            issues.append("Missing a shirt, blouse, sweater, dress, or exercise top")
+        }
+        if !hasDress && !hasBottom {
+            issues.append("Missing pants, shorts, skirt, dress, or exercise bottom")
+        }
+        if !hasShoes {
+            issues.append("Missing shoes")
+        }
+        if let request, isExerciseContext(request), !items.contains(where: { $0.category == .activewear }) {
+            issues.append("Missing exercise-specific clothing")
+        }
+
+        return issues
+    }
+
+    private func completeOutfitNote(for items: [ClothingItem]) -> String {
+        if items.contains(where: { $0.category == .dress }) {
+            return "Complete outfit with dress and shoes"
+        }
+        return "Complete outfit with top, bottom, and shoes"
+    }
+
+    private func isTopItem(_ item: ClothingItem, request: RecommendationRequest?) -> Bool {
+        if [.shirt, .blouse, .sweater, .dress].contains(item.category) {
+            return true
+        }
+        guard item.category == .activewear else { return false }
+        if let request, isExerciseContext(request) {
+            return true
+        }
+        let text = item.name.lowercased()
+        return text.containsAny(["shirt", "tee", "t-shirt", "tank", "top", "hoodie"])
+    }
+
+    private func isBottomItem(_ item: ClothingItem, request: RecommendationRequest?) -> Bool {
+        if [.pants, .shorts, .skirt, .dress].contains(item.category) {
+            return true
+        }
+        guard item.category == .activewear else { return false }
+        let text = item.name.lowercased()
+        return text.containsAny(["short", "pant", "legging", "tight", "jogger", "bottom"])
     }
 
     private func tagScore(_ tags: [String], target: String, matchedNote: String) -> Double {
@@ -815,6 +948,26 @@ struct OutfitRecommendationEngine {
         return (value, notes)
     }
 
+    private func formalityScore(items: [ClothingItem], request: RecommendationRequest) -> (value: Double, notes: [String]) {
+        var value = -formalitySpreadPenalty(items)
+        let target = targetFormality(for: request.occasion)
+        let mainItems = items.filter { [.shirt, .blouse, .sweater, .dress, .pants, .shorts, .skirt, .activewear, .shoes, .heels, .flats].contains($0.category) }
+        guard !mainItems.isEmpty else { return (value, []) }
+
+        let average = Double(mainItems.map { ClothingInference.formalityLevel(for: $0) }.reduce(0, +)) / Double(mainItems.count)
+        let distance = abs(average - Double(target))
+        if distance <= 0.75 {
+            value += 8
+            return (value, ["Dressiness fits \(contextLabel(for: request))"])
+        }
+        if distance >= 1.75 {
+            value -= 12
+            return (value, ["Dressiness may be off for \(contextLabel(for: request))"])
+        }
+
+        return (value, [])
+    }
+
     private func formalitySpreadPenalty(_ items: [ClothingItem]) -> Double {
         let levels = items.map { ClothingInference.formalityLevel(for: $0) }
         guard let minLevel = levels.min(), let maxLevel = levels.max() else { return 0 }
@@ -846,6 +999,27 @@ struct OutfitRecommendationEngine {
             return "\(occasion) / \(activity)"
         }
         return occasion.isEmpty ? activity : occasion
+    }
+
+    private func isExerciseContext(_ request: RecommendationRequest) -> Bool {
+        "\(request.occasion) \(request.activity)"
+            .lowercased()
+            .containsAny(["gym", "workout", "exercise", "running", "run", "training", "fitness"])
+    }
+
+    private func isLightWeatherShell(_ item: ClothingItem) -> Bool {
+        let text = [
+            item.name,
+            item.notes,
+            item.weatherSuitability,
+            item.activitySuitability
+        ]
+        .joined(separator: " ")
+        .lowercased()
+
+        let hasRainShellSignal = text.containsAny(["rain", "shell", "waterproof", "water-resistant", "gore-tex", "windbreaker", "packable", "lightweight", "nylon"])
+        let hasHeavySignal = text.containsAny(["down", "insulated", "puffer", "parka", "fleece", "wool", "heavy", "coat"])
+        return hasRainShellSignal && !hasHeavySignal
     }
 
     private func itemSortScore(_ item: ClothingItem) -> Double {

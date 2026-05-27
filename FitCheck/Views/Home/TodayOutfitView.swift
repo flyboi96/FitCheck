@@ -37,6 +37,7 @@ struct TodayOutfitView: View {
     @State private var recommendationStatus = ""
     @State private var lastAction: TodayUndoAction?
     @State private var feedbackTarget: OutfitRecommendation?
+    @State private var editingRecommendation: OutfitRecommendation?
 
     private let engine = OutfitRecommendationEngine()
     private let historyService = FitCheckHistoryService()
@@ -142,6 +143,7 @@ struct TodayOutfitView: View {
                             onGood: { logWear(recommendation, feedbackType: .goodOutfit) },
                             onBad: { recordNegativeFeedback(for: recommendation, type: .badOutfit) },
                             onFeedback: { feedbackTarget = recommendation },
+                            onEdit: { editingRecommendation = recommendation },
                             aiReview: aiReviews[recommendation.combinationKey],
                             aiReviewError: aiReviewErrors[recommendation.combinationKey],
                             isAIReviewing: reviewingCombinationKeys.contains(recommendation.combinationKey),
@@ -173,6 +175,17 @@ struct TodayOutfitView: View {
                 recordFeedback(for: recommendation, type: type, note: note)
             }
         }
+        .sheet(item: $editingRecommendation) { recommendation in
+            RecommendationDraftEditorView(
+                recommendation: recommendation,
+                closetItems: activeItems,
+                feedback: feedback,
+                stylePreference: stylePreferences.first,
+                request: currentRecommendationRequest
+            ) { updated in
+                saveEditedRecommendation(updated)
+            }
+        }
     }
 
     private var activeItems: [ClothingItem] {
@@ -190,6 +203,15 @@ struct TodayOutfitView: View {
 
     private var currentWeather: WeatherInput {
         effectiveWeather ?? WeatherLookupFallback.defaultWeather
+    }
+
+    private var currentRecommendationRequest: RecommendationRequest {
+        RecommendationRequest(
+            weather: currentWeather,
+            occasion: currentContext.occasion,
+            activity: currentContext.activity,
+            selectedItem: nil
+        )
     }
 
     private var effectiveWeather: WeatherInput? {
@@ -330,10 +352,16 @@ struct TodayOutfitView: View {
             )
             let itemsByID = Dictionary(uniqueKeysWithValues: closetItems.map { ($0.id, $0) })
             let chosenItems = response.itemIDs.compactMap { itemsByID[$0] }
+            let request = RecommendationRequest(
+                weather: currentWeather,
+                occasion: currentContext.occasion,
+                activity: currentContext.activity,
+                selectedItem: nil
+            )
 
-            guard chosenItems.count >= 2 else {
-                aiBuildError = "AI did not return enough closet items."
-                recommendationStatus = "AI did not return enough closet items."
+            guard engine.isCompleteOutfit(chosenItems, request: request) else {
+                aiBuildError = "AI returned an incomplete outfit. Try Ask AI First again or use Generate Outfit."
+                recommendationStatus = "AI returned an incomplete outfit."
                 return
             }
 
@@ -341,12 +369,7 @@ struct TodayOutfitView: View {
                 items: chosenItems,
                 feedback: feedback,
                 stylePreference: stylePreferences.first,
-                request: RecommendationRequest(
-                    weather: currentWeather,
-                    occasion: currentContext.occasion,
-                    activity: currentContext.activity,
-                    selectedItem: nil
-                ),
+                request: request,
                 title: "AI Fit"
             )
 
@@ -430,6 +453,17 @@ struct TodayOutfitView: View {
         lastAction = .feedback(entry.id, "Saved \(type.displayName.lowercased()) feedback.")
         recommendationStatus = "Feedback saved and recommendations refreshed."
         generate()
+    }
+
+    private func saveEditedRecommendation(_ updated: OutfitRecommendation) {
+        if let index = recommendations.firstIndex(where: { $0.id == updated.id }) {
+            recommendations[index] = updated
+        }
+        aiReviews = [:]
+        aiReviewErrors = [:]
+        avatarPreviews = [:]
+        avatarPreviewErrors = [:]
+        recommendationStatus = "Edited outfit and updated the score."
     }
 
     private func undoLastAction() {

@@ -39,6 +39,7 @@ struct OutfitBuilderView: View {
     @State private var weatherActionStatus = ""
     @State private var builderStatus = ""
     @State private var feedbackTarget: OutfitRecommendation?
+    @State private var editingRecommendation: OutfitRecommendation?
 
     private let engine = OutfitRecommendationEngine()
 
@@ -67,17 +68,6 @@ struct OutfitBuilderView: View {
                     }
                 }
                 .pickerStyle(.menu)
-            }
-
-            if filteredItemGroups.isEmpty {
-                Section("Items") {
-                    ContentUnavailableView("No Matching Items", systemImage: "magnifyingglass")
-                }
-            } else {
-                BuilderItemSelectionList(
-                    groups: filteredItemGroups,
-                    selectedItemID: $selectedItemID
-                )
             }
 
             Section("Weather") {
@@ -152,12 +142,24 @@ struct OutfitBuilderView: View {
                 FitCheckInlineStatus(message: builderStatus)
             }
 
+            if filteredItemGroups.isEmpty {
+                Section("Pick Item") {
+                    ContentUnavailableView("No Matching Items", systemImage: "magnifyingglass")
+                }
+            } else {
+                BuilderItemSelectionList(
+                    groups: filteredItemGroups,
+                    selectedItemID: $selectedItemID
+                )
+            }
+
             if !recommendations.isEmpty {
                 Section("Outfits") {
                     ForEach(recommendations) { recommendation in
                         RecommendationCard(
                             recommendation: recommendation,
                             onFeedback: { feedbackTarget = recommendation },
+                            onEdit: { editingRecommendation = recommendation },
                             aiReview: aiReviews[recommendation.combinationKey],
                             aiReviewError: aiReviewErrors[recommendation.combinationKey],
                             isAIReviewing: reviewingCombinationKeys.contains(recommendation.combinationKey),
@@ -183,6 +185,21 @@ struct OutfitBuilderView: View {
         .sheet(item: $feedbackTarget) { recommendation in
             OutfitFeedbackEditorView(title: "Builder Feedback") { type, note in
                 recordFeedback(for: recommendation, type: type, note: note)
+            }
+        }
+        .sheet(item: $editingRecommendation) { recommendation in
+            if let request = currentRecommendationRequest {
+                RecommendationDraftEditorView(
+                    recommendation: recommendation,
+                    closetItems: activeItems,
+                    feedback: feedback,
+                    stylePreference: stylePreferences.first,
+                    request: request
+                ) { updated in
+                    saveEditedRecommendation(updated)
+                }
+            } else {
+                ContentUnavailableView("Weather Needed", systemImage: "cloud.sun", description: Text("Load weather before editing and rescoring this outfit."))
             }
         }
     }
@@ -362,18 +379,19 @@ struct OutfitBuilderView: View {
                 chosenItems.insert(selectedItem, at: 0)
             }
 
-            guard chosenItems.count >= 2 else {
-                aiBuildError = "AI did not return enough closet items."
-                builderStatus = "AI did not return enough closet items."
-                return
-            }
-
             let request = RecommendationRequest(
                 weather: weather,
                 occasion: currentContext.occasion,
                 activity: currentContext.activity,
                 selectedItem: selectedItem
             )
+
+            guard engine.isCompleteOutfit(chosenItems, request: request) else {
+                aiBuildError = "AI returned an incomplete outfit. Try Ask AI First again or use Build Outfit."
+                builderStatus = "AI returned an incomplete outfit."
+                return
+            }
+
             let recommendation = engine.scoreExistingOutfit(
                 items: chosenItems,
                 feedback: feedback,
@@ -406,6 +424,17 @@ struct OutfitBuilderView: View {
         try? modelContext.save()
         builderStatus = "Saved \(type.displayName.lowercased()) feedback and refreshed outfits."
         generate()
+    }
+
+    private func saveEditedRecommendation(_ updated: OutfitRecommendation) {
+        if let index = recommendations.firstIndex(where: { $0.id == updated.id }) {
+            recommendations[index] = updated
+        }
+        aiReviews = [:]
+        aiReviewErrors = [:]
+        avatarPreviews = [:]
+        avatarPreviewErrors = [:]
+        builderStatus = "Edited outfit and updated the score."
     }
 
     private func avatarPreviewAction(for recommendation: OutfitRecommendation) -> (() -> Void)? {
@@ -564,6 +593,16 @@ struct OutfitBuilderView: View {
 
     private var currentContext: OutfitContextOption {
         OutfitContextOption(rawValue: selectedContext) ?? .casualDay
+    }
+
+    private var currentRecommendationRequest: RecommendationRequest? {
+        guard let weather = effectiveWeather else { return nil }
+        return RecommendationRequest(
+            weather: weather,
+            occasion: currentContext.occasion,
+            activity: currentContext.activity,
+            selectedItem: selectedItem
+        )
     }
 
     private var currentWearerProfile: WearerProfileOption {

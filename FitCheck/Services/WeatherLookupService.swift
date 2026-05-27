@@ -157,10 +157,20 @@ struct OpenMeteoWeatherClient {
             throw WeatherLookupError.emptyLocationSearch
         }
 
+        for candidate in Self.locationSearchCandidates(for: trimmed) {
+            if let location = try await geocodeCandidate(candidate) {
+                return location
+            }
+        }
+
+        throw WeatherLookupError.noMatchingLocation
+    }
+
+    private func geocodeCandidate(_ searchText: String) async throws -> OpenMeteoLocation? {
         var components = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")
         components?.queryItems = [
-            URLQueryItem(name: "name", value: trimmed),
-            URLQueryItem(name: "count", value: "1"),
+            URLQueryItem(name: "name", value: searchText),
+            URLQueryItem(name: "count", value: "5"),
             URLQueryItem(name: "language", value: "en"),
             URLQueryItem(name: "format", value: "json")
         ]
@@ -175,12 +185,55 @@ struct OpenMeteoWeatherClient {
         }
 
         let decoded = try JSONDecoder().decode(OpenMeteoGeocodingResponse.self, from: data)
-        guard let location = decoded.results?.first else {
-            throw WeatherLookupError.noMatchingLocation
+        return decoded.results?.first
+    }
+
+    private static func locationSearchCandidates(for searchText: String) -> [String] {
+        let normalized = searchText
+            .split(separator: " ")
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var candidates = [normalized]
+
+        let parts = normalized
+            .split(separator: ",", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        if parts.count >= 2 {
+            let city = parts[0]
+            let region = parts[1].uppercased()
+            if let stateName = usStateNames[region] {
+                candidates.append("\(city), \(stateName)")
+                candidates.append("\(city), \(stateName), United States")
+                candidates.append("\(city) \(stateName)")
+            }
+            candidates.append("\(city), United States")
+            candidates.append(city)
+        } else {
+            candidates.append("\(normalized), United States")
         }
 
-        return location
+        var seen = Set<String>()
+        return candidates.filter { candidate in
+            let key = candidate.lowercased()
+            return !candidate.isEmpty && seen.insert(key).inserted
+        }
     }
+
+    private static let usStateNames: [String: String] = [
+        "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
+        "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "FL": "Florida", "GA": "Georgia",
+        "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa",
+        "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+        "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi",
+        "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+        "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
+        "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma",
+        "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+        "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah",
+        "VT": "Vermont", "VA": "Virginia", "WA": "Washington", "WV": "West Virginia",
+        "WI": "Wisconsin", "WY": "Wyoming", "DC": "District of Columbia"
+    ]
 
     private static func isWetWeather(code: Int) -> Bool {
         switch code {

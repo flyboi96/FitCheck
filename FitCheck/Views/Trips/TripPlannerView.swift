@@ -178,6 +178,7 @@ private struct TripDetailView: View {
     @State private var feedbackStatus = ""
     @State private var generationStatus = ""
     @State private var feedbackItinerary: DailyItineraryOutfit?
+    @State private var editingItinerary: DailyItineraryOutfit?
 
     private let service = TripPlanningService()
 
@@ -197,6 +198,11 @@ private struct TripDetailView: View {
                         if !stop.expectedWeather.isEmpty {
                             Text(stop.expectedWeather)
                                 .font(.caption)
+                        }
+                        if !stop.customsNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text(stop.customsNotes)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -395,6 +401,11 @@ private struct TripDetailView: View {
                                 } label: {
                                     Label("Add Note", systemImage: "text.bubble")
                                 }
+                                Button {
+                                    editingItinerary = itinerary
+                                } label: {
+                                    Label("Edit", systemImage: "slider.horizontal.3")
+                                }
                             }
                             .font(.caption)
                             .buttonStyle(.borderless)
@@ -417,6 +428,11 @@ private struct TripDetailView: View {
         .sheet(item: $feedbackItinerary) { itinerary in
             OutfitFeedbackEditorView(title: "Itinerary Feedback") { type, note in
                 recordFeedback(for: itinerary, type: type, note: note)
+            }
+        }
+        .sheet(item: $editingItinerary) { itinerary in
+            NavigationStack {
+                ItineraryOutfitEditorView(itinerary: itinerary)
             }
         }
         .onChange(of: trip.laundryIntervalDays) { _, _ in
@@ -605,6 +621,195 @@ private struct TripDetailView: View {
     }
 }
 
+private struct ItineraryOutfitEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \ClothingItem.name) private var closetItems: [ClothingItem]
+    @Query(sort: \Feedback.createdAt, order: .reverse) private var feedback: [Feedback]
+    @Query private var preferences: [StylePreference]
+
+    @Bindable var itinerary: DailyItineraryOutfit
+    @State private var searchText = ""
+    @State private var status = ""
+
+    private let engine = OutfitRecommendationEngine()
+
+    var body: some View {
+        Form {
+            if let outfit = itinerary.outfit {
+                Section("Current Outfit") {
+                    ForEach(outfit.items.sorted(by: itemLinkSort)) { link in
+                        if let item = link.item {
+                            HStack {
+                                Label(item.name, systemImage: item.category.systemImageName)
+                                Spacer()
+                                Button(role: .destructive) {
+                                    remove(link, from: outfit)
+                                } label: {
+                                    Image(systemName: "minus.circle")
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                    }
+                }
+
+                Section("Add Item") {
+                    TextField("Search closet", text: $searchText)
+                        .textInputAutocapitalization(.words)
+                    ForEach(Array(addableItems(for: outfit).prefix(30))) { item in
+                        Button {
+                            add(item, to: outfit)
+                        } label: {
+                            HStack {
+                                Label(item.name, systemImage: item.category.systemImageName)
+                                Spacer()
+                                Text(item.category.displayName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                Section("Score") {
+                    Text("Score \(Int(outfit.score))")
+                        .font(.headline)
+                    if !outfit.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        ForEach(outfit.notes.fitcheckLines, id: \.self) { note in
+                            Label(note, systemImage: "checkmark.circle")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Button {
+                        rescore(outfit)
+                    } label: {
+                        Label("Rescore Outfit", systemImage: "arrow.clockwise")
+                    }
+                    if !status.isEmpty {
+                        Text(status)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                ContentUnavailableView("No Outfit", systemImage: "tshirt", description: Text("This itinerary row does not have an outfit to edit."))
+            }
+        }
+        .navigationTitle("Edit Outfit")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") {
+                    dismiss()
+                }
+            }
+        }
+    }
+
+    private func addableItems(for outfit: Outfit) -> [ClothingItem] {
+        let selectedIDs = Set(outfit.items.compactMap { $0.item?.id })
+        let search = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return closetItems
+            .filter { $0.status == .active && !selectedIDs.contains($0.id) }
+            .filter { search.isEmpty || searchableText(for: $0).localizedCaseInsensitiveContains(search) }
+            .sorted {
+                if $0.category == $1.category {
+                    return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
+                return categorySortIndex($0.category) < categorySortIndex($1.category)
+            }
+    }
+
+    private func add(_ item: ClothingItem, to outfit: Outfit) {
+        let link = OutfitItemLink(slot: item.category.displayName, outfit: outfit, item: item)
+        modelContext.insert(link)
+        outfit.items.append(link)
+        rescore(outfit)
+        status = "Added \(item.name) and updated the score."
+    }
+
+    private func remove(_ link: OutfitItemLink, from outfit: Outfit) {
+        let itemName = link.item?.name ?? "item"
+        outfit.items.removeAll { $0.id == link.id }
+        modelContext.delete(link)
+        rescore(outfit)
+        status = "Removed \(itemName) and updated the score."
+    }
+
+    private func rescore(_ outfit: Outfit) {
+        let request = RecommendationRequest(
+            weather: weatherInput(for: outfit),
+            occasion: outfit.occasion,
+            activity: outfit.activity,
+            selectedItem: nil
+        )
+        let recommendation = engine.scoreExistingOutfit(
+            items: outfit.items.compactMap(\.item),
+            feedback: feedback,
+            stylePreference: preferences.first,
+            request: request,
+            title: outfit.name
+        )
+
+        outfit.score = recommendation.score
+        outfit.notes = recommendation.notes.joined(separator: "\n")
+        try? modelContext.save()
+    }
+
+    private func weatherInput(for outfit: Outfit) -> WeatherInput {
+        WeatherInput(
+            temperatureF: inferredTemperature(from: outfit.weatherSummary),
+            isRaining: outfit.weatherSummary.localizedCaseInsensitiveContains("rain") || outfit.weatherSummary.localizedCaseInsensitiveContains("storm"),
+            windMph: inferredWind(from: outfit.weatherSummary),
+            location: itinerary.location,
+            humidityPercent: inferredHumidity(from: outfit.weatherSummary)
+        )
+    }
+
+    private func inferredTemperature(from text: String) -> Double {
+        text.split { !$0.isNumber }.compactMap { Double($0) }.first ?? 70
+    }
+
+    private func inferredWind(from text: String) -> Double {
+        let numbers = text.split { !$0.isNumber && $0 != "." }.compactMap { Double($0) }
+        return numbers.count > 1 ? numbers[1] : 5
+    }
+
+    private func inferredHumidity(from text: String) -> Double? {
+        let lowercased = text.lowercased()
+        guard lowercased.contains("humid") || lowercased.contains("humidity") || lowercased.contains("%") else {
+            return nil
+        }
+        return text.split { !$0.isNumber && $0 != "." }.compactMap { Double($0) }.last
+    }
+
+    private func searchableText(for item: ClothingItem) -> String {
+        [
+            item.name,
+            item.category.displayName,
+            ClothingInference.color(for: item),
+            ClothingInference.pattern(for: item),
+            item.notes
+        ]
+        .joined(separator: " ")
+    }
+
+    private func itemLinkSort(_ first: OutfitItemLink, _ second: OutfitItemLink) -> Bool {
+        guard let firstItem = first.item, let secondItem = second.item else {
+            return first.item != nil
+        }
+        if firstItem.category == secondItem.category {
+            return firstItem.name.localizedCaseInsensitiveCompare(secondItem.name) == .orderedAscending
+        }
+        return categorySortIndex(firstItem.category) < categorySortIndex(secondItem.category)
+    }
+
+    private func categorySortIndex(_ category: ClothingCategory) -> Int {
+        ClothingCategory.allCases.firstIndex(of: category) ?? ClothingCategory.allCases.count
+    }
+}
+
 private struct TripStopEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -630,8 +835,11 @@ private struct TripStopEditorView: View {
             DatePicker("End", selection: $endsAt, displayedComponents: .date)
             TextField("Manual weather if lookup fails", text: $expectedWeather, prompt: Text("88F, sunny, wind 6 mph, humidity 70%"))
                 .textInputAutocapitalization(.sentences)
-            TextField("Activities or local notes", text: $customsNotes)
+            TextField("Daily plans", text: $customsNotes, prompt: Text("Work days, dinner nights, gym 3x, casual sightseeing"))
                 .textInputAutocapitalization(.sentences)
+            Text("Use separate stops for date-specific plans, or describe multiple contexts here. FitCheck can create more than one outfit for a day.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .navigationTitle("Add Stop")
         .toolbar {

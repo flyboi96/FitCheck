@@ -17,6 +17,7 @@ struct TripPlanningService {
         for list in trip.packingLists {
             context.delete(list)
         }
+        trip.packingLists.removeAll()
 
         let activeItems = closet.filter { $0.status == .active }
         let list = PackingList(title: "\(trip.title) Packing List", trip: trip)
@@ -103,15 +104,20 @@ struct TripPlanningService {
             }
             context.delete(itineraryOutfit)
         }
+        trip.itineraryOutfits.removeAll()
 
         let engine = OutfitRecommendationEngine()
         let stops = trip.stops.sorted { $0.startsAt < $1.startsAt }
         let stopsByDay = stopsGroupedByDay(stops)
         let tripDates = stopsByDay.keys.sorted()
         var plannedWearCounts: [UUID: Int] = [:]
+        var lastPlannedDayByItemID: [UUID: Int] = [:]
         let explicitDailyPlanning = tripUsesExplicitContexts(trip)
         let activeCloset = closet.filter { $0.status == .active }
-        let preferredPackingCloset = packingCandidates(from: activeCloset, trip: trip, days: max(1, tripDates.count))
+        let existingPackingItemIDs = Set(trip.packingLists.flatMap(\.items).compactMap { $0.item?.id })
+        let preferredPackingCloset = existingPackingItemIDs.isEmpty
+            ? packingCandidates(from: activeCloset, trip: trip, days: max(1, tripDates.count))
+            : activeCloset.filter { existingPackingItemIDs.contains($0.id) }
         let preferredPackingIDs = Set(preferredPackingCloset.map(\.id))
 
         for (dayIndex, date) in tripDates.enumerated() {
@@ -141,13 +147,15 @@ struct TripPlanningService {
                     selectedItem: nil
                 )
                 let availableCloset = closetAvailableForTripDay(
-                    closet: closet,
+                    closet: activeCloset,
                     plannedWearCounts: plannedWearCounts,
+                    lastPlannedDayByItemID: lastPlannedDayByItemID,
+                    dayIndex: dayIndex,
                     trip: trip
                 )
                 let availablePackingCloset = availableCloset.filter { preferredPackingIDs.contains($0.id) }
                 let primaryCloset = availablePackingCloset.isEmpty ? availableCloset : availablePackingCloset
-                let fallbackCloset = preferredPackingCloset.isEmpty ? closet : preferredPackingCloset
+                let fallbackCloset = availablePackingCloset.isEmpty ? availableCloset : availablePackingCloset
 
                 let localRecommendations = engine.recommend(
                     closet: primaryCloset,
@@ -164,7 +172,7 @@ struct TripPlanningService {
                     limit: 3
                 )
                 let fullClosetRecommendations = engine.recommend(
-                    closet: closet,
+                    closet: availableCloset,
                     feedback: feedback,
                     stylePreference: stylePreference,
                     request: request,
@@ -181,7 +189,7 @@ struct TripPlanningService {
                 if let aiOptions,
                     let aiRecommendation = await aiFilteredRecommendation(
                     localRecommendation: recommendation,
-                    closet: primaryCloset.isEmpty ? closet : primaryCloset,
+                    closet: primaryCloset.isEmpty ? availableCloset : primaryCloset,
                     feedback: feedback,
                     stylePreference: stylePreference,
                     request: request,
@@ -191,7 +199,12 @@ struct TripPlanningService {
                     recommendation = aiRecommendation
                 }
 
-                recordPlannedWears(for: recommendation.items, counts: &plannedWearCounts)
+                recordPlannedWears(
+                    for: recommendation.items,
+                    dayIndex: dayIndex,
+                    counts: &plannedWearCounts,
+                    lastPlannedDayByItemID: &lastPlannedDayByItemID
+                )
 
                 let outfit = Outfit(
                     name: "\(locationLabel) \(outfitContext.displayName) Outfit",
@@ -218,6 +231,15 @@ struct TripPlanningService {
 
     private func packingCandidates(from closet: [ClothingItem], trip: Trip, days: Int) -> [ClothingItem] {
         var chosen: [ClothingItem] = []
+        let itineraryItems = trip.itineraryOutfits
+            .flatMap { $0.outfit?.items.compactMap(\.item) ?? [] }
+            .filter { $0.status == .active }
+        chosen.append(contentsOf: itineraryItems)
+        if !itineraryItems.isEmpty {
+            var seen = Set<UUID>()
+            return chosen.filter { seen.insert($0.id).inserted }
+        }
+
         let topLimit = clothingLimit(for: trip, category: .shirt, days: days, minimum: 1, maximum: 6)
         let bottomLimit = clothingLimit(for: trip, category: .pants, days: days, minimum: 1, maximum: 4)
         let activewearLimit = tripHasExercise(trip) ? clothingLimit(for: trip, category: .activewear, days: days, minimum: 1, maximum: 4) : 0
@@ -251,7 +273,9 @@ struct TripPlanningService {
     }
 
     private func packingAccessoryCategories(for trip: Trip) -> Set<ClothingCategory> {
-        let requestedContexts = trip.stops.flatMap(\.requestedContexts)
+        let requestedContexts = trip.stops
+            .filter(isDailyPlanStop)
+            .flatMap(\.requestedContexts)
         if !requestedContexts.isEmpty, requestedContexts.allSatisfy(isExerciseContext) {
             return []
         }
@@ -409,7 +433,7 @@ struct TripPlanningService {
 
         switch purpose {
         case .daily:
-            preferredItems = dailyItems.isEmpty ? categoryItems : dailyItems
+            preferredItems = dailyItems
         case .exercise:
             preferredItems = exerciseItems
         }
@@ -455,8 +479,11 @@ struct TripPlanningService {
     }
 
     private func tripHasExercise(_ trip: Trip) -> Bool {
-        if trip.stops.flatMap(\.requestedContexts).contains(where: isExerciseContext) {
-            return true
+        let dailyPlanEntries = trip.stops.filter(isDailyPlanStop)
+        let requestedContexts = dailyPlanEntries
+            .flatMap(\.requestedContexts)
+        if !dailyPlanEntries.isEmpty {
+            return requestedContexts.contains(where: isExerciseContext)
         }
 
         let text = ([trip.notes] + trip.stops.flatMap { [$0.customsNotes, $0.location] })
@@ -466,7 +493,7 @@ struct TripPlanningService {
     }
 
     private func tripUsesExplicitContexts(_ trip: Trip) -> Bool {
-        trip.stops.contains { !$0.requestedContexts.isEmpty }
+        trip.stops.contains(where: isDailyPlanStop)
     }
 
     private func wearLimit(for category: ClothingCategory, trip: Trip) -> Int {
@@ -495,16 +522,26 @@ struct TripPlanningService {
     private func closetAvailableForTripDay(
         closet: [ClothingItem],
         plannedWearCounts: [UUID: Int],
+        lastPlannedDayByItemID: [UUID: Int],
+        dayIndex: Int,
         trip: Trip
     ) -> [ClothingItem] {
         return closet.filter { item in
+            guard !isLaundryTracked(item) || lastPlannedDayByItemID[item.id] != dayIndex - 1 else { return false }
             guard isLaundryTracked(item) else { return true }
             return plannedWearCounts[item.id, default: 0] < wearLimit(for: item.category, trip: trip)
         }
     }
 
-    private func recordPlannedWears(for items: [ClothingItem], counts: inout [UUID: Int]) {
-        for item in items where isLaundryTracked(item) {
+    private func recordPlannedWears(
+        for items: [ClothingItem],
+        dayIndex: Int,
+        counts: inout [UUID: Int],
+        lastPlannedDayByItemID: inout [UUID: Int]
+    ) {
+        for item in items {
+            lastPlannedDayByItemID[item.id] = dayIndex
+            guard isLaundryTracked(item) else { continue }
             counts[item.id, default: 0] += 1
         }
     }
@@ -552,7 +589,8 @@ struct TripPlanningService {
         var seen = Set<String>()
         return stops.compactMap { stop in
             let location = stop.location.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !location.isEmpty, seen.insert(location).inserted else { return nil }
+            let key = location.lowercased()
+            guard !location.isEmpty, seen.insert(key).inserted else { return nil }
             return location
         }
     }
@@ -598,7 +636,9 @@ struct TripPlanningService {
         isTravelDay: Bool,
         explicitDailyPlanning: Bool
     ) -> [OutfitContextOption] {
-        let requestedContexts = stops.flatMap(\.requestedContexts)
+        let requestedContexts = stops
+            .filter(isDailyPlanStop)
+            .flatMap(\.requestedContexts)
         if explicitDailyPlanning {
             return requestedContexts
         }
@@ -653,7 +693,7 @@ struct TripPlanningService {
         guard tripHasExercise(trip) else { return 0 }
         let explicitExerciseDays = Set(
             trip.stops
-                .filter { $0.requestedContexts.contains(where: isExerciseContext) }
+                .filter { isDailyPlanStop($0) && $0.requestedContexts.contains(where: isExerciseContext) }
                 .flatMap { stop in
                     dates(from: stop.startsAt, through: stop.endsAt).map { date in
                         Calendar.current.startOfDay(for: date)
@@ -699,7 +739,7 @@ struct TripPlanningService {
 
     private func exerciseFocuses(for trip: Trip) -> Set<String> {
         var focuses = Set<String>()
-        for context in trip.stops.flatMap(\.requestedContexts) {
+        for context in trip.stops.filter(isDailyPlanStop).flatMap(\.requestedContexts) {
             if context == .runningDay { focuses.insert("running") }
             if context == .liftingDay { focuses.insert("lifting") }
         }
@@ -721,7 +761,15 @@ struct TripPlanningService {
 
     private func isExerciseBaseLayerItem(_ item: ClothingItem) -> Bool {
         guard item.category == .underwear || item.category == .socks else { return false }
-        return itemSearchText(item).containsAny([
+        let explicitText = [
+            item.name,
+            item.brand,
+            item.notes
+        ]
+        .joined(separator: " ")
+        .lowercased()
+
+        return explicitText.containsAny([
             "compression",
             "running",
             "runner",
@@ -735,6 +783,16 @@ struct TripPlanningService {
             "performance",
             "sport"
         ])
+    }
+
+    private func isDailyPlanStop(_ stop: TripStop) -> Bool {
+        if stop.isDailyPlanEntry {
+            return true
+        }
+
+        let startsAt = Calendar.current.startOfDay(for: stop.startsAt)
+        let endsAt = Calendar.current.startOfDay(for: stop.endsAt)
+        return startsAt == endsAt && !stop.requestedContexts.isEmpty
     }
 
     private func itemSearchText(_ item: ClothingItem) -> String {

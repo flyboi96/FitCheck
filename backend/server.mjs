@@ -187,7 +187,9 @@ Rules:
 - Never invent clothing items or duplicate a closet item beyond its saved quantity.
 - Do not chase trends when they conflict with the user's saved feedback, body of preferences, or practical needs.
 - Treat saved style rules as hard constraints. If the user says collared shirts need belts, include a belt with collared shirts and belt-loop bottoms.
-- For work, office, pilot, flight, or business contexts, do not choose shorts unless the user's profile explicitly says work shorts are acceptable.
+- For work, office, pilot, flight, or business contexts, do not choose shorts, sweatpants, joggers, track pants, exercise bottoms, or athletic gym clothes unless the user's profile explicitly allows that exact exception.
+- Do not pair sweatpants or joggers with leather boots. Keep sweatpants with athletic or casual sneakers and only in casual/exercise contexts.
+- Only include a belt when the outfit has pants or shorts that realistically have belt loops. Never add a belt to sweatpants, joggers, track pants, exercise shorts, leggings, or any bottom that cannot physically take a belt.
 - For gym, running, lifting, or workout contexts, do not add belts, dress accessories, or non-exercise clothing. Prefer running socks for running and lifting/training socks for lifting.
 - Keep the rationale concise and specific.
 - Put risks or caveats in cautions, not the rationale.

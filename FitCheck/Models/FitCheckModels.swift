@@ -502,6 +502,7 @@ final class TripStop: Identifiable {
     var expectedWeather: String
     var customsNotes: String
     var requestedContextRawValues: String = ""
+    var isDailyPlanEntry: Bool = false
     var trip: Trip?
 
     init(
@@ -512,6 +513,7 @@ final class TripStop: Identifiable {
         expectedWeather: String = "",
         customsNotes: String = "",
         requestedContextRawValues: String = "",
+        isDailyPlanEntry: Bool = false,
         trip: Trip? = nil
     ) {
         self.id = id
@@ -521,6 +523,7 @@ final class TripStop: Identifiable {
         self.expectedWeather = expectedWeather
         self.customsNotes = customsNotes
         self.requestedContextRawValues = requestedContextRawValues
+        self.isDailyPlanEntry = isDailyPlanEntry
         self.trip = trip
     }
 

@@ -217,11 +217,6 @@ private struct TripDetailView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                            if !stop.requestedContexts.isEmpty {
-                                Text("Outfits: \(stop.requestedContexts.map(\.displayName).joined(separator: ", "))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
                         }
                     }
                     .buttonStyle(.plain)
@@ -235,7 +230,7 @@ private struct TripDetailView: View {
             }
 
             Section("Daily Plan") {
-                Text("Set where you will be and the exact outfit types you want for each date. Itinerary generation only uses the selected outfit types when any daily plan has selections.")
+                Text("Set where you will be and the exact outfit types you want for each date. When Daily Plan is filled in, itinerary generation uses only the selected outfit types for each date.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 ForEach(planDays) { day in
@@ -314,8 +309,9 @@ private struct TripDetailView: View {
                             context: modelContext,
                             aiOptions: tripAIOptions
                         )
+                        await service.rebuildPackingList(for: trip, closet: closetItems, context: modelContext)
                         try? modelContext.save()
-                        generationStatus = "Itinerary updated with \(trip.itineraryOutfits.count) daily outfit\(trip.itineraryOutfits.count == 1 ? "" : "s")."
+                        generationStatus = "Itinerary and packing list updated."
                     }
                 } label: {
                     FitCheckButtonLabel(
@@ -499,7 +495,9 @@ private struct TripDetailView: View {
     }
 
     private var sortedStops: [TripStop] {
-        trip.stops.sorted { $0.startsAt < $1.startsAt }
+        trip.stops
+            .filter { !isDailyPlanStop($0) }
+            .sorted { $0.startsAt < $1.startsAt }
     }
 
     private var planDays: [TripPlanDay] {
@@ -507,14 +505,15 @@ private struct TripDetailView: View {
     }
 
     private func requestedContexts(on date: Date) -> [OutfitContextOption] {
-        stops(on: date).flatMap(\.requestedContexts)
+        dailyPlanStop(on: date)?.requestedContexts ?? []
     }
 
     private func locationLabel(for date: Date) -> String {
         var seen = Set<String>()
         let locations = stops(on: date).compactMap { stop -> String? in
             let location = stop.location.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !location.isEmpty, seen.insert(location).inserted else { return nil }
+            let key = location.lowercased()
+            guard !location.isEmpty, seen.insert(key).inserted else { return nil }
             return location
         }
         return locations.joined(separator: " -> ")
@@ -525,7 +524,7 @@ private struct TripDetailView: View {
         return trip.stops.first { stop in
             Calendar.current.startOfDay(for: stop.startsAt) == startOfDay &&
                 Calendar.current.startOfDay(for: stop.endsAt) == startOfDay &&
-                (!stop.requestedContexts.isEmpty || !stop.customsNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                isDailyPlanStop(stop)
         }
     }
 
@@ -537,6 +536,16 @@ private struct TripDetailView: View {
                     Calendar.current.startOfDay(for: stop.endsAt) >= startOfDay
             }
             .sorted { $0.startsAt < $1.startsAt }
+    }
+
+    private func isDailyPlanStop(_ stop: TripStop) -> Bool {
+        if stop.isDailyPlanEntry {
+            return true
+        }
+
+        let startsAt = Calendar.current.startOfDay(for: stop.startsAt)
+        let endsAt = Calendar.current.startOfDay(for: stop.endsAt)
+        return startsAt == endsAt && !stop.requestedContexts.isEmpty
     }
 
     private func dates(from start: Date, through end: Date) -> [Date] {
@@ -663,13 +672,27 @@ private struct TripDetailView: View {
             ""
         ]
 
-        if !trip.stops.isEmpty {
+        let broadStops = trip.stops
+            .filter { !isDailyPlanStop($0) }
+            .sorted(by: { $0.startsAt < $1.startsAt })
+        if !broadStops.isEmpty {
             lines.append("Stops")
-            for stop in trip.stops.sorted(by: { $0.startsAt < $1.startsAt }) {
+            for stop in broadStops {
                 lines.append("- \(stop.location): \(TripPlannerView.dateFormatter.string(from: stop.startsAt)) - \(TripPlannerView.dateFormatter.string(from: stop.endsAt))")
                 if !stop.expectedWeather.isEmpty {
                     lines.append("  Weather: \(stop.expectedWeather)")
                 }
+            }
+            lines.append("")
+        }
+
+        let dailyPlanStops = trip.stops
+            .filter(isDailyPlanStop)
+            .sorted(by: { $0.startsAt < $1.startsAt })
+        if !dailyPlanStops.isEmpty {
+            lines.append("Daily Plan")
+            for stop in dailyPlanStops {
+                lines.append("- \(TripPlannerView.dateFormatter.string(from: stop.startsAt)): \(stop.location)")
                 if !stop.requestedContexts.isEmpty {
                     lines.append("  Outfits: \(stop.requestedContexts.map(\.displayName).joined(separator: ", "))")
                 }
@@ -1002,6 +1025,7 @@ private struct TripDayPlanEditorView: View {
             existingStop.expectedWeather = expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines)
             existingStop.customsNotes = notes
             existingStop.requestedContexts = selectedContexts
+            existingStop.isDailyPlanEntry = true
         } else {
             let stop = TripStop(
                 location: trimmedLocation,
@@ -1010,6 +1034,7 @@ private struct TripDayPlanEditorView: View {
                 expectedWeather: expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines),
                 customsNotes: notes,
                 requestedContextRawValues: selectedContexts.map(\.rawValue).joined(separator: "\n"),
+                isDailyPlanEntry: true,
                 trip: trip
             )
             modelContext.insert(stop)
@@ -1047,7 +1072,6 @@ private struct TripStopEditorView: View {
     @State private var endsAt: Date
     @State private var expectedWeather = ""
     @State private var customsNotes = ""
-    @State private var selectedContextRawValues: Set<String>
 
     init(trip: Trip, stop: TripStop? = nil) {
         self.trip = trip
@@ -1057,7 +1081,6 @@ private struct TripStopEditorView: View {
         _endsAt = State(initialValue: stop?.endsAt ?? trip.startsAt)
         _expectedWeather = State(initialValue: stop?.expectedWeather ?? "")
         _customsNotes = State(initialValue: stop?.customsNotes ?? "")
-        _selectedContextRawValues = State(initialValue: Set(stop?.requestedContexts.map(\.rawValue) ?? []))
     }
 
     var body: some View {
@@ -1071,19 +1094,10 @@ private struct TripStopEditorView: View {
                     .textInputAutocapitalization(.sentences)
             }
 
-            Section("Outfits Needed") {
-                Text("Pick outfit types only if this stop should apply them to every date in the range. For exact day-by-day control, use Daily Plan.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                ForEach(fitCheckPlanContextOptions) { option in
-                    Toggle(option.displayName, isOn: contextBinding(for: option))
-                }
-            }
-
             Section("Notes") {
-                TextField("Daily plans", text: $customsNotes, prompt: Text("Work days, dinner nights, run 2x, lift 1x"))
+                TextField("Location notes", text: $customsNotes, prompt: Text("Hotel area, local formality, packing notes"))
                     .textInputAutocapitalization(.sentences)
-                Text("Use separate stops for date-specific plans. FitCheck can create more than one outfit for a day.")
+                Text("Choose outfit types in Daily Plan, not here.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1113,7 +1127,8 @@ private struct TripStopEditorView: View {
             stop.endsAt = endDate
             stop.expectedWeather = expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines)
             stop.customsNotes = customsNotes
-            stop.requestedContexts = selectedContexts
+            stop.requestedContexts = []
+            stop.isDailyPlanEntry = false
         } else {
             let stop = TripStop(
                 location: trimmedLocation,
@@ -1121,7 +1136,8 @@ private struct TripStopEditorView: View {
                 endsAt: endDate,
                 expectedWeather: expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines),
                 customsNotes: customsNotes,
-                requestedContextRawValues: selectedContexts.map(\.rawValue).joined(separator: "\n"),
+                requestedContextRawValues: "",
+                isDailyPlanEntry: false,
                 trip: trip
             )
             modelContext.insert(stop)
@@ -1129,22 +1145,6 @@ private struct TripStopEditorView: View {
         }
         try? modelContext.save()
         dismiss()
-    }
-
-    private var selectedContexts: [OutfitContextOption] {
-        fitCheckPlanContextOptions.filter { selectedContextRawValues.contains($0.rawValue) }
-    }
-
-    private func contextBinding(for option: OutfitContextOption) -> Binding<Bool> {
-        Binding {
-            selectedContextRawValues.contains(option.rawValue)
-        } set: { isSelected in
-            if isSelected {
-                selectedContextRawValues.insert(option.rawValue)
-            } else {
-                selectedContextRawValues.remove(option.rawValue)
-            }
-        }
     }
 
 }

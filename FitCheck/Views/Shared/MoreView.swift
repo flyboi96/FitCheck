@@ -69,7 +69,7 @@ private struct ScoringGuideView: View {
             }
 
             Section("Rotation") {
-                Text("Items worn in the last few days get a strong penalty. Items not worn recently, or never worn, get a small boost.")
+                Text("Items worn in the last few days get a strong penalty. In trip plans, washable clothing is blocked from appearing on back-to-back days. Items not worn recently, or never worn, get a small boost.")
             }
 
             Section("Color") {
@@ -81,7 +81,7 @@ private struct ScoringGuideView: View {
             }
 
             Section("Hard Rules") {
-                Text("Some rules block an outfit even if the numeric score would otherwise be good. Current hard rules include no shorts with boots, no work shorts, no non-rain-shell jacket in hot humidity, and a belt with collared shirts when your profile says that rule matters.")
+                Text("Some rules block an outfit even if the numeric score would otherwise be good. Current hard rules include no shorts with boots, no sweatpants with boots, no belts without belt-loop bottoms, no work shorts or work sweatpants, no non-rain-shell jacket in hot humidity, and a belt with collared shirts when your profile says that rule matters.")
             }
 
             Section("Exercise") {

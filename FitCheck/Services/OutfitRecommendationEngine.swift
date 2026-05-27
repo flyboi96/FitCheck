@@ -540,6 +540,9 @@ struct OutfitRecommendationEngine {
                                 jacket.map({ accessory.id == $0.id }) == true {
                                     continue
                             }
+                            if let accessory, accessory.category == .belt, !canWearBelt(with: bottom) {
+                                continue
+                            }
                             var outfitItems = [top, shoe]
                             if let bottom {
                                 outfitItems.append(bottom)
@@ -1173,6 +1176,16 @@ struct OutfitRecommendationEngine {
             notes.append("Hard style rule: avoid shorts with boots")
         }
 
+        if hasSweatpantsWithBoots(items) {
+            value -= 140
+            notes.append("Hard style rule: sweatpants need athletic or casual sneakers, not boots")
+        }
+
+        if hasImpossibleBelt(items) {
+            value -= 140
+            notes.append("Hard style rule: belts only work with belt-loop bottoms")
+        }
+
         if hotHumidJacketIsHardNo(weather: request.weather, stylePreference: stylePreference),
            items.contains(where: { $0.category == .jacket && !isRainShell($0) }) {
             value -= 90
@@ -1182,6 +1195,11 @@ struct OutfitRecommendationEngine {
         if isWorkContext(request), items.contains(where: { $0.category == .shorts }) {
             value -= 120
             notes.append("Hard work rule: no shorts for work")
+        }
+
+        if isWorkContext(request), items.contains(where: isWorkInappropriateActiveBottom) {
+            value -= 140
+            notes.append("Hard work rule: no sweatpants, joggers, or exercise bottoms for work")
         }
 
         if collaredShirtNeedsBelt(items, stylePreference: stylePreference) {
@@ -1201,12 +1219,24 @@ struct OutfitRecommendationEngine {
             return true
         }
 
+        if hasSweatpantsWithBoots(items) {
+            return true
+        }
+
+        if hasImpossibleBelt(items) {
+            return true
+        }
+
         if hotHumidJacketIsHardNo(weather: request.weather, stylePreference: stylePreference),
            items.contains(where: { $0.category == .jacket && !isRainShell($0) }) {
             return true
         }
 
         if isWorkContext(request), items.contains(where: { $0.category == .shorts }) {
+            return true
+        }
+
+        if isWorkContext(request), items.contains(where: isWorkInappropriateActiveBottom) {
             return true
         }
 
@@ -1234,11 +1264,63 @@ struct OutfitRecommendationEngine {
             items.contains { [.shoes, .heels, .flats].contains($0.category) && isBoot($0) }
     }
 
+    private func hasSweatpantsWithBoots(_ items: [ClothingItem]) -> Bool {
+        items.contains(where: isSweatpantsOrJoggers) &&
+            items.contains { [.shoes, .heels, .flats].contains($0.category) && isBoot($0) }
+    }
+
     private func isBoot(_ item: ClothingItem) -> Bool {
         [item.name, item.notes, item.brand]
             .joined(separator: " ")
             .lowercased()
             .contains("boot")
+    }
+
+    private func hasImpossibleBelt(_ items: [ClothingItem]) -> Bool {
+        guard items.contains(where: { $0.category == .belt }) else { return false }
+        return !items.contains(where: isBeltLoopBottom)
+    }
+
+    private func canWearBelt(with bottom: ClothingItem?) -> Bool {
+        guard let bottom else { return false }
+        return isBeltLoopBottom(bottom)
+    }
+
+    private func isWorkInappropriateActiveBottom(_ item: ClothingItem) -> Bool {
+        if isSweatpantsOrJoggers(item) {
+            return true
+        }
+        guard [.pants, .shorts, .activewear].contains(item.category) else { return false }
+        return item.category == .activewear && itemSearchText(item).containsAny([
+            "sweat",
+            "jogger",
+            "track",
+            "athletic",
+            "running",
+            "gym",
+            "workout",
+            "training"
+        ])
+    }
+
+    private func isSweatpantsOrJoggers(_ item: ClothingItem) -> Bool {
+        guard [.pants, .activewear].contains(item.category) else { return false }
+        return itemSearchText(item).containsAny([
+            "sweatpant",
+            "sweatpants",
+            "sweat pants",
+            "sweats",
+            "jogger",
+            "joggers",
+            "track pant",
+            "track pants",
+            "athletic pant",
+            "athletic pants",
+            "gym pant",
+            "gym pants",
+            "workout pant",
+            "workout pants"
+        ])
     }
 
     private func collaredShirtNeedsBelt(_ items: [ClothingItem], stylePreference: StylePreference?) -> Bool {

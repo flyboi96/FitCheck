@@ -595,6 +595,7 @@ private struct TripStopBackup: Codable {
     var expectedWeather: String
     var customsNotes: String
     var requestedContextRawValues: String
+    var isDailyPlanEntry: Bool
     var tripID: UUID
 
     private enum CodingKeys: String, CodingKey {
@@ -605,6 +606,7 @@ private struct TripStopBackup: Codable {
         case expectedWeather
         case customsNotes
         case requestedContextRawValues
+        case isDailyPlanEntry
         case tripID
     }
 
@@ -616,6 +618,7 @@ private struct TripStopBackup: Codable {
         expectedWeather = stop.expectedWeather
         customsNotes = stop.customsNotes
         requestedContextRawValues = stop.requestedContextRawValues
+        isDailyPlanEntry = stop.isDailyPlanEntry
         tripID = stop.trip?.id ?? UUID()
     }
 
@@ -628,6 +631,7 @@ private struct TripStopBackup: Codable {
         expectedWeather = try container.decode(String.self, forKey: .expectedWeather)
         customsNotes = try container.decode(String.self, forKey: .customsNotes)
         requestedContextRawValues = try container.decodeIfPresent(String.self, forKey: .requestedContextRawValues) ?? ""
+        isDailyPlanEntry = try container.decodeIfPresent(Bool.self, forKey: .isDailyPlanEntry) ?? false
         tripID = try container.decode(UUID.self, forKey: .tripID)
     }
 
@@ -640,6 +644,7 @@ private struct TripStopBackup: Codable {
             expectedWeather: expectedWeather,
             customsNotes: customsNotes,
             requestedContextRawValues: requestedContextRawValues,
+            isDailyPlanEntry: isDailyPlanEntry,
             trip: trip
         )
     }

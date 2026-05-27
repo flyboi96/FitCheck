@@ -236,6 +236,11 @@ struct ClothingInference {
         let text = normalized(name)
         var tags = Set(["casual"])
 
+        if text.containsAny(["crocs", "croc", "foam clog", "classic clog", "slide", "slides", "flip flop", "flip-flop", "slipper", "house shoe"]) {
+            tags.formUnion(["walking around city", "travel day"])
+            return tags.sorted()
+        }
+
         if text.containsAny(["button-down", "button down", "oxford", "chino", "loafer", "blazer", "dress", "blouse", "heel", "flat", "merino"]) {
             tags.formUnion(["dinner", "date night", "work"])
         }
@@ -269,6 +274,9 @@ struct ClothingInference {
         if text.contains("shorts") {
             tags.remove("work")
         }
+        if text.containsAny(["sweat", "jogger", "track pant", "lounge", "pajama"]) {
+            tags.subtract(["work", "dinner", "date night"])
+        }
 
         return tags.sorted()
     }
@@ -276,6 +284,11 @@ struct ClothingInference {
     private static func activityTags(name: String, category: ClothingCategory) -> [String] {
         let text = normalized(name)
         var tags = Set(["errands", "walking around city"])
+
+        if text.containsAny(["crocs", "croc", "foam clog", "classic clog", "slide", "slides", "flip flop", "flip-flop", "slipper", "house shoe"]) {
+            tags.insert("travel")
+            return tags.sorted()
+        }
 
         if text.containsAny(["button-down", "button down", "oxford", "blazer", "chino", "dress", "blouse", "heel", "flat"]) {
             tags.formUnion(["office", "dinner"])
@@ -307,12 +320,18 @@ struct ClothingInference {
         if text.contains("shorts") {
             tags.remove("office")
         }
+        if text.containsAny(["sweat", "jogger", "track pant", "lounge", "pajama"]) {
+            tags.subtract(["office", "dinner"])
+        }
 
         return tags.sorted()
     }
 
     private static func formalityLevel(name: String, category: ClothingCategory) -> Int {
         let text = normalized(name)
+        if text.containsAny(["crocs", "croc", "foam clog", "classic clog", "slide", "slides", "flip flop", "flip-flop", "slipper", "house shoe", "sweatpant", "sweat pants", "jogger", "track pant", "lounge", "pajama"]) {
+            return 1
+        }
         if text.containsAny(["suit", "tie", "tux", "formal"]) {
             return 5
         }
@@ -460,6 +479,7 @@ struct OutfitRecommendationEngine {
         )
         .filter { isTopItem($0, request: request) && !isFootwearItem($0, request: request) }
         .filter { !needsExerciseClothing || isExerciseItem($0) }
+        .filter { isEligibleTop($0, request: request) }
         let bottomPool = constrainedBottomPool(
             categories: bottomCategories,
             items: activeItems,
@@ -473,6 +493,10 @@ struct OutfitRecommendationEngine {
             guard let item else { return true }
             return !needsExerciseClothing || isExerciseItem(item)
         }
+        .filter { item in
+            guard let item else { return true }
+            return isEligibleBottom(item, request: request)
+        }
         let adjustedBottomPool = bottomPool
         let canUseOnePieceTop = tops.contains { $0.category == .dress || (needsExerciseClothing && isBottomItem($0, request: request)) }
         let bottoms = adjustedBottomPool.isEmpty && canUseOnePieceTop ? [nil] : adjustedBottomPool
@@ -483,6 +507,7 @@ struct OutfitRecommendationEngine {
         )
         .filter { isFootwearItem($0, request: request) }
         .filter { !needsExerciseClothing || isExerciseItem($0) }
+        .filter { isEligibleFootwear($0, request: request) }
 
         guard !tops.isEmpty, !bottoms.isEmpty, !shoes.isEmpty else {
             return []
@@ -744,6 +769,10 @@ struct OutfitRecommendationEngine {
         let fashionValue = fashionRuleScore(items: items, request: request, stylePreference: stylePreference)
         value += fashionValue.value
         notes.append(contentsOf: fashionValue.notes)
+        if violatesHardFashionRules(items, request: request, stylePreference: stylePreference) {
+            value -= 250
+            notes.append("Fails a hard fashion rule; edit before wearing")
+        }
 
         let formalityValue = formalityScore(items: items, request: request)
         value += formalityValue.value
@@ -795,6 +824,10 @@ struct OutfitRecommendationEngine {
         if item.wearCount == 0 {
             value += 4
         }
+
+        let itemFashionValue = itemFashionScore(item, request: request, stylePreference: stylePreference)
+        value += itemFashionValue.value
+        notes.append(contentsOf: itemFashionValue.notes)
 
         if let stylePreference {
             let inferredColor = ClothingInference.color(for: item)
@@ -1186,6 +1219,16 @@ struct OutfitRecommendationEngine {
             notes.append("Hard style rule: belts only work with belt-loop bottoms")
         }
 
+        if hasCollaredOrWorkTopWithLoungeBottom(items) {
+            value -= 140
+            notes.append("Hard style rule: work shirts do not pair with lounge or sweat bottoms")
+        }
+
+        if hasCasualOnlyFootwearWithPolishedClothing(items) {
+            value -= 110
+            notes.append("Hard style rule: Crocs, clogs, slides, and slippers are casual-only footwear")
+        }
+
         if hotHumidJacketIsHardNo(weather: request.weather, stylePreference: stylePreference),
            items.contains(where: { $0.category == .jacket && !isRainShell($0) }) {
             value -= 90
@@ -1202,10 +1245,24 @@ struct OutfitRecommendationEngine {
             notes.append("Hard work rule: no sweatpants, joggers, or exercise bottoms for work")
         }
 
+        if isWorkContext(request), items.contains(where: isWorkInappropriateFootwear) {
+            value -= 140
+            notes.append("Hard work rule: no Crocs, clogs, slides, sandals, slippers, or athletic shoes for work")
+        }
+
+        if isWorkContext(request), !hasWorkFoundation(items) {
+            value -= 110
+            notes.append("Hard work rule: work outfits need a work top, tailored bottom, and polished shoe")
+        }
+
         if collaredShirtNeedsBelt(items, stylePreference: stylePreference) {
             value -= 120
             notes.append("Hard style rule: collared shirt needs a belt")
         }
+
+        let coherence = fashionCoherenceScore(items: items, request: request)
+        value += coherence.value
+        notes.append(contentsOf: coherence.notes)
 
         return (value, notes)
     }
@@ -1227,6 +1284,14 @@ struct OutfitRecommendationEngine {
             return true
         }
 
+        if hasCollaredOrWorkTopWithLoungeBottom(items) {
+            return true
+        }
+
+        if hasCasualOnlyFootwearWithPolishedClothing(items) {
+            return true
+        }
+
         if hotHumidJacketIsHardNo(weather: request.weather, stylePreference: stylePreference),
            items.contains(where: { $0.category == .jacket && !isRainShell($0) }) {
             return true
@@ -1237,6 +1302,14 @@ struct OutfitRecommendationEngine {
         }
 
         if isWorkContext(request), items.contains(where: isWorkInappropriateActiveBottom) {
+            return true
+        }
+
+        if isWorkContext(request), items.contains(where: isWorkInappropriateFootwear) {
+            return true
+        }
+
+        if isWorkContext(request), !hasWorkFoundation(items) {
             return true
         }
 
@@ -1319,8 +1392,240 @@ struct OutfitRecommendationEngine {
             "gym pant",
             "gym pants",
             "workout pant",
-            "workout pants"
+            "workout pants",
+            "lounge pant",
+            "lounge pants",
+            "pajama",
+            "sleep pant",
+            "sleep pants",
+            "fleece pant",
+            "fleece pants"
         ])
+    }
+
+    private func isLoungeBottom(_ item: ClothingItem) -> Bool {
+        guard [.pants, .shorts, .activewear].contains(item.category) else { return false }
+        return itemSearchText(item).containsAny([
+            "lounge",
+            "pajama",
+            "sleep",
+            "sweat",
+            "jogger",
+            "track pant",
+            "track pants",
+            "fleece pant",
+            "fleece pants",
+            "drawstring",
+            "elastic waist"
+        ])
+    }
+
+    private func isCrocsOrFoamClog(_ item: ClothingItem) -> Bool {
+        guard isFootwearItem(item, request: nil) else { return false }
+        let text = itemSearchText(item)
+        return text.containsAny(["crocs", "croc", "foam clog", "classic clog", "rubber clog", "eva clog"])
+    }
+
+    private func isClog(_ item: ClothingItem) -> Bool {
+        guard isFootwearItem(item, request: nil) else { return false }
+        return itemSearchText(item).contains("clog")
+    }
+
+    private func isCasualOnlyFootwear(_ item: ClothingItem) -> Bool {
+        guard isFootwearItem(item, request: nil) else { return false }
+        let text = itemSearchText(item)
+        return isCrocsOrFoamClog(item) ||
+            text.containsAny([
+                "slide",
+                "slides",
+                "flip flop",
+                "flip-flop",
+                "slipper",
+                "house shoe",
+                "pool",
+                "beach sandal",
+                "shower shoe"
+            ])
+    }
+
+    private func isAthleticFootwear(_ item: ClothingItem) -> Bool {
+        guard isFootwearItem(item, request: nil) else { return false }
+        return itemSearchText(item).containsAny([
+            "running shoe",
+            "runner",
+            "trainer",
+            "training shoe",
+            "tennis shoe",
+            "gym shoe",
+            "athletic",
+            "workout"
+        ])
+    }
+
+    private func isWorkInappropriateFootwear(_ item: ClothingItem) -> Bool {
+        guard isFootwearItem(item, request: nil) else { return false }
+        if isCasualOnlyFootwear(item) || isCrocsOrFoamClog(item) || isClog(item) || isAthleticFootwear(item) {
+            return true
+        }
+        return itemSearchText(item).containsAny(["sandal", "flip flop", "flip-flop", "canvas sneaker", "chunky sneaker"])
+    }
+
+    private func hasCollaredOrWorkTopWithLoungeBottom(_ items: [ClothingItem]) -> Bool {
+        items.contains { isCollaredTop($0) || isWorkTop($0) } &&
+            items.contains(where: isLoungeBottom)
+    }
+
+    private func hasCasualOnlyFootwearWithPolishedClothing(_ items: [ClothingItem]) -> Bool {
+        guard items.contains(where: isCasualOnlyFootwear) else { return false }
+        return items.contains { isCollaredTop($0) || isWorkTop($0) || isTailoredBottom($0) }
+    }
+
+    private func hasWorkFoundation(_ items: [ClothingItem]) -> Bool {
+        let hasDress = items.contains { $0.category == .dress && !isLoungeBottom($0) }
+        let hasTop = hasDress || items.contains(where: isWorkTop)
+        let hasBottom = hasDress || items.contains(where: isTailoredBottom)
+        let hasShoe = items.contains { isFootwearItem($0, request: nil) && !isWorkInappropriateFootwear($0) }
+        return hasTop && hasBottom && hasShoe
+    }
+
+    private func isWorkTop(_ item: ClothingItem) -> Bool {
+        guard [.shirt, .blouse, .sweater, .dress].contains(item.category) else { return false }
+        let text = itemSearchText(item)
+        if text.containsAny(["t-shirt", "tee", "graphic", "tank", "hoodie", "sweatshirt", "henley", "jersey", "lounge", "pajama"]) {
+            return false
+        }
+        if item.category == .sweater {
+            return text.containsAny(["merino", "wool", "cashmere", "cardigan", "quarter zip", "1/4 zip", "v-neck", "crewneck"])
+        }
+        if item.category == .dress || item.category == .blouse {
+            return true
+        }
+        return text.containsAny(["button-down", "button down", "button-up", "button up", "oxford", "dress shirt", "collared", "collar", "polo", "work shirt"])
+    }
+
+    private func isTailoredBottom(_ item: ClothingItem) -> Bool {
+        guard [.pants, .skirt].contains(item.category) else { return false }
+        let text = itemSearchText(item)
+        if isLoungeBottom(item) || text.containsAny(["shorts", "jeans", "denim", "cargo", "gym", "running", "workout"]) {
+            return false
+        }
+        return text.containsAny(["chino", "khaki", "slack", "trouser", "dress pant", "wool", "tailored", "suit pant", "skirt"]) ||
+            item.category == .pants ||
+            item.category == .skirt
+    }
+
+    private func isEligibleTop(_ item: ClothingItem, request: RecommendationRequest) -> Bool {
+        if isExerciseContext(request) {
+            return isExerciseItem(item)
+        }
+        if isWorkContext(request) {
+            return isWorkTop(item)
+        }
+        if isPolishedContext(request) {
+            return !itemSearchText(item).containsAny(["lounge", "pajama", "workout", "gym", "running"])
+        }
+        return true
+    }
+
+    private func isEligibleBottom(_ item: ClothingItem, request: RecommendationRequest) -> Bool {
+        if isExerciseContext(request) {
+            return isExerciseItem(item)
+        }
+        if isWorkContext(request) {
+            return isTailoredBottom(item)
+        }
+        if isPolishedContext(request) {
+            return !isLoungeBottom(item) && item.category != .activewear
+        }
+        return true
+    }
+
+    private func isEligibleFootwear(_ item: ClothingItem, request: RecommendationRequest) -> Bool {
+        if isExerciseContext(request) {
+            return isExerciseItem(item)
+        }
+        if isWorkContext(request) {
+            return !isWorkInappropriateFootwear(item)
+        }
+        if isPolishedContext(request) {
+            return !isCasualOnlyFootwear(item) && !isAthleticFootwear(item)
+        }
+        return true
+    }
+
+    private func itemFashionScore(
+        _ item: ClothingItem,
+        request: RecommendationRequest,
+        stylePreference: StylePreference?
+    ) -> (value: Double, notes: [String]) {
+        var value = 0.0
+        var notes: [String] = []
+
+        if isCasualOnlyFootwear(item) {
+            if styleExplicitlyLikesCasualFootwear(stylePreference) && !isPolishedContext(request) && !isWorkContext(request) {
+                value -= 8
+            } else {
+                value -= isWorkContext(request) || isPolishedContext(request) ? 70 : 28
+                notes.append("\(item.name) is casual-only footwear")
+            }
+        }
+
+        if isLoungeBottom(item), !isExerciseContext(request) {
+            value -= isWorkContext(request) || isPolishedContext(request) ? 80 : 30
+            notes.append("\(item.name) reads as loungewear")
+        }
+
+        if isWorkContext(request), isTailoredBottom(item) {
+            value += 16
+        }
+        if isWorkContext(request), isWorkTop(item) {
+            value += 12
+        }
+        if isWorkContext(request), isFootwearItem(item, request: request), !isWorkInappropriateFootwear(item) {
+            value += 12
+        }
+
+        return (value, notes)
+    }
+
+    private func fashionCoherenceScore(items: [ClothingItem], request: RecommendationRequest) -> (value: Double, notes: [String]) {
+        var value = 0.0
+        var notes: [String] = []
+
+        if isWorkContext(request), hasWorkFoundation(items) {
+            value += 24
+            notes.append("Work-ready: structured top, tailored bottom, polished shoes")
+        } else if isPolishedContext(request), !items.contains(where: isLoungeBottom), !items.contains(where: isCasualOnlyFootwear) {
+            value += 12
+            notes.append("Polished enough for \(contextLabel(for: request))")
+        }
+
+        let mainItems = items.filter { [.shirt, .blouse, .sweater, .dress, .pants, .shorts, .skirt, .activewear, .shoes, .heels, .flats].contains($0.category) }
+        let levels = mainItems.map { ClothingInference.formalityLevel(for: $0) }
+        if let minLevel = levels.min(), let maxLevel = levels.max(), maxLevel - minLevel >= 3 {
+            value -= 22
+            notes.append("Formality levels clash")
+        }
+
+        return (value, notes)
+    }
+
+    private func isPolishedContext(_ request: RecommendationRequest) -> Bool {
+        "\(request.occasion) \(request.activity)"
+            .lowercased()
+            .containsAny(["date", "dinner", "wedding", "formal", "office", "business", "work", "pilot", "flight", "airline", "duty"])
+    }
+
+    private func styleExplicitlyLikesCasualFootwear(_ stylePreference: StylePreference?) -> Bool {
+        let text = [
+            stylePreference?.styleDescription,
+            stylePreference?.favoriteLooks,
+            stylePreference?.rules
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
+        .lowercased()
+        return text.containsAny(["crocs", "clogs"])
     }
 
     private func collaredShirtNeedsBelt(_ items: [ClothingItem], stylePreference: StylePreference?) -> Bool {

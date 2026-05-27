@@ -126,9 +126,10 @@ struct TripPlanningService {
             }
 
             let dayStops = stopsByDay[date, default: []].sorted { $0.startsAt < $1.startsAt }
-            guard let primaryStop = dayStops.last else { continue }
+            let locationStops = locationStops(for: dayStops)
+            guard let primaryStop = locationStops.last ?? dayStops.last else { continue }
 
-            let locations = uniqueLocations(from: dayStops)
+            let locations = uniqueLocations(from: locationStops.isEmpty ? dayStops : locationStops)
             let locationLabel = locations.joined(separator: " -> ")
             let isTravelDay = locations.count > 1
             let weather = await weatherInput(for: primaryStop, date: date, locationLabel: locationLabel)
@@ -589,10 +590,24 @@ struct TripPlanningService {
         var seen = Set<String>()
         return stops.compactMap { stop in
             let location = stop.location.trimmingCharacters(in: .whitespacesAndNewlines)
-            let key = location.lowercased()
+            let key = normalizedLocationKey(location)
             guard !location.isEmpty, seen.insert(key).inserted else { return nil }
             return location
         }
+    }
+
+    private func locationStops(for stops: [TripStop]) -> [TripStop] {
+        let broadStops = stops.filter { !isDailyPlanStop($0) }
+        return broadStops.isEmpty ? stops : broadStops
+    }
+
+    private func normalizedLocationKey(_ location: String) -> String {
+        location
+            .lowercased()
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: ".", with: "")
+            .split(separator: " ")
+            .joined(separator: " ")
     }
 
     private func weatherInput(for stop: TripStop, date: Date, locationLabel: String) async -> WeatherInput {

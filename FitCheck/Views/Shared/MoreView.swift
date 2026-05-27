@@ -81,7 +81,11 @@ private struct ScoringGuideView: View {
             }
 
             Section("Hard Rules") {
-                Text("Some rules block an outfit even if the numeric score would otherwise be good. Current hard rules include no shorts with boots, no sweatpants with boots, no belts without belt-loop bottoms, no work shorts or work sweatpants, no non-rain-shell jacket in hot humidity, and a belt with collared shirts when your profile says that rule matters.")
+                Text("Some rules block an outfit even if the numeric score would otherwise be good. Current hard rules include no shorts with boots, no sweatpants with boots, no Crocs/clogs/slides/slippers for work, no lounge bottoms with polished tops, no belts without belt-loop bottoms, no work shorts or work sweatpants, no non-rain-shell jacket in hot humidity, and a belt with collared shirts when your profile says that rule matters.")
+            }
+
+            Section("Fashion Gate") {
+                Text("The engine now filters first and scores second. Work outfits must have a structured work top, tailored bottom, and polished shoe before color, weather, or rotation points can help them. Casual-only footwear and loungewear can no longer win a polished context because they happen to be neutral colors.")
             }
 
             Section("Exercise") {

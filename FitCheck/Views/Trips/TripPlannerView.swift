@@ -501,7 +501,7 @@ private struct TripDetailView: View {
     }
 
     private var planDays: [TripPlanDay] {
-        dates(from: trip.startsAt, through: trip.endsAt).map(TripPlanDay.init)
+        dates(from: effectivePlanStart, through: effectivePlanEnd).map(TripPlanDay.init)
     }
 
     private func requestedContexts(on date: Date) -> [OutfitContextOption] {
@@ -510,9 +510,10 @@ private struct TripDetailView: View {
 
     private func locationLabel(for date: Date) -> String {
         var seen = Set<String>()
-        let locations = stops(on: date).compactMap { stop -> String? in
+        let stops = locationStops(on: date)
+        let locations = stops.compactMap { stop -> String? in
             let location = stop.location.trimmingCharacters(in: .whitespacesAndNewlines)
-            let key = location.lowercased()
+            let key = normalizedLocationKey(location)
             guard !location.isEmpty, seen.insert(key).inserted else { return nil }
             return location
         }
@@ -538,6 +539,12 @@ private struct TripDetailView: View {
             .sorted { $0.startsAt < $1.startsAt }
     }
 
+    private func locationStops(on date: Date) -> [TripStop] {
+        let stops = stops(on: date)
+        let broadStops = stops.filter { !isDailyPlanStop($0) }
+        return broadStops.isEmpty ? stops : broadStops
+    }
+
     private func isDailyPlanStop(_ stop: TripStop) -> Bool {
         if stop.isDailyPlanEntry {
             return true
@@ -546,6 +553,23 @@ private struct TripDetailView: View {
         let startsAt = Calendar.current.startOfDay(for: stop.startsAt)
         let endsAt = Calendar.current.startOfDay(for: stop.endsAt)
         return startsAt == endsAt && !stop.requestedContexts.isEmpty
+    }
+
+    private var effectivePlanStart: Date {
+        ([trip.startsAt] + sortedStops.map(\.startsAt)).min() ?? trip.startsAt
+    }
+
+    private var effectivePlanEnd: Date {
+        ([trip.endsAt] + sortedStops.map(\.endsAt)).max() ?? trip.endsAt
+    }
+
+    private func normalizedLocationKey(_ location: String) -> String {
+        location
+            .lowercased()
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: ".", with: "")
+            .split(separator: " ")
+            .joined(separator: " ")
     }
 
     private func dates(from start: Date, through end: Date) -> [Date] {
@@ -970,7 +994,8 @@ private struct TripDayPlanEditorView: View {
         self.trip = trip
         self.date = Calendar.current.startOfDay(for: date)
         self.existingStop = existingStop
-        _location = State(initialValue: existingStop?.location ?? fallbackLocation)
+        let fallback = fallbackLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+        _location = State(initialValue: fallback.isEmpty ? existingStop?.location ?? "" : fallback)
         _expectedWeather = State(initialValue: existingStop?.expectedWeather ?? "")
         _notes = State(initialValue: existingStop?.customsNotes ?? "")
         _selectedContextRawValues = State(initialValue: Set(existingStop?.requestedContexts.map(\.rawValue) ?? []))

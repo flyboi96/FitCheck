@@ -501,6 +501,7 @@ final class TripStop: Identifiable {
     var endsAt: Date
     var expectedWeather: String
     var customsNotes: String
+    var requestedContextRawValues: String = ""
     var trip: Trip?
 
     init(
@@ -510,6 +511,7 @@ final class TripStop: Identifiable {
         endsAt: Date,
         expectedWeather: String = "",
         customsNotes: String = "",
+        requestedContextRawValues: String = "",
         trip: Trip? = nil
     ) {
         self.id = id
@@ -518,7 +520,19 @@ final class TripStop: Identifiable {
         self.endsAt = endsAt
         self.expectedWeather = expectedWeather
         self.customsNotes = customsNotes
+        self.requestedContextRawValues = requestedContextRawValues
         self.trip = trip
+    }
+
+    var requestedContexts: [OutfitContextOption] {
+        get {
+            requestedContextRawValues
+                .split(separator: "\n")
+                .compactMap { OutfitContextOption(rawValue: String($0)) }
+        }
+        set {
+            requestedContextRawValues = newValue.map(\.rawValue).joined(separator: "\n")
+        }
     }
 }
 

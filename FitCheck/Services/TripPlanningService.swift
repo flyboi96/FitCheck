@@ -33,20 +33,51 @@ struct TripPlanningService {
             list.items.append(packingItem)
         }
 
-        addQuantityBasedPackingItems(
+        let exerciseDays = exerciseTargetDays(for: trip, days: days)
+        var packedBaseLayerQuantities: [UUID: Int] = [:]
+
+        addBaseLayerPackingItems(
             category: .underwear,
-            needed: baseLayerQuantityNeeded(for: trip, days: days),
+            needed: days,
+            purpose: .daily,
+            trip: trip,
             closet: activeItems,
             list: list,
-            context: context
+            context: context,
+            packedQuantities: &packedBaseLayerQuantities
         )
 
-        addQuantityBasedPackingItems(
+        addBaseLayerPackingItems(
             category: .socks,
-            needed: baseLayerQuantityNeeded(for: trip, days: days),
+            needed: days,
+            purpose: .daily,
+            trip: trip,
             closet: activeItems,
             list: list,
-            context: context
+            context: context,
+            packedQuantities: &packedBaseLayerQuantities
+        )
+
+        addBaseLayerPackingItems(
+            category: .underwear,
+            needed: exerciseDays,
+            purpose: .exercise,
+            trip: trip,
+            closet: activeItems,
+            list: list,
+            context: context,
+            packedQuantities: &packedBaseLayerQuantities
+        )
+
+        addBaseLayerPackingItems(
+            category: .socks,
+            needed: exerciseDays,
+            purpose: .exercise,
+            trip: trip,
+            closet: activeItems,
+            list: list,
+            context: context,
+            packedQuantities: &packedBaseLayerQuantities
         )
 
         for extra in packingExtras(for: trip, days: days, chosenItems: chosen) {
@@ -94,8 +125,10 @@ struct TripPlanningService {
             let isTravelDay = locations.count > 1
             let weather = await weatherInput(for: primaryStop, date: date, locationLabel: locationLabel)
             var contexts = itineraryContexts(for: dayStops, trip: trip, isTravelDay: isTravelDay)
-            if plannedExerciseDays < exerciseTargetDays {
-                contexts.append(.gym)
+            if contexts.contains(where: isExerciseContext) {
+                plannedExerciseDays += 1
+            } else if plannedExerciseDays < exerciseTargetDays {
+                contexts.append(exerciseContext(for: dayStops, trip: trip))
                 plannedExerciseDays += 1
             }
             contexts = deduplicatedContexts(contexts)
@@ -198,12 +231,38 @@ struct TripPlanningService {
             ))
         }
 
+        let accessoryCategories = packingAccessoryCategories(for: trip)
         chosen.append(contentsOf: closet
-            .filter { [.belt, .watch, .jewelry, .accessory, .bag, .purse].contains($0.category) }
+            .filter { accessoryCategories.contains($0.category) }
             .prefix(3))
 
         var seen = Set<UUID>()
         return chosen.filter { seen.insert($0.id).inserted }
+    }
+
+    private func packingAccessoryCategories(for trip: Trip) -> Set<ClothingCategory> {
+        let requestedContexts = trip.stops.flatMap(\.requestedContexts)
+        if !requestedContexts.isEmpty, requestedContexts.allSatisfy(isExerciseContext) {
+            return []
+        }
+
+        let text = ([trip.notes] + trip.stops.map(\.customsNotes))
+            .joined(separator: " ")
+            .lowercased()
+        let hasExerciseText = text.containsAny(["gym", "workout", "exercise", "run", "running", "lift", "lifting", "weights", "strength", "training"])
+        let hasNonExerciseText = text.containsAny(["work", "office", "business", "conference", "meeting", "dinner", "date", "wedding", "formal", "travel", "casual", "sightseeing"])
+        if hasExerciseText && !hasNonExerciseText {
+            return []
+        }
+
+        let needsBeltOrDressAccessory = requestedContexts.contains { [.workDay, .dateNight, .dinner, .wedding].contains($0) } ||
+            text.containsAny(["work", "office", "business", "conference", "meeting", "dinner", "date", "wedding", "formal", "collared", "belt"])
+
+        if needsBeltOrDressAccessory {
+            return [.belt, .watch, .jewelry, .accessory, .bag, .purse]
+        }
+
+        return [.watch, .accessory, .bag, .purse]
     }
 
     private func aiFilteredRecommendation(
@@ -280,44 +339,94 @@ struct TripPlanningService {
         return item.category.displayName
     }
 
-    private func baseLayerQuantityNeeded(for trip: Trip, days: Int) -> Int {
-        let exerciseDays = exerciseTargetDays(for: trip, days: days)
-        return days + exerciseDays
-    }
-
-    private func addQuantityBasedPackingItems(
+    private func addBaseLayerPackingItems(
         category: ClothingCategory,
         needed: Int,
+        purpose: BaseLayerPurpose,
+        trip: Trip,
         closet: [ClothingItem],
         list: PackingList,
-        context: ModelContext
+        context: ModelContext,
+        packedQuantities: inout [UUID: Int]
     ) {
         var remaining = max(0, needed)
         guard remaining > 0 else { return }
 
-        let candidates = closet
-            .filter { $0.category == category }
-            .sorted { $0.wearCount < $1.wearCount }
+        let candidates = baseLayerCandidates(category: category, purpose: purpose, trip: trip, closet: closet)
 
         for item in candidates where remaining > 0 {
-            let quantity = min(max(1, item.quantity), remaining)
-            let reason = "Need \(needed) total; saved quantity \(max(1, item.quantity))"
+            let alreadyPacked = packedQuantities[item.id, default: 0]
+            let availableQuantity = max(0, max(1, item.quantity) - alreadyPacked)
+            guard availableQuantity > 0 else { continue }
+
+            let quantity = min(availableQuantity, remaining)
+            let reason = "Pack \(quantity) of \(needed) \(purpose.reasonLabel(for: category)); saved quantity \(max(1, item.quantity))"
             let packingItem = PackingListItem(quantity: quantity, reason: reason, item: item, packingList: list)
             context.insert(packingItem)
             list.items.append(packingItem)
+            packedQuantities[item.id, default: 0] += quantity
             remaining -= quantity
         }
 
         if remaining > 0 {
             let packingItem = PackingListItem(
                 quantity: remaining,
-                reason: "\(category.displayName) - add enough for the remaining trip days",
+                reason: "Add \(remaining) more \(purpose.reasonLabel(for: category))",
                 item: nil,
                 packingList: list
             )
             context.insert(packingItem)
             list.items.append(packingItem)
         }
+    }
+
+    private func baseLayerCandidates(
+        category: ClothingCategory,
+        purpose: BaseLayerPurpose,
+        trip: Trip,
+        closet: [ClothingItem]
+    ) -> [ClothingItem] {
+        let categoryItems = closet.filter { $0.category == category }
+        guard !categoryItems.isEmpty else { return [] }
+
+        let dailyItems = categoryItems.filter { !isExerciseBaseLayerItem($0) }
+        let exerciseItems = categoryItems.filter { isExerciseBaseLayerItem($0) }
+        let preferredItems: [ClothingItem]
+
+        switch purpose {
+        case .daily:
+            preferredItems = dailyItems.isEmpty ? categoryItems : dailyItems
+        case .exercise:
+            preferredItems = exerciseItems.isEmpty ? categoryItems : exerciseItems
+        }
+
+        return preferredItems.sorted {
+            baseLayerSortScore($0, purpose: purpose, trip: trip) > baseLayerSortScore($1, purpose: purpose, trip: trip)
+        }
+    }
+
+    private func baseLayerSortScore(_ item: ClothingItem, purpose: BaseLayerPurpose, trip: Trip) -> Double {
+        let text = itemSearchText(item)
+        var score = 100.0 - Double(item.wearCount)
+
+        switch purpose {
+        case .daily:
+            score += isExerciseBaseLayerItem(item) ? -25 : 25
+        case .exercise:
+            score += isExerciseBaseLayerItem(item) ? 50 : -20
+            let focuses = exerciseFocuses(for: trip)
+            if focuses.contains("running"), text.containsAny(["running", "runner", "run"]) {
+                score += 40
+            }
+            if focuses.contains("lifting"), text.containsAny(["lifting", "lift", "weight", "strength", "training"]) {
+                score += 40
+            }
+            if item.category == .socks, text.containsAny(["boot", "dress", "office", "work"]) {
+                score -= 50
+            }
+        }
+
+        return score
     }
 
     private func packingExtras(for trip: Trip, days: Int, chosenItems: [ClothingItem]) -> [PackingExtra] {
@@ -332,10 +441,14 @@ struct TripPlanningService {
     }
 
     private func tripHasExercise(_ trip: Trip) -> Bool {
+        if trip.stops.flatMap(\.requestedContexts).contains(where: isExerciseContext) {
+            return true
+        }
+
         let text = ([trip.notes] + trip.stops.flatMap { [$0.customsNotes, $0.location] })
             .joined(separator: " ")
             .lowercased()
-        return text.containsAny(["gym", "workout", "exercise", "run", "running", "training", "hike", "hiking"])
+        return text.containsAny(["gym", "workout", "exercise", "run", "running", "lift", "lifting", "weights", "strength", "training", "hike", "hiking"])
     }
 
     private func wearLimit(for category: ClothingCategory, trip: Trip) -> Int {
@@ -458,6 +571,11 @@ struct TripPlanningService {
     }
 
     private func itineraryContexts(for stops: [TripStop], trip: Trip, isTravelDay: Bool) -> [OutfitContextOption] {
+        let requestedContexts = stops.flatMap(\.requestedContexts)
+        if !requestedContexts.isEmpty {
+            return requestedContexts
+        }
+
         let text = ([trip.notes] + stops.map(\.customsNotes))
             .joined(separator: " ")
             .lowercased()
@@ -481,6 +599,13 @@ struct TripPlanningService {
         if text.containsAny(["casual", "fun", "sightseeing", "walking", "tour", "errands"]) {
             contexts.append(.walkingAroundCity)
         }
+        if text.containsAny(["run", "running"]) {
+            contexts.append(.runningDay)
+        } else if text.containsAny(["lift", "lifting", "weights", "strength"]) {
+            contexts.append(.liftingDay)
+        } else if text.containsAny(["gym", "workout", "exercise", "training"]) {
+            contexts.append(.gym)
+        }
 
         if contexts.isEmpty {
             contexts.append(isTravelDay ? .travelDay : .casualDay)
@@ -496,6 +621,19 @@ struct TripPlanningService {
 
     private func exerciseTargetDays(for trip: Trip, days: Int) -> Int {
         guard tripHasExercise(trip) else { return 0 }
+        let explicitExerciseDays = Set(
+            trip.stops
+                .filter { $0.requestedContexts.contains(where: isExerciseContext) }
+                .flatMap { stop in
+                    dates(from: stop.startsAt, through: stop.endsAt).map { date in
+                        Calendar.current.startOfDay(for: date)
+                    }
+                }
+        ).count
+        if explicitExerciseDays > 0 {
+            return min(days, explicitExerciseDays)
+        }
+
         let text = ([trip.notes] + trip.stops.map(\.customsNotes))
             .joined(separator: " ")
             .lowercased()
@@ -505,6 +643,80 @@ struct TripPlanningService {
             .filter { (1...max(1, days)).contains($0) }
 
         return min(days, numbers.first ?? 1)
+    }
+
+    private func exerciseContext(for stops: [TripStop], trip: Trip) -> OutfitContextOption {
+        let text = ([trip.notes] + stops.map(\.customsNotes))
+            .joined(separator: " ")
+            .lowercased()
+        if text.containsAny(["run", "running"]) {
+            return .runningDay
+        }
+        if text.containsAny(["lift", "lifting", "weights", "strength"]) {
+            return .liftingDay
+        }
+        return .gym
+    }
+
+    private func isExerciseContext(_ context: OutfitContextOption) -> Bool {
+        switch context {
+        case .gym, .runningDay, .liftingDay:
+            return true
+        case .casualDay, .dateNight, .workDay, .travelDay, .dinner, .walkingAroundCity, .outdoors, .errands, .wedding:
+            return false
+        }
+    }
+
+    private func exerciseFocuses(for trip: Trip) -> Set<String> {
+        var focuses = Set<String>()
+        for context in trip.stops.flatMap(\.requestedContexts) {
+            if context == .runningDay { focuses.insert("running") }
+            if context == .liftingDay { focuses.insert("lifting") }
+        }
+
+        let text = ([trip.notes] + trip.stops.map(\.customsNotes))
+            .joined(separator: " ")
+            .lowercased()
+        if text.containsAny(["run", "running"]) {
+            focuses.insert("running")
+        }
+        if text.containsAny(["lift", "lifting", "weights", "strength"]) {
+            focuses.insert("lifting")
+        }
+        if focuses.isEmpty, tripHasExercise(trip) {
+            focuses.insert("gym")
+        }
+        return focuses
+    }
+
+    private func isExerciseBaseLayerItem(_ item: ClothingItem) -> Bool {
+        guard item.category == .underwear || item.category == .socks else { return false }
+        return itemSearchText(item).containsAny([
+            "compression",
+            "running",
+            "runner",
+            "run",
+            "lifting",
+            "lift",
+            "gym",
+            "workout",
+            "training",
+            "athletic",
+            "performance",
+            "sport"
+        ])
+    }
+
+    private func itemSearchText(_ item: ClothingItem) -> String {
+        [
+            item.name,
+            item.brand,
+            item.notes,
+            item.activitySuitability,
+            item.occasionSuitability
+        ]
+        .joined(separator: " ")
+        .lowercased()
     }
 
     private func dates(from start: Date, through end: Date) -> [Date] {
@@ -555,6 +767,26 @@ struct TripPlanningService {
 private struct PackingExtra {
     var title: String
     var quantity: Int
+}
+
+private enum BaseLayerPurpose {
+    case daily
+    case exercise
+
+    func reasonLabel(for category: ClothingCategory) -> String {
+        switch (self, category) {
+        case (.daily, .underwear):
+            return "daily underwear"
+        case (.daily, .socks):
+            return "daily socks"
+        case (.exercise, .underwear):
+            return "exercise underwear"
+        case (.exercise, .socks):
+            return "exercise socks"
+        default:
+            return category.displayName.lowercased()
+        }
+    }
 }
 
 private extension String {

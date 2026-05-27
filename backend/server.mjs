@@ -186,6 +186,9 @@ Rules:
 - Prefer the candidate outfit if it is solid; suggest swaps only when the candidate has a clear issue.
 - Never invent clothing items or duplicate a closet item beyond its saved quantity.
 - Do not chase trends when they conflict with the user's saved feedback, body of preferences, or practical needs.
+- Treat saved style rules as hard constraints. If the user says collared shirts need belts, include a belt with collared shirts and belt-loop bottoms.
+- For work, office, pilot, flight, or business contexts, do not choose shorts unless the user's profile explicitly says work shorts are acceptable.
+- For gym, running, lifting, or workout contexts, do not add belts, dress accessories, or non-exercise clothing. Prefer running socks for running and lifting/training socks for lifting.
 - Keep the rationale concise and specific.
 - Put risks or caveats in cautions, not the rationale.
 `;
@@ -200,7 +203,7 @@ Rules:
 - Put color, material, pattern, and clothing type in the name when visible or strongly implied.
 - Choose category only from the provided enum.
 - Use comma-separated tags for weatherSuitability, occasionSuitability, and activitySuitability.
-- Prefer practical tags such as hot, mild, cold, rain, casual, work, dinner, date night, travel, gym, walking.
+- Prefer practical tags such as hot, mild, cold, rain, casual, work, dinner, date night, travel, gym, running, lifting, walking.
 - If uncertain, say so briefly in notes instead of inventing details.
 `;
 
@@ -213,7 +216,7 @@ Rules:
 - Preserve any strong existing preferences unless the new answers clearly update them.
 - Use concise phrases that are useful for outfit recommendation.
 - Boldness is 1 for very conservative/classic, 3 for balanced, and 5 for experimental.
-- Put hard no's and repeated issues in dislikedCombinations or rules.
+- Put hard no's and repeated issues in dislikedCombinations or rules. Preserve concrete rules such as "collared shirts require a belt" or "no shorts for work".
 `;
 
 const server = http.createServer(async (request, response) => {

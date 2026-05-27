@@ -61,7 +61,7 @@ private struct ScoringGuideView: View {
             }
 
             Section("Context") {
-                Text("You choose one context, such as Work / Office, Travel Day, Dinner, or Walking Around City. Internally, FitCheck maps that to both a situation and an activity so the app does not make you decide whether something is an occasion or an activity.")
+                Text("You choose one context, such as Work / Office, Travel Day, Dinner, Running, Lifting, or Walking Around City. Plans can request one or more exact outfit types for each stop or date range.")
             }
 
             Section("Dressiness") {
@@ -81,7 +81,11 @@ private struct ScoringGuideView: View {
             }
 
             Section("Hard Rules") {
-                Text("Some rules block an outfit even if the numeric score would otherwise be good. Current hard rules include no shorts with boots and no non-rain-shell jacket in hot, humid weather.")
+                Text("Some rules block an outfit even if the numeric score would otherwise be good. Current hard rules include no shorts with boots, no work shorts, no non-rain-shell jacket in hot humidity, and a belt with collared shirts when your profile says that rule matters.")
+            }
+
+            Section("Exercise") {
+                Text("Running and lifting are separate contexts. Exercise outfits skip belts and dress accessories, prefer exercise clothes, and can add exercise socks. Packing separates daily underwear/socks from exercise underwear/socks so one item with limited quantity is not overcounted.")
             }
 
             Section("AI Review") {

@@ -208,6 +208,11 @@ private struct TripDetailView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
+                            if !stop.requestedContexts.isEmpty {
+                                Text("Outfits: \(stop.requestedContexts.map(\.displayName).joined(separator: ", "))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                     .buttonStyle(.plain)
@@ -236,7 +241,7 @@ private struct TripDetailView: View {
                 wearStepper("Jackets", value: $trip.jacketWearsBeforeWash)
                 wearStepper("Exercise clothes", value: $trip.activewearWearsBeforeWash)
 
-                Text("Packing uses these values to reduce overpacking. Underwear and socks are still recommended as one per day, plus extras for exercise.")
+                Text("Packing uses these values to reduce overpacking. Daily underwear/socks are separate from exercise underwear/socks, so running and lifting gear can be packed from the right saved quantities.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -566,6 +571,9 @@ private struct TripDetailView: View {
                 if !stop.expectedWeather.isEmpty {
                     lines.append("  Weather: \(stop.expectedWeather)")
                 }
+                if !stop.requestedContexts.isEmpty {
+                    lines.append("  Outfits: \(stop.requestedContexts.map(\.displayName).joined(separator: ", "))")
+                }
             }
             lines.append("")
         }
@@ -686,10 +694,12 @@ private struct ItineraryOutfitEditorView: View {
                     Text("Score \(Int(outfit.score))")
                         .font(.headline)
                     if !outfit.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        ForEach(outfit.notes.fitcheckLines, id: \.self) { note in
-                            Label(note, systemImage: "checkmark.circle")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        DisclosureGroup("Why this scored this way") {
+                            ForEach(outfit.notes.fitcheckLines, id: \.self) { note in
+                                Label(note, systemImage: "checkmark.circle")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                     Button {
@@ -832,6 +842,7 @@ private struct TripStopEditorView: View {
     @State private var endsAt: Date
     @State private var expectedWeather = ""
     @State private var customsNotes = ""
+    @State private var selectedContextRawValues: Set<String>
 
     init(trip: Trip, stop: TripStop? = nil) {
         self.trip = trip
@@ -841,21 +852,36 @@ private struct TripStopEditorView: View {
         _endsAt = State(initialValue: stop?.endsAt ?? trip.startsAt)
         _expectedWeather = State(initialValue: stop?.expectedWeather ?? "")
         _customsNotes = State(initialValue: stop?.customsNotes ?? "")
+        _selectedContextRawValues = State(initialValue: Set(stop?.requestedContexts.map(\.rawValue) ?? []))
     }
 
     var body: some View {
         Form {
-            TextField("Location", text: $location)
-                .textInputAutocapitalization(.words)
-            DatePicker("Start", selection: $startsAt, displayedComponents: .date)
-            DatePicker("End", selection: $endsAt, displayedComponents: .date)
-            TextField("Manual weather if lookup fails", text: $expectedWeather, prompt: Text("88F, sunny, wind 6 mph, humidity 70%"))
-                .textInputAutocapitalization(.sentences)
-            TextField("Daily plans", text: $customsNotes, prompt: Text("Work days, dinner nights, gym 3x, casual sightseeing"))
-                .textInputAutocapitalization(.sentences)
-            Text("Use separate stops for date-specific plans, or describe multiple contexts here. FitCheck can create more than one outfit for a day.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Section("Stop") {
+                TextField("Location", text: $location)
+                    .textInputAutocapitalization(.words)
+                DatePicker("Start", selection: $startsAt, displayedComponents: .date)
+                DatePicker("End", selection: $endsAt, displayedComponents: .date)
+                TextField("Manual weather if lookup fails", text: $expectedWeather, prompt: Text("88F, sunny, wind 6 mph, humidity 70%"))
+                    .textInputAutocapitalization(.sentences)
+            }
+
+            Section("Outfits Needed") {
+                Text("Pick the exact outfit types for these dates. Leave blank to infer from notes.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(Self.planContextOptions) { option in
+                    Toggle(option.displayName, isOn: contextBinding(for: option))
+                }
+            }
+
+            Section("Notes") {
+                TextField("Daily plans", text: $customsNotes, prompt: Text("Work days, dinner nights, run 2x, lift 1x"))
+                    .textInputAutocapitalization(.sentences)
+                Text("Use separate stops for date-specific plans. FitCheck can create more than one outfit for a day.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .navigationTitle(stop == nil ? "Add Stop" : "Edit Stop")
         .toolbar {
@@ -882,6 +908,7 @@ private struct TripStopEditorView: View {
             stop.endsAt = endDate
             stop.expectedWeather = expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines)
             stop.customsNotes = customsNotes
+            stop.requestedContexts = selectedContexts
         } else {
             let stop = TripStop(
                 location: trimmedLocation,
@@ -889,6 +916,7 @@ private struct TripStopEditorView: View {
                 endsAt: endDate,
                 expectedWeather: expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines),
                 customsNotes: customsNotes,
+                requestedContextRawValues: selectedContexts.map(\.rawValue).joined(separator: "\n"),
                 trip: trip
             )
             modelContext.insert(stop)
@@ -897,6 +925,35 @@ private struct TripStopEditorView: View {
         try? modelContext.save()
         dismiss()
     }
+
+    private var selectedContexts: [OutfitContextOption] {
+        Self.planContextOptions.filter { selectedContextRawValues.contains($0.rawValue) }
+    }
+
+    private func contextBinding(for option: OutfitContextOption) -> Binding<Bool> {
+        Binding {
+            selectedContextRawValues.contains(option.rawValue)
+        } set: { isSelected in
+            if isSelected {
+                selectedContextRawValues.insert(option.rawValue)
+            } else {
+                selectedContextRawValues.remove(option.rawValue)
+            }
+        }
+    }
+
+    private static let planContextOptions: [OutfitContextOption] = [
+        .workDay,
+        .travelDay,
+        .casualDay,
+        .walkingAroundCity,
+        .dinner,
+        .dateNight,
+        .runningDay,
+        .liftingDay,
+        .gym,
+        .wedding
+    ]
 }
 
 private extension String {

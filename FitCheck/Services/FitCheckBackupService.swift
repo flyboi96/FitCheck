@@ -594,7 +594,19 @@ private struct TripStopBackup: Codable {
     var endsAt: Date
     var expectedWeather: String
     var customsNotes: String
+    var requestedContextRawValues: String
     var tripID: UUID
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case location
+        case startsAt
+        case endsAt
+        case expectedWeather
+        case customsNotes
+        case requestedContextRawValues
+        case tripID
+    }
 
     init(stop: TripStop) {
         id = stop.id
@@ -603,7 +615,20 @@ private struct TripStopBackup: Codable {
         endsAt = stop.endsAt
         expectedWeather = stop.expectedWeather
         customsNotes = stop.customsNotes
+        requestedContextRawValues = stop.requestedContextRawValues
         tripID = stop.trip?.id ?? UUID()
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        location = try container.decode(String.self, forKey: .location)
+        startsAt = try container.decode(Date.self, forKey: .startsAt)
+        endsAt = try container.decode(Date.self, forKey: .endsAt)
+        expectedWeather = try container.decode(String.self, forKey: .expectedWeather)
+        customsNotes = try container.decode(String.self, forKey: .customsNotes)
+        requestedContextRawValues = try container.decodeIfPresent(String.self, forKey: .requestedContextRawValues) ?? ""
+        tripID = try container.decode(UUID.self, forKey: .tripID)
     }
 
     func model(trip: Trip) -> TripStop {
@@ -614,6 +639,7 @@ private struct TripStopBackup: Codable {
             endsAt: endsAt,
             expectedWeather: expectedWeather,
             customsNotes: customsNotes,
+            requestedContextRawValues: requestedContextRawValues,
             trip: trip
         )
     }

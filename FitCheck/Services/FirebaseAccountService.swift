@@ -126,6 +126,7 @@ struct CloudUserProfile: Equatable {
 struct CloudClothingItem: Equatable, Identifiable {
     var id: UUID
     var name: String
+    var brand: String
     var category: ClothingCategory
     var quantity: Int
     var color: String
@@ -144,6 +145,7 @@ struct CloudClothingItem: Equatable, Identifiable {
     init(item: ClothingItem) {
         id = item.id
         name = item.name
+        brand = item.brand
         category = item.category
         quantity = max(1, item.quantity)
         color = item.color
@@ -163,6 +165,7 @@ struct CloudClothingItem: Equatable, Identifiable {
     init(
         id: UUID,
         name: String,
+        brand: String,
         category: ClothingCategory,
         quantity: Int,
         color: String,
@@ -180,6 +183,7 @@ struct CloudClothingItem: Equatable, Identifiable {
     ) {
         self.id = id
         self.name = name
+        self.brand = brand
         self.category = category
         self.quantity = max(1, quantity)
         self.color = color
@@ -200,6 +204,7 @@ struct CloudClothingItem: Equatable, Identifiable {
         var data: [String: Any] = [
             "id": id.uuidString,
             "name": name,
+            "brand": brand,
             "category": category.rawValue,
             "quantity": quantity,
             "color": color,
@@ -225,6 +230,7 @@ struct CloudClothingItem: Equatable, Identifiable {
         return CloudClothingItem(
             id: id,
             name: stringValue(data["name"]) ?? "",
+            brand: stringValue(data["brand"]) ?? "",
             category: ClothingCategory(rawValue: stringValue(data["category"]) ?? "") ?? .other,
             quantity: intValue(data["quantity"]) ?? 1,
             color: stringValue(data["color"]) ?? "",
@@ -246,6 +252,7 @@ struct CloudClothingItem: Equatable, Identifiable {
         ClothingItem(
             id: id,
             name: name,
+            brand: brand,
             category: category,
             quantity: quantity,
             color: color,
@@ -265,6 +272,7 @@ struct CloudClothingItem: Equatable, Identifiable {
 
     func apply(to item: ClothingItem) {
         item.name = name
+        item.brand = brand
         item.category = category
         item.quantity = quantity
         item.color = color

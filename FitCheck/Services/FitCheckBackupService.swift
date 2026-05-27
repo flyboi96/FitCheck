@@ -256,6 +256,7 @@ private struct FitCheckBackup: Codable {
 private struct ClothingItemBackup: Codable {
     var id: UUID
     var name: String
+    var brand: String
     var categoryRawValue: String
     var quantity: Int
     var color: String
@@ -275,6 +276,7 @@ private struct ClothingItemBackup: Codable {
     init(item: ClothingItem) {
         id = item.id
         name = item.name
+        brand = item.brand
         categoryRawValue = item.categoryRawValue
         quantity = max(1, item.quantity)
         color = item.color
@@ -296,6 +298,7 @@ private struct ClothingItemBackup: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
+        brand = try container.decodeIfPresent(String.self, forKey: .brand) ?? ""
         categoryRawValue = try container.decode(String.self, forKey: .categoryRawValue)
         quantity = try container.decodeIfPresent(Int.self, forKey: .quantity) ?? 1
         color = try container.decodeIfPresent(String.self, forKey: .color) ?? ""
@@ -317,6 +320,7 @@ private struct ClothingItemBackup: Codable {
         ClothingItem(
             id: id,
             name: name,
+            brand: brand,
             category: ClothingCategory(rawValue: categoryRawValue) ?? .other,
             quantity: max(1, quantity),
             color: color,

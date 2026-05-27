@@ -84,6 +84,7 @@ struct BulkWardrobeImportView: View {
             let inferred = ClothingInference.metadata(name: draft.name, category: draft.category)
             let item = ClothingItem(
                 name: draft.name,
+                brand: "",
                 category: draft.category,
                 quantity: draft.quantity,
                 color: inferred.color,

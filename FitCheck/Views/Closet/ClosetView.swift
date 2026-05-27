@@ -134,6 +134,7 @@ struct ClosetView: View {
     private func searchableText(for item: ClothingItem) -> String {
         [
             item.name,
+            item.brand,
             item.category.displayName,
             ClothingInference.color(for: item),
             ClothingInference.pattern(for: item),
@@ -188,6 +189,7 @@ private struct ClosetItemRow: View {
     private var detailText: String {
         [
             item.category.displayName,
+            item.brand.isEmpty ? nil : item.brand,
             item.quantity > 1 ? "Qty \(item.quantity)" : nil,
             item.lastWornAt.map { "Last \(Self.dateFormatter.string(from: $0))" }
         ]

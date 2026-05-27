@@ -173,6 +173,7 @@ private struct TripDetailView: View {
 
     @Bindable var trip: Trip
     @State private var showingStopEditor = false
+    @State private var editingStop: TripStop?
     @State private var isGeneratingPackingList = false
     @State private var isGeneratingItinerary = false
     @State private var feedbackStatus = ""
@@ -188,24 +189,30 @@ private struct TripDetailView: View {
                 Text("Stops can be cities for travel or your home city for a regular week.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                ForEach(trip.stops.sorted { $0.startsAt < $1.startsAt }) { stop in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(stop.location)
-                            .font(.body.weight(.medium))
-                        Text("\(TripPlannerView.dateFormatter.string(from: stop.startsAt)) - \(TripPlannerView.dateFormatter.string(from: stop.endsAt))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if !stop.expectedWeather.isEmpty {
-                            Text(stop.expectedWeather)
-                                .font(.caption)
-                        }
-                        if !stop.customsNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Text(stop.customsNotes)
+                ForEach(sortedStops) { stop in
+                    Button {
+                        editingStop = stop
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(stop.location)
+                                .font(.body.weight(.medium))
+                            Text("\(TripPlannerView.dateFormatter.string(from: stop.startsAt)) - \(TripPlannerView.dateFormatter.string(from: stop.endsAt))")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if !stop.expectedWeather.isEmpty {
+                                Text(stop.expectedWeather)
+                                    .font(.caption)
+                            }
+                            if !stop.customsNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text(stop.customsNotes)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
+                    .buttonStyle(.plain)
                 }
+                .onDelete(perform: deleteStops)
                 Button {
                     showingStopEditor = true
                 } label: {
@@ -338,79 +345,52 @@ private struct TripDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 ForEach(trip.itineraryOutfits.sorted { $0.date < $1.date }) { itinerary in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("\(TripPlannerView.dateFormatter.string(from: itinerary.date)) - \(itinerary.location)")
-                            .font(.body.weight(.medium))
-                        if let outfit = itinerary.outfit {
-                            Text(outfit.items.compactMap { $0.item?.name }.joined(separator: ", "))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text("Score \(Int(outfit.score))")
-                                .font(.caption.weight(.semibold))
-                            if !outfit.weatherSummary.isEmpty {
-                                Text(outfit.weatherSummary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("\(TripPlannerView.dateFormatter.string(from: itinerary.date)) - \(itinerary.location)")
+                                .font(.body.weight(.medium))
+                            if !itinerary.activity.isEmpty {
+                                Text(itinerary.activity)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                            if !outfit.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                DisclosureGroup("Scoring comments") {
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        ForEach(outfit.notes.fitcheckLines, id: \.self) { note in
-                                            Label(note, systemImage: "checkmark.circle")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                }
-                                .font(.caption)
-                            }
+                        }
+
+                        if let outfit = itinerary.outfit {
+                            RecommendationCard(
+                                recommendation: recommendation(for: outfit),
+                                onGood: { recordFeedback(for: itinerary, type: .goodOutfit) },
+                                onBad: { recordFeedback(for: itinerary, type: .badOutfit) },
+                                onFeedback: { feedbackItinerary = itinerary },
+                                onEdit: { editingItinerary = itinerary }
+                            )
                             if let latestFeedback = latestFeedback(for: outfit) {
                                 Text("Feedback: \(latestFeedback.type.displayName)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                            HStack {
-                                Button {
-                                    recordFeedback(for: itinerary, type: .goodOutfit)
-                                } label: {
-                                    Label("Good Outfit", systemImage: "hand.thumbsup")
+                            Menu {
+                                Button("Bad for weather") {
+                                    recordFeedback(for: itinerary, type: .badForWeather)
                                 }
-                                Button {
-                                    recordFeedback(for: itinerary, type: .badOutfit)
-                                } label: {
-                                    Label("Bad Outfit", systemImage: "hand.thumbsdown")
+                                Button("Bad for context") {
+                                    recordFeedback(for: itinerary, type: .badForOccasion)
                                 }
-                                Menu {
-                                    Button("Bad for weather") {
-                                        recordFeedback(for: itinerary, type: .badForWeather)
-                                    }
-                                    Button("Bad for context") {
-                                        recordFeedback(for: itinerary, type: .badForOccasion)
-                                    }
-                                    Button("Colors do not work") {
-                                        recordFeedback(for: itinerary, type: .colorsDoNotWork)
-                                    }
-                                    Button("Dislike combination") {
-                                        recordFeedback(for: itinerary, type: .dislikeCombination)
-                                    }
-                                } label: {
-                                    Label("Issue", systemImage: "exclamationmark.bubble")
+                                Button("Colors do not work") {
+                                    recordFeedback(for: itinerary, type: .colorsDoNotWork)
                                 }
-                                Button {
-                                    feedbackItinerary = itinerary
-                                } label: {
-                                    Label("Add Note", systemImage: "text.bubble")
+                                Button("Dislike combination") {
+                                    recordFeedback(for: itinerary, type: .dislikeCombination)
                                 }
-                                Button {
-                                    editingItinerary = itinerary
-                                } label: {
-                                    Label("Edit", systemImage: "slider.horizontal.3")
-                                }
+                            } label: {
+                                Label("Quick Issue", systemImage: "exclamationmark.bubble")
                             }
-                            .font(.caption)
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.bordered)
+                        } else {
+                            ContentUnavailableView("No Outfit", systemImage: "tshirt")
                         }
                     }
+                    .padding(.vertical, 4)
                 }
                 if !feedbackStatus.isEmpty {
                     Text(feedbackStatus)
@@ -423,6 +403,11 @@ private struct TripDetailView: View {
         .sheet(isPresented: $showingStopEditor) {
             NavigationStack {
                 TripStopEditorView(trip: trip)
+            }
+        }
+        .sheet(item: $editingStop) { stop in
+            NavigationStack {
+                TripStopEditorView(trip: trip, stop: stop)
             }
         }
         .sheet(item: $feedbackItinerary) { itinerary in
@@ -457,6 +442,29 @@ private struct TripDetailView: View {
         .onChange(of: trip.activewearWearsBeforeWash) { _, _ in
             try? modelContext.save()
         }
+    }
+
+    private var sortedStops: [TripStop] {
+        trip.stops.sorted { $0.startsAt < $1.startsAt }
+    }
+
+    private func deleteStops(at offsets: IndexSet) {
+        let targets = offsets.map { sortedStops[$0] }
+        for stop in targets {
+            trip.stops.removeAll { $0.id == stop.id }
+            modelContext.delete(stop)
+        }
+        try? modelContext.save()
+        generationStatus = "Stop deleted. Regenerate packing and itinerary when ready."
+    }
+
+    private func recommendation(for outfit: Outfit) -> OutfitRecommendation {
+        OutfitRecommendation(
+            title: outfit.name,
+            items: outfit.items.compactMap(\.item),
+            score: outfit.score,
+            notes: outfit.notes.fitcheckLines
+        )
     }
 
     private func recordFeedback(for itinerary: DailyItineraryOutfit, type: FeedbackType) {
@@ -787,6 +795,7 @@ private struct ItineraryOutfitEditorView: View {
     private func searchableText(for item: ClothingItem) -> String {
         [
             item.name,
+            item.brand,
             item.category.displayName,
             ClothingInference.color(for: item),
             ClothingInference.pattern(for: item),
@@ -815,16 +824,21 @@ private struct TripStopEditorView: View {
     @Environment(\.modelContext) private var modelContext
 
     @Bindable var trip: Trip
+    private let stop: TripStop?
     @State private var location = ""
     @State private var startsAt: Date
     @State private var endsAt: Date
     @State private var expectedWeather = ""
     @State private var customsNotes = ""
 
-    init(trip: Trip) {
+    init(trip: Trip, stop: TripStop? = nil) {
         self.trip = trip
-        _startsAt = State(initialValue: trip.startsAt)
-        _endsAt = State(initialValue: trip.startsAt)
+        self.stop = stop
+        _location = State(initialValue: stop?.location ?? "")
+        _startsAt = State(initialValue: stop?.startsAt ?? trip.startsAt)
+        _endsAt = State(initialValue: stop?.endsAt ?? trip.startsAt)
+        _expectedWeather = State(initialValue: stop?.expectedWeather ?? "")
+        _customsNotes = State(initialValue: stop?.customsNotes ?? "")
     }
 
     var body: some View {
@@ -841,7 +855,7 @@ private struct TripStopEditorView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .navigationTitle("Add Stop")
+        .navigationTitle(stop == nil ? "Add Stop" : "Edit Stop")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
@@ -858,16 +872,26 @@ private struct TripStopEditorView: View {
     }
 
     private func save() {
-        let stop = TripStop(
-            location: location.trimmingCharacters(in: .whitespacesAndNewlines),
-            startsAt: startsAt,
-            endsAt: startsAt > endsAt ? startsAt : endsAt,
-            expectedWeather: expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines),
-            customsNotes: customsNotes,
-            trip: trip
-        )
-        modelContext.insert(stop)
-        trip.stops.append(stop)
+        let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        let endDate = startsAt > endsAt ? startsAt : endsAt
+        if let stop {
+            stop.location = trimmedLocation
+            stop.startsAt = startsAt
+            stop.endsAt = endDate
+            stop.expectedWeather = expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines)
+            stop.customsNotes = customsNotes
+        } else {
+            let stop = TripStop(
+                location: trimmedLocation,
+                startsAt: startsAt,
+                endsAt: endDate,
+                expectedWeather: expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines),
+                customsNotes: customsNotes,
+                trip: trip
+            )
+            modelContext.insert(stop)
+            trip.stops.append(stop)
+        }
         try? modelContext.save()
         dismiss()
     }

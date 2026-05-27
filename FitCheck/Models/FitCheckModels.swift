@@ -166,6 +166,7 @@ enum FeedbackType: String, CaseIterable, Codable, Identifiable {
 final class ClothingItem: Identifiable {
     var id: UUID
     var name: String
+    var brand: String = ""
     var categoryRawValue: String
     var quantity: Int = 1
     var color: String
@@ -185,6 +186,7 @@ final class ClothingItem: Identifiable {
     init(
         id: UUID = UUID(),
         name: String,
+        brand: String = "",
         category: ClothingCategory,
         quantity: Int = 1,
         color: String = "",
@@ -203,6 +205,7 @@ final class ClothingItem: Identifiable {
     ) {
         self.id = id
         self.name = name
+        self.brand = brand
         self.categoryRawValue = category.rawValue
         self.quantity = max(1, quantity)
         self.color = color

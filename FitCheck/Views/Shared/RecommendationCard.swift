@@ -95,60 +95,58 @@ struct RecommendationCard: View {
                     .buttonStyle(.borderedProminent)
                 }
 
-                HStack {
+                LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
                     if let onAIReview {
-                        if isAIReviewing {
+                        Button(action: onAIReview) {
                             FitCheckButtonLabel(
-                                title: "Reviewing",
+                                title: isAIReviewing ? "Reviewing" : "AI Review",
                                 systemImage: "sparkles",
-                                isLoading: true
+                                isLoading: isAIReviewing
                             )
-                        } else {
-                            Button(action: onAIReview) {
-                                Label("AI Review", systemImage: "sparkles")
-                            }
-                            .buttonStyle(.bordered)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .buttonStyle(.bordered)
+                        .disabled(isAIReviewing)
                     }
 
                     if let onAvatarPreview {
-                        if isGeneratingAvatarPreview {
+                        Button(action: onAvatarPreview) {
                             FitCheckButtonLabel(
-                                title: "Generating Preview",
+                                title: isGeneratingAvatarPreview ? "Generating Preview" : "Try On Avatar",
                                 systemImage: "person.crop.rectangle",
-                                isLoading: true
+                                isLoading: isGeneratingAvatarPreview
                             )
-                        } else {
-                            Button(action: onAvatarPreview) {
-                                Label("Try On Avatar", systemImage: "person.crop.rectangle")
-                            }
-                            .buttonStyle(.bordered)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .buttonStyle(.bordered)
+                        .disabled(isGeneratingAvatarPreview)
                     }
-                }
 
-                HStack {
                     if let onGood {
                         Button(action: onGood) {
                             Label("Wore + Liked", systemImage: "hand.thumbsup")
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.bordered)
                     }
                     if let onBad {
                         Button(action: onBad) {
                             Label("Reject", systemImage: "hand.thumbsdown")
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.bordered)
                     }
                     if let onFeedback {
                         Button(action: onFeedback) {
                             Label("Feedback", systemImage: "text.bubble")
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.bordered)
                     }
                     if let onEdit {
                         Button(action: onEdit) {
                             Label("Edit", systemImage: "slider.horizontal.3")
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.bordered)
                     }
@@ -160,6 +158,10 @@ struct RecommendationCard: View {
 
     private func iconName(for category: ClothingCategory) -> String {
         category.systemImageName
+    }
+
+    private var actionColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 148), spacing: 8, alignment: .leading)]
     }
 }
 
@@ -303,6 +305,7 @@ struct RecommendationDraftEditorView: View {
     private func searchableText(for item: ClothingItem) -> String {
         [
             item.name,
+            item.brand,
             item.category.displayName,
             ClothingInference.color(for: item),
             ClothingInference.pattern(for: item),

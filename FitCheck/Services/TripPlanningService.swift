@@ -131,6 +131,9 @@ struct TripPlanningService {
                 guard var recommendation = localRecommendations.first ?? fallbackRecommendations.first else {
                     continue
                 }
+                guard engine.isAcceptableOutfit(recommendation.items, request: request) else {
+                    continue
+                }
 
                 if let aiOptions,
                    let aiRecommendation = await aiFilteredRecommendation(
@@ -229,7 +232,7 @@ struct TripPlanningService {
             )
             let itemsByID = Dictionary(uniqueKeysWithValues: closet.map { ($0.id, $0) })
             let items = response.itemIDs.compactMap { itemsByID[$0] }
-            guard engine.isCompleteOutfit(items, request: request) else { return nil }
+            guard engine.isAcceptableOutfit(items, request: request) else { return nil }
             var recommendation = engine.scoreExistingOutfit(
                 items: items,
                 feedback: feedback,

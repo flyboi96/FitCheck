@@ -31,7 +31,7 @@ struct AccountView: View {
         }
         .onChange(of: accountStore.profile) { _, profile in
             if let profile {
-                draft = AccountProfileDraft(profile: profile)
+                draft = mergedDraft(for: profile)
                 applyLocalProfileDraft(draft)
             }
         }
@@ -359,7 +359,7 @@ struct AccountView: View {
         guard draft.email.isEmpty, draft.displayName.isEmpty else { return }
 
         if let profile = accountStore.profile {
-            draft = AccountProfileDraft(profile: profile)
+            draft = mergedDraft(for: profile)
         } else {
             draft = AccountProfileDraft(
                 email: accountStore.account?.email ?? "",
@@ -367,6 +367,49 @@ struct AccountView: View {
                 gender: currentWearerProfile
             )
         }
+    }
+
+    private func mergedDraft(for profile: CloudUserProfile) -> AccountProfileDraft {
+        guard let localPreference = stylePreferences.first else {
+            return AccountProfileDraft(profile: profile)
+        }
+
+        var draft = AccountProfileDraft(profile: profile)
+        let cloudHasStyle = [
+            profile.styleDescription,
+            profile.favoriteLooks,
+            profile.preferredColors,
+            profile.preferredFit,
+            profile.dislikedCombinations,
+            profile.rules
+        ]
+        .contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let localHasStyle = [
+            localPreference.styleDescription,
+            localPreference.favoriteLooks,
+            localPreference.preferredColors,
+            localPreference.preferredFit,
+            localPreference.dislikedCombinations,
+            localPreference.rules
+        ]
+        .contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let localIsNewer = localPreference.updatedAt > profile.updatedAt
+
+        if localHasStyle && (!cloudHasStyle || localIsNewer) {
+            draft.styleDescription = localPreference.styleDescription
+            draft.favoriteLooks = localPreference.favoriteLooks
+            draft.dislikedCombinations = localPreference.dislikedCombinations
+            draft.preferredColors = localPreference.preferredColors
+            draft.boldness = localPreference.boldness
+            draft.preferredFit = localPreference.preferredFit
+            draft.rules = localPreference.rules
+        }
+
+        if draft.gender == .unspecified, currentWearerProfile != .unspecified {
+            draft.gender = currentWearerProfile
+        }
+
+        return draft
     }
 
     private func applyLocalProfileDraft(_ draft: AccountProfileDraft) {

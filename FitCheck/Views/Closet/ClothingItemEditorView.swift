@@ -12,6 +12,7 @@ struct ClothingItemEditorView: View {
     private let item: ClothingItem?
 
     @State private var name: String
+    @State private var brand: String
     @State private var category: ClothingCategory
     @State private var quantity: Int
     @State private var notes: String
@@ -24,6 +25,7 @@ struct ClothingItemEditorView: View {
     init(item: ClothingItem?) {
         self.item = item
         _name = State(initialValue: item?.name ?? "")
+        _brand = State(initialValue: item?.brand ?? "")
         _category = State(initialValue: item?.category ?? .shirt)
         _quantity = State(initialValue: max(1, item?.quantity ?? 1))
         _notes = State(initialValue: item?.notes ?? "")
@@ -65,6 +67,8 @@ struct ClothingItemEditorView: View {
 
             Section("Item") {
                 TextField("Blue merino wool button-down", text: $name)
+                    .textInputAutocapitalization(.words)
+                TextField("Brand or store", text: $brand, prompt: Text("Arc'teryx, Uniqlo, Nordstrom"))
                     .textInputAutocapitalization(.words)
                 Picker("Category", selection: $category) {
                     ForEach(availableCategories) { category in
@@ -118,6 +122,7 @@ struct ClothingItemEditorView: View {
 
         if let item {
             item.name = trimmedName
+            item.brand = brand.trimmingCharacters(in: .whitespacesAndNewlines)
             item.category = category
             item.quantity = max(1, quantity)
             item.color = inferred.color
@@ -133,6 +138,7 @@ struct ClothingItemEditorView: View {
         } else {
             let newItem = ClothingItem(
                 name: trimmedName,
+                brand: brand.trimmingCharacters(in: .whitespacesAndNewlines),
                 category: category,
                 quantity: quantity,
                 color: inferred.color,

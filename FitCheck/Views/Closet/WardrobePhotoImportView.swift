@@ -16,6 +16,7 @@ struct WardrobePhotoImportView: View {
     @State private var photoData: Data?
     @State private var userDescription = ""
     @State private var draftName = ""
+    @State private var draftBrand = ""
     @State private var draftCategory: ClothingCategory = .shirt
     @State private var draftQuantity = 1
     @State private var draftNotes = ""
@@ -80,6 +81,8 @@ struct WardrobePhotoImportView: View {
 
             Section("Review Item") {
                 TextField("Blue merino wool button-down", text: $draftName)
+                    .textInputAutocapitalization(.words)
+                TextField("Brand or store", text: $draftBrand, prompt: Text("Optional"))
                     .textInputAutocapitalization(.words)
 
                 Picker("Category", selection: $draftCategory) {
@@ -242,6 +245,7 @@ struct WardrobePhotoImportView: View {
         let fallback = ClothingInference.metadata(name: trimmedName, category: draftCategory)
         let item = ClothingItem(
             name: trimmedName,
+            brand: draftBrand.trimmingCharacters(in: .whitespacesAndNewlines),
             category: draftCategory,
             quantity: draftQuantity,
             color: preferredValue(fallback.color, aiSuggestion?.color),

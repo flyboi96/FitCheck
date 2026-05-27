@@ -3,6 +3,7 @@ import Foundation
 struct AIClothingItemPayload: Codable {
     var id: UUID
     var name: String
+    var brand: String
     var category: String
     var quantity: Int
     var color: String
@@ -16,6 +17,7 @@ struct AIClothingItemPayload: Codable {
     init(item: ClothingItem) {
         id = item.id
         name = item.name
+        brand = item.brand
         category = item.category.rawValue
         quantity = max(1, item.quantity)
         color = ClothingInference.color(for: item)

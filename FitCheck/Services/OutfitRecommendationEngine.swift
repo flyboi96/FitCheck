@@ -396,6 +396,10 @@ struct OutfitRecommendationEngine {
         completenessIssues(for: items, request: request).isEmpty
     }
 
+    func isAcceptableOutfit(_ items: [ClothingItem], request: RecommendationRequest) -> Bool {
+        isCompleteOutfit(items, request: request) && !violatesHardFashionRules(items, request: request)
+    }
+
     func recommend(
         closet: [ClothingItem],
         feedback: [Feedback],
@@ -427,7 +431,8 @@ struct OutfitRecommendationEngine {
         let adjustedBottomPool = flexibleSelectedActivewear
             ? bottomPool.filter { $0?.id != selected?.id }
             : bottomPool
-        let bottoms = adjustedBottomPool.isEmpty && tops.contains(where: { $0.category == .dress }) ? [nil] : adjustedBottomPool
+        let canUseOnePieceTop = tops.contains { $0.category == .dress || (needsExerciseClothing && isBottomItem($0, request: request)) }
+        let bottoms = adjustedBottomPool.isEmpty && canUseOnePieceTop ? [nil] : adjustedBottomPool
         let shoes = constrainedPool(
             categories: [.shoes, .heels, .flats],
             items: activeItems,
@@ -491,7 +496,10 @@ struct OutfitRecommendationEngine {
                             if let selected, !outfitItems.contains(where: { $0.id == selected.id }) {
                                 outfitItems.append(selected)
                             }
-                            if needsExerciseClothing && !outfitItems.contains(where: { $0.category == .activewear }) {
+                            if needsExerciseClothing && !outfitItems.contains(where: isExerciseItem) {
+                                continue
+                            }
+                            if violatesHardFashionRules(outfitItems, request: request) {
                                 continue
                             }
 
@@ -582,7 +590,7 @@ struct OutfitRecommendationEngine {
 
         if hot || hotAndHumid {
             guard weather.isRaining || weather.windMph >= 18 else { return false }
-            return isLightWeatherShell(item)
+            return isRainShell(item)
         }
 
         return weather.temperatureF <= 68 ||
@@ -621,6 +629,10 @@ struct OutfitRecommendationEngine {
         let feedbackValue = feedbackScore(items: items, feedback: feedback)
         value += feedbackValue.value
         notes.append(contentsOf: feedbackValue.notes)
+
+        let fashionValue = fashionRuleScore(items: items, request: request)
+        value += fashionValue.value
+        notes.append(contentsOf: fashionValue.notes)
 
         let formalityValue = formalityScore(items: items, request: request)
         value += formalityValue.value
@@ -697,7 +709,7 @@ struct OutfitRecommendationEngine {
         } else if weather.temperatureF >= 82 {
             value += weatherTags.contains("hot") ? 16 : 0
             if item.category == .jacket || item.category == .sweater {
-                value -= isLightWeatherShell(item) && weather.isRaining ? 14 : 30
+                value -= isRainShell(item) && weather.isRaining ? 14 : 30
             }
             if item.category == .shorts || item.category == .skirt {
                 value += 10
@@ -720,7 +732,7 @@ struct OutfitRecommendationEngine {
         if let humidity = weather.humidityPercent, humidity >= 70, weather.temperatureF >= 75 {
             value += weatherTags.contains("hot") ? 6 : 0
             if item.category == .jacket || item.category == .sweater {
-                value -= isLightWeatherShell(item) && weather.isRaining ? 10 : 24
+                value -= isRainShell(item) && weather.isRaining ? 10 : 24
             }
         }
 
@@ -731,12 +743,14 @@ struct OutfitRecommendationEngine {
         var notes: [String] = []
         let weatherTags = ClothingInference.weatherTags(for: item)
 
-        if isExerciseContext(request), item.category == .activewear {
+        if isExerciseContext(request), isExerciseItem(item) {
             notes.append("Exercise-specific clothing included")
         }
 
         if weather.temperatureF >= 82, weatherTags.contains("hot") {
-            notes.append("\(item.name) is heat-friendly")
+            if ![.jacket, .sweater].contains(item.category) {
+                notes.append("\(item.name) is heat-friendly")
+            }
         }
 
         if weather.isRaining, weatherTags.contains("rain"), [.shoes, .heels, .flats, .jacket].contains(item.category) {
@@ -747,7 +761,7 @@ struct OutfitRecommendationEngine {
             notes.append("\(item.name) adds cold-weather warmth")
         }
 
-        if let humidity = weather.humidityPercent, humidity >= 70, weather.temperatureF >= 75, item.category == .jacket, !isLightWeatherShell(item) {
+        if let humidity = weather.humidityPercent, humidity >= 70, weather.temperatureF >= 75, item.category == .jacket, !isRainShell(item) {
             notes.append("\(item.name) is a poor hot-humidity layer")
         }
 
@@ -779,7 +793,7 @@ struct OutfitRecommendationEngine {
         if !hasShoes {
             issues.append("Missing shoes")
         }
-        if let request, isExerciseContext(request), !items.contains(where: { $0.category == .activewear }) {
+        if let request, isExerciseContext(request), !items.contains(where: isExerciseItem) {
             issues.append("Missing exercise-specific clothing")
         }
 
@@ -810,6 +824,10 @@ struct OutfitRecommendationEngine {
             return true
         }
         guard item.category == .activewear else { return false }
+        if let request, isExerciseContext(request) {
+            let text = item.name.lowercased()
+            return !text.containsAny(["shirt", "tee", "t-shirt", "tank", "top", "hoodie"])
+        }
         let text = item.name.lowercased()
         return text.containsAny(["short", "pant", "legging", "tight", "jogger", "bottom"])
     }
@@ -948,6 +966,51 @@ struct OutfitRecommendationEngine {
         return (value, notes)
     }
 
+    private func fashionRuleScore(items: [ClothingItem], request: RecommendationRequest) -> (value: Double, notes: [String]) {
+        var value = 0.0
+        var notes: [String] = []
+
+        if hasShortsWithBoots(items) {
+            value -= 120
+            notes.append("Hard style rule: avoid shorts with boots")
+        }
+
+        if request.weather.temperatureF >= 75,
+           (request.weather.humidityPercent ?? 0) >= 65,
+           items.contains(where: { $0.category == .jacket && !isRainShell($0) }) {
+            value -= 90
+            notes.append("Hard weather rule: skip non-rain-shell jackets in hot humidity")
+        }
+
+        return (value, notes)
+    }
+
+    private func violatesHardFashionRules(_ items: [ClothingItem], request: RecommendationRequest) -> Bool {
+        if hasShortsWithBoots(items) {
+            return true
+        }
+
+        if request.weather.temperatureF >= 75,
+           (request.weather.humidityPercent ?? 0) >= 65,
+           items.contains(where: { $0.category == .jacket && !isRainShell($0) }) {
+            return true
+        }
+
+        return false
+    }
+
+    private func hasShortsWithBoots(_ items: [ClothingItem]) -> Bool {
+        items.contains { $0.category == .shorts } &&
+            items.contains { [.shoes, .heels, .flats].contains($0.category) && isBoot($0) }
+    }
+
+    private func isBoot(_ item: ClothingItem) -> Bool {
+        [item.name, item.notes, item.brand]
+            .joined(separator: " ")
+            .lowercased()
+            .contains("boot")
+    }
+
     private func formalityScore(items: [ClothingItem], request: RecommendationRequest) -> (value: Double, notes: [String]) {
         var value = -formalitySpreadPenalty(items)
         let target = targetFormality(for: request.occasion)
@@ -1007,9 +1070,25 @@ struct OutfitRecommendationEngine {
             .containsAny(["gym", "workout", "exercise", "running", "run", "training", "fitness"])
     }
 
-    private func isLightWeatherShell(_ item: ClothingItem) -> Bool {
+    private func isExerciseItem(_ item: ClothingItem) -> Bool {
+        if item.category == .activewear {
+            return true
+        }
         let text = [
             item.name,
+            item.notes,
+            item.activitySuitability,
+            item.occasionSuitability
+        ]
+        .joined(separator: " ")
+        .lowercased()
+        return text.containsAny(["gym", "workout", "exercise", "running", "run", "training", "athletic", "performance", "trainer"])
+    }
+
+    private func isRainShell(_ item: ClothingItem) -> Bool {
+        let text = [
+            item.name,
+            item.brand,
             item.notes,
             item.weatherSuitability,
             item.activitySuitability
@@ -1017,7 +1096,7 @@ struct OutfitRecommendationEngine {
         .joined(separator: " ")
         .lowercased()
 
-        let hasRainShellSignal = text.containsAny(["rain", "shell", "waterproof", "water-resistant", "gore-tex", "windbreaker", "packable", "lightweight", "nylon"])
+        let hasRainShellSignal = text.containsAny(["rain", "shell", "waterproof", "water-resistant", "gore-tex", "windbreaker"])
         let hasHeavySignal = text.containsAny(["down", "insulated", "puffer", "parka", "fleece", "wool", "heavy", "coat"])
         return hasRainShellSignal && !hasHeavySignal
     }

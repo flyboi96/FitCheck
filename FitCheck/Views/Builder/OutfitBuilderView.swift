@@ -34,6 +34,7 @@ struct OutfitBuilderView: View {
     @State private var avatarPreviews: [String: Data] = [:]
     @State private var avatarPreviewErrors: [String: String] = [:]
     @State private var avatarPreviewingCombinationKeys = Set<String>()
+    @State private var isGeneratingLocal = false
     @State private var isAIChoosingOutfit = false
     @State private var aiBuildError = ""
     @State private var weatherActionStatus = ""
@@ -110,12 +111,16 @@ struct OutfitBuilderView: View {
                     }
                 }
                 Button {
-                    generate()
+                    generateWithVisibleFeedback()
                 } label: {
-                    Label("Build Outfit", systemImage: "wand.and.stars")
+                    FitCheckButtonLabel(
+                        title: isGeneratingLocal ? "Building Outfit" : "Build Outfit",
+                        systemImage: "wand.and.stars",
+                        isLoading: isGeneratingLocal
+                    )
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(selectedItem == nil || effectiveWeather == nil)
+                .disabled(selectedItem == nil || effectiveWeather == nil || isGeneratingLocal)
 
                 Button {
                     Task {
@@ -338,6 +343,18 @@ struct OutfitBuilderView: View {
             : "Built \(recommendations.count) outfit\(recommendations.count == 1 ? "" : "s") around \(selectedItem.name)."
     }
 
+    private func generateWithVisibleFeedback() {
+        guard !isGeneratingLocal else { return }
+        isGeneratingLocal = true
+        builderStatus = "Building outfit with local scoring."
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            generate()
+            isGeneratingLocal = false
+        }
+    }
+
     private var canAskAIForOutfit: Bool {
         useAIProxy &&
         configuredAIProxyURL != nil &&
@@ -386,9 +403,9 @@ struct OutfitBuilderView: View {
                 selectedItem: selectedItem
             )
 
-            guard engine.isCompleteOutfit(chosenItems, request: request) else {
-                aiBuildError = "AI returned an incomplete outfit. Try Ask AI First again or use Build Outfit."
-                builderStatus = "AI returned an incomplete outfit."
+            guard engine.isAcceptableOutfit(chosenItems, request: request) else {
+                aiBuildError = "AI returned an incomplete outfit or broke a hard style/weather rule. Try Ask AI First again or use Build Outfit."
+                builderStatus = "AI returned an unusable outfit."
                 return
             }
 
@@ -727,6 +744,7 @@ private struct BuilderItemSelectionList: View {
 
     private static func itemDetail(for item: ClothingItem) -> String {
         let parts = [
+            item.brand,
             ClothingInference.color(for: item),
             ClothingInference.pattern(for: item)
         ]

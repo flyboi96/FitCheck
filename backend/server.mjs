@@ -318,6 +318,7 @@ async function reviewOutfit(requestBody) {
     closet: closet.map((item) => ({
       id: item.id,
       name: item.name,
+      brand: item.brand,
       category: item.category,
       color: item.color,
       quantity: item.quantity,

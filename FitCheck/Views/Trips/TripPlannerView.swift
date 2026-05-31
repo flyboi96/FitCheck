@@ -156,6 +156,7 @@ private struct TripEditorView: View {
                 location: trimmedLocation,
                 startsAt: startsAt,
                 endsAt: endDate,
+                sortIndex: 0,
                 trip: trip
             )
             modelContext.insert(stop)
@@ -210,6 +211,7 @@ private struct TripDetailView: View {
     @State private var feedbackItinerary: DailyItineraryOutfit?
     @State private var editingItinerary: DailyItineraryOutfit?
     @State private var editingDayPlan: TripPlanDay?
+    @State private var showingBulkDayPlanEditor = false
     @State private var editingPackingItem: PackingListItem?
     @State private var dailyWeatherSummaries: [TimeInterval: String] = [:]
     @State private var isLoadingDailyWeather = false
@@ -264,6 +266,7 @@ private struct TripDetailView: View {
                     .buttonStyle(.plain)
                 }
                 .onDelete(perform: deleteStops)
+                .onMove(perform: moveStops)
                 Button {
                     showingStopEditor = true
                 } label: {
@@ -295,6 +298,12 @@ private struct TripDetailView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                }
+
+                Button {
+                    showingBulkDayPlanEditor = true
+                } label: {
+                    Label("Bulk Update Daily Plan", systemImage: "rectangle.stack.badge.plus")
                 }
 
                 Button {
@@ -540,8 +549,22 @@ private struct TripDetailView: View {
                 )
             }
         }
+        .sheet(isPresented: $showingBulkDayPlanEditor) {
+            NavigationStack {
+                TripBulkDayPlanEditorView(
+                    trip: trip,
+                    defaultLocation: defaultBulkLocation
+                )
+            }
+        }
         .onAppear {
+            normalizeStopOrderIfNeeded()
             cacheItineraryWeather()
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                EditButton()
+            }
         }
         .onChange(of: trip.title) { _, _ in
             try? modelContext.save()
@@ -573,7 +596,19 @@ private struct TripDetailView: View {
     private var sortedStops: [TripStop] {
         trip.stops
             .filter { !isDailyPlanStop($0) }
-            .sorted { $0.startsAt < $1.startsAt }
+            .sorted { first, second in
+                if first.sortIndex != second.sortIndex {
+                    return first.sortIndex < second.sortIndex
+                }
+                if first.startsAt != second.startsAt {
+                    return first.startsAt < second.startsAt
+                }
+                return first.location.localizedCaseInsensitiveCompare(second.location) == .orderedAscending
+            }
+    }
+
+    private var defaultBulkLocation: String {
+        sortedStops.first?.location.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
     private var requestedOutfitCount: Int {
@@ -707,8 +742,36 @@ private struct TripDetailView: View {
             trip.stops.removeAll { $0.id == stop.id }
             modelContext.delete(stop)
         }
+        reindexStops(sortedStops.filter { stop in !targets.contains { $0.id == stop.id } })
         try? modelContext.save()
         generationStatus = "Stop deleted. Regenerate packing and itinerary when ready."
+    }
+
+    private func moveStops(from source: IndexSet, to destination: Int) {
+        var reordered = sortedStops
+        reordered.move(fromOffsets: source, toOffset: destination)
+        reindexStops(reordered)
+        try? modelContext.save()
+        generationStatus = "Stops reordered. Regenerate packing and itinerary if travel order changed."
+    }
+
+    private func normalizeStopOrderIfNeeded() {
+        let stops = trip.stops.filter { !isDailyPlanStop($0) }
+        guard stops.count > 1, stops.allSatisfy({ $0.sortIndex == 0 }) else { return }
+        let ordered = stops.sorted {
+            if $0.startsAt != $1.startsAt {
+                return $0.startsAt < $1.startsAt
+            }
+            return $0.location.localizedCaseInsensitiveCompare($1.location) == .orderedAscending
+        }
+        reindexStops(ordered)
+        try? modelContext.save()
+    }
+
+    private func reindexStops(_ stops: [TripStop]) {
+        for (index, stop) in stops.enumerated() {
+            stop.sortIndex = index
+        }
     }
 
     private func recommendation(for outfit: Outfit) -> OutfitRecommendation {
@@ -975,16 +1038,18 @@ private struct TripDetailView: View {
 
     private var packingListExportText: String {
         var lines = [
-            "\(trip.title) Packing List",
-            "\(TripPlannerView.dateFormatter.string(from: trip.startsAt)) - \(TripPlannerView.dateFormatter.string(from: trip.endsAt))",
+            "\(trip.title)",
+            "Packing List",
+            "Dates: \(TripPlannerView.dateFormatter.string(from: trip.startsAt)) - \(TripPlannerView.dateFormatter.string(from: trip.endsAt))",
             ""
         ]
 
         let broadStops = trip.stops
             .filter { !isDailyPlanStop($0) }
-            .sorted(by: { $0.startsAt < $1.startsAt })
+            .sorted { $0.sortIndex == $1.sortIndex ? $0.startsAt < $1.startsAt : $0.sortIndex < $1.sortIndex }
         if !broadStops.isEmpty {
             lines.append("Stops")
+            lines.append("-----")
             for stop in broadStops {
                 lines.append("- \(stop.location): \(TripPlannerView.dateFormatter.string(from: stop.startsAt)) - \(TripPlannerView.dateFormatter.string(from: stop.endsAt))")
                 if !stop.expectedWeather.isEmpty {
@@ -999,6 +1064,7 @@ private struct TripDetailView: View {
             .sorted(by: { $0.startsAt < $1.startsAt })
         if !dailyPlanStops.isEmpty {
             lines.append("Daily Plan")
+            lines.append("----------")
             for stop in dailyPlanStops {
                 lines.append("- \(TripPlannerView.dateFormatter.string(from: stop.startsAt)): \(stop.location)")
                 if !stop.requestedContexts.isEmpty {
@@ -1010,12 +1076,15 @@ private struct TripDetailView: View {
 
         for list in trip.packingLists.sorted(by: { $0.createdAt < $1.createdAt }) {
             lines.append(list.title)
+            lines.append(String(repeating: "=", count: list.title.count))
             for group in packingGroups(for: list) {
+                lines.append("")
                 lines.append(group.title)
+                lines.append(String(repeating: "-", count: group.title.count))
                 for packingItem in group.items {
-                    lines.append("- \(packingTitle(for: packingItem)) x\(packingItem.quantity)")
+                    lines.append("- [ ] \(packingTitle(for: packingItem)) x\(packingItem.quantity)")
                     if packingItem.item != nil, !packingItem.reason.isEmpty {
-                        lines.append("  \(packingItem.reason)")
+                        lines.append("      \(packingItem.reason)")
                     }
                 }
             }
@@ -1027,13 +1096,16 @@ private struct TripDetailView: View {
 
     private var itineraryExportText: String {
         var lines = [
-            "\(trip.title) Outfit Itinerary",
-            "\(TripPlannerView.dateFormatter.string(from: trip.startsAt)) - \(TripPlannerView.dateFormatter.string(from: trip.endsAt))",
+            "\(trip.title)",
+            "Outfit Itinerary",
+            "Dates: \(TripPlannerView.dateFormatter.string(from: trip.startsAt)) - \(TripPlannerView.dateFormatter.string(from: trip.endsAt))",
             ""
         ]
 
         for itinerary in trip.itineraryOutfits.sorted(by: { $0.date < $1.date }) {
-            lines.append("\(TripPlannerView.dateFormatter.string(from: itinerary.date)) - \(itinerary.location)")
+            let heading = "\(TripPlannerView.dateFormatter.string(from: itinerary.date)) - \(itinerary.location)"
+            lines.append(heading)
+            lines.append(String(repeating: "-", count: heading.count))
             if !itinerary.activity.isEmpty {
                 lines.append("Context: \(itinerary.activity)")
             }
@@ -1042,10 +1114,13 @@ private struct TripDetailView: View {
                 if !outfit.weatherSummary.isEmpty {
                     lines.append("Weather: \(outfit.weatherSummary)")
                 }
+                lines.append("")
+                lines.append("Items")
                 for item in outfit.items.compactMap(\.item).sorted(by: { $0.category.displayName < $1.category.displayName }) {
                     lines.append("- \(item.category.displayName): \(item.name)")
                 }
                 if !outfit.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    lines.append("")
                     lines.append("Comments:")
                     for note in outfit.notes.fitcheckLines {
                         lines.append("- \(note)")
@@ -1653,6 +1728,196 @@ private struct TripDayPlanEditorView: View {
     }
 }
 
+private enum BulkDailyPlanScope: String, CaseIterable, Identifiable {
+    case replaceRange
+    case emptyOnly
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .replaceRange:
+            return "Replace range"
+        case .emptyOnly:
+            return "Fill empty days"
+        }
+    }
+}
+
+private struct TripBulkDayPlanEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
+    @Bindable var trip: Trip
+    let defaultLocation: String
+
+    @State private var startsAt: Date
+    @State private var endsAt: Date
+    @State private var location = ""
+    @State private var expectedWeather = ""
+    @State private var notes = ""
+    @State private var selectedContextRawValues: Set<String>
+    @State private var scope: BulkDailyPlanScope = .replaceRange
+
+    init(trip: Trip, defaultLocation: String) {
+        self.trip = trip
+        self.defaultLocation = defaultLocation
+        _startsAt = State(initialValue: trip.startsAt)
+        _endsAt = State(initialValue: trip.endsAt)
+        _location = State(initialValue: defaultLocation)
+        _selectedContextRawValues = State(initialValue: [])
+    }
+
+    var body: some View {
+        Form {
+            Section("Range") {
+                DatePicker("From", selection: $startsAt, displayedComponents: .date)
+                DatePicker("Through", selection: $endsAt, displayedComponents: .date)
+                Picker("Apply", selection: $scope) {
+                    ForEach(BulkDailyPlanScope.allCases) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+                Text(scopeHelpText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Location & Weather") {
+                TextField("Location", text: $location, prompt: Text(defaultLocation.isEmpty ? "Djibouti" : defaultLocation))
+                    .textInputAutocapitalization(.words)
+                TextField("Manual weather if lookup fails", text: $expectedWeather, prompt: Text("88F, sunny, wind 6 mph, humidity 70%"))
+                    .textInputAutocapitalization(.sentences)
+            }
+
+            Section("Outfits Needed") {
+                Text("Choose the outfit types to apply to every selected date. Leave all off to clear Daily Plan entries in the range.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(fitCheckPlanContextOptions) { option in
+                    Toggle(option.displayName, isOn: contextBinding(for: option))
+                }
+            }
+
+            Section("Notes") {
+                TextField("Plans for these dates", text: $notes, prompt: Text("Work days, dinner after work, run before work"))
+                    .textInputAutocapitalization(.sentences)
+            }
+        }
+        .navigationTitle("Bulk Daily Plan")
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    dismiss()
+                }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Apply") {
+                    apply()
+                }
+                .disabled(location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+    }
+
+    private var scopeHelpText: String {
+        switch scope {
+        case .replaceRange:
+            return "Updates every date in the selected range, including days you already planned."
+        case .emptyOnly:
+            return "Creates Daily Plan entries only for dates that do not already have one."
+        }
+    }
+
+    private var selectedContexts: [OutfitContextOption] {
+        fitCheckPlanContextOptions.filter { selectedContextRawValues.contains($0.rawValue) }
+    }
+
+    private func contextBinding(for option: OutfitContextOption) -> Binding<Bool> {
+        Binding {
+            selectedContextRawValues.contains(option.rawValue)
+        } set: { isSelected in
+            if isSelected {
+                selectedContextRawValues.insert(option.rawValue)
+            } else {
+                selectedContextRawValues.remove(option.rawValue)
+            }
+        }
+    }
+
+    private func apply() {
+        let rangeStart = Calendar.current.startOfDay(for: min(startsAt, endsAt))
+        let rangeEnd = Calendar.current.startOfDay(for: max(startsAt, endsAt))
+        let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedWeather = expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines)
+        let contexts = selectedContexts
+
+        for day in dates(from: rangeStart, through: rangeEnd) {
+            let existing = dailyPlanStop(on: day)
+            if scope == .emptyOnly, existing != nil {
+                continue
+            }
+
+            if contexts.isEmpty {
+                if let existing {
+                    trip.stops.removeAll { $0.id == existing.id }
+                    modelContext.delete(existing)
+                }
+                continue
+            }
+
+            if let existing {
+                existing.location = trimmedLocation
+                existing.startsAt = day
+                existing.endsAt = day
+                existing.expectedWeather = trimmedWeather
+                existing.customsNotes = notes
+                existing.requestedContexts = contexts
+                existing.isDailyPlanEntry = true
+            } else {
+                let stop = TripStop(
+                    location: trimmedLocation,
+                    startsAt: day,
+                    endsAt: day,
+                    expectedWeather: trimmedWeather,
+                    customsNotes: notes,
+                    requestedContextRawValues: contexts.map(\.rawValue).joined(separator: "\n"),
+                    isDailyPlanEntry: true,
+                    trip: trip
+                )
+                modelContext.insert(stop)
+                trip.stops.append(stop)
+            }
+        }
+
+        try? modelContext.save()
+        dismiss()
+    }
+
+    private func dailyPlanStop(on date: Date) -> TripStop? {
+        let startOfDay = Calendar.current.startOfDay(for: date)
+        return trip.stops.first { stop in
+            Calendar.current.startOfDay(for: stop.startsAt) == startOfDay &&
+                Calendar.current.startOfDay(for: stop.endsAt) == startOfDay &&
+                stop.isDailyPlanEntry
+        }
+    }
+
+    private func dates(from start: Date, through end: Date) -> [Date] {
+        var result: [Date] = []
+        var cursor = Calendar.current.startOfDay(for: start)
+        let final = Calendar.current.startOfDay(for: end)
+
+        while cursor <= final {
+            result.append(cursor)
+            guard let next = Calendar.current.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+
+        return result
+    }
+}
+
 private struct TripStopEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -1730,6 +1995,7 @@ private struct TripStopEditorView: View {
                 customsNotes: customsNotes,
                 requestedContextRawValues: "",
                 isDailyPlanEntry: false,
+                sortIndex: nextStopSortIndex,
                 trip: trip
             )
             modelContext.insert(stop)
@@ -1737,6 +2003,13 @@ private struct TripStopEditorView: View {
         }
         try? modelContext.save()
         dismiss()
+    }
+
+    private var nextStopSortIndex: Int {
+        let broadStopIndexes = trip.stops
+            .filter { !$0.isDailyPlanEntry }
+            .map(\.sortIndex)
+        return (broadStopIndexes.max() ?? -1) + 1
     }
 
 }

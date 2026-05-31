@@ -53,7 +53,7 @@ private struct ScoringGuideView: View {
     var body: some View {
         List {
             Section("Starting Point") {
-                Text("Every outfit starts at 50 points, then each item and the full combination add or subtract points.")
+                Text("Every outfit starts at 50 points, then each item and the full combination add or subtract points. Scores are relative rankings, not percentages. Strong outfits should usually stay positive; negative scores mean a rule, context, weather, or feedback conflict needs attention.")
             }
 
             Section("Weather") {

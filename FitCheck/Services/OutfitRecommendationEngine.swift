@@ -902,7 +902,6 @@ struct OutfitRecommendationEngine {
         value += fashionValue.value
         notes.append(contentsOf: fashionValue.notes)
         if violatesHardFashionRules(items, request: request, stylePreference: stylePreference) {
-            value -= 250
             notes.append("Fails a hard fashion rule; edit before wearing")
         }
 
@@ -1818,6 +1817,13 @@ struct OutfitRecommendationEngine {
         let rule = statement.lowercased()
         let requestText = "\(request.occasion) \(request.activity)".lowercased()
 
+        if isBeltWithCollaredTopRequirement(rule) {
+            let hasCollaredTop = items.contains { isCollaredTop($0) || isWorkTop($0) }
+            let hasBeltLoopBottom = items.contains(where: isBeltLoopBottom)
+            let hasBelt = items.contains { $0.category == .belt }
+            return hasCollaredTop && hasBeltLoopBottom && !hasBelt
+        }
+
         if rule.containsAny(["work", "office", "business", "pilot", "flight", "airline", "duty"]),
            !isWorkContext(request) {
             return false
@@ -1864,6 +1870,12 @@ struct OutfitRecommendationEngine {
         }
 
         return hardLanguage && ruleTerms.contains { outfitContainsTerm($0, items: items) }
+    }
+
+    private func isBeltWithCollaredTopRequirement(_ rule: String) -> Bool {
+        rule.contains("belt") &&
+            rule.containsAny(["collared", "collar", "button", "polo", "dress shirt", "work shirt"]) &&
+            rule.containsAny(["always", "must", "need", "needs", "required", "requires", "require", "have to", "should"])
     }
 
     private func learnedFeedbackPenalty(_ note: String, outfitText: String) -> (value: Double, note: String)? {

@@ -240,15 +240,15 @@ struct ClothingInference {
     }
 
     static func weatherTags(for item: ClothingItem) -> [String] {
-        mergedTags(item.weatherSuitability, inferred: weatherTags(name: item.name, category: item.category))
+        weatherTags(name: searchableDescriptor(for: item), category: item.category)
     }
 
     static func occasionTags(for item: ClothingItem) -> [String] {
-        mergedTags(item.occasionSuitability, inferred: occasionTags(name: item.name, category: item.category))
+        occasionTags(name: searchableDescriptor(for: item), category: item.category)
     }
 
     static func activityTags(for item: ClothingItem) -> [String] {
-        mergedTags(item.activitySuitability, inferred: activityTags(name: item.name, category: item.category))
+        activityTags(name: searchableDescriptor(for: item), category: item.category)
     }
 
     static func formalityLevel(for item: ClothingItem) -> Int {
@@ -428,12 +428,134 @@ struct ClothingInference {
         }
     }
 
-    private static func mergedTags(_ stored: String, inferred: [String]) -> [String] {
-        Set(stored.fitcheckTags + inferred).sorted()
+    private static func searchableDescriptor(for item: ClothingItem) -> String {
+        [
+            item.name,
+            item.brand,
+            item.notes,
+            item.color,
+            item.pattern
+        ]
+        .joined(separator: " ")
     }
 
     private static func normalized(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
+enum FitScoreScale {
+    static func normalizedQuality(fromRaw rawScore: Double) -> Double {
+        let scaled = 100 / (1 + exp(-((rawScore + 20) / 55)))
+        return min(100, max(0, scaled)).rounded()
+    }
+
+    static func displayQuality(for score: Double) -> Int {
+        if score >= 0, score <= 100 {
+            return Int(score.rounded())
+        }
+        return Int(normalizedQuality(fromRaw: score))
+    }
+}
+
+enum ClothingItemRole: Hashable {
+    case top
+    case bottom
+    case onePiece
+    case footwear
+    case socks
+    case underwear
+}
+
+enum ClothingRoleInference {
+    static func roles(for item: ClothingItem) -> Set<ClothingItemRole> {
+        let text = searchableText(for: item)
+
+        switch item.category {
+        case .shirt, .blouse, .sweater:
+            return [.top]
+        case .pants, .shorts, .skirt:
+            var roles: Set<ClothingItemRole> = [.bottom]
+            if text.contains("compression"),
+               text.containsAny(["brief", "underwear", "base layer", "baselayer", "liner"]) {
+                roles.remove(.bottom)
+                roles.insert(.underwear)
+            }
+            return roles
+        case .dress:
+            return [.onePiece, .top, .bottom]
+        case .shoes, .heels, .flats:
+            return [.footwear]
+        case .socks:
+            return [.socks]
+        case .underwear:
+            return [.underwear]
+        case .activewear:
+            return activewearRoles(for: text)
+        case .jacket, .belt, .watch, .jewelry, .accessory, .bag, .purse, .other:
+            return []
+        }
+    }
+
+    static func isExerciseSpecific(_ item: ClothingItem) -> Bool {
+        if item.category == .activewear {
+            return true
+        }
+        return searchableText(for: item).containsAny([
+            "gym",
+            "workout",
+            "exercise",
+            "running",
+            "runner",
+            "run",
+            "lifting",
+            "lift",
+            "weight",
+            "strength",
+            "training",
+            "athletic",
+            "performance",
+            "trainer",
+            "tennis"
+        ])
+    }
+
+    static func searchableText(for item: ClothingItem) -> String {
+        [
+            item.name,
+            item.brand,
+            item.notes,
+            item.color,
+            item.pattern
+        ]
+        .joined(separator: " ")
+        .lowercased()
+    }
+
+    private static func activewearRoles(for text: String) -> Set<ClothingItemRole> {
+        if text.containsAny(["sock", "socks"]) {
+            return [.socks]
+        }
+        if text.containsAny(["underwear", "brief", "boxer", "compression short", "compression shorts", "base layer", "baselayer", "liner"]) {
+            return [.underwear]
+        }
+        if text.containsAny(["shoe", "shoes", "sneaker", "sneakers", "trainer", "trainers", "runner", "cleat"]) {
+            return [.footwear]
+        }
+
+        var roles = Set<ClothingItemRole>()
+        if text.containsAny(["shirt", "tee", "t-shirt", "tank", "top", "hoodie", "jersey", "singlet", "pullover"]) {
+            roles.insert(.top)
+        }
+        if text.containsAny(["shorts", "pant", "pants", "legging", "leggings", "tight", "tights", "jogger", "joggers", "bottom"]) {
+            roles.insert(.bottom)
+        }
+
+        if roles.isEmpty {
+            roles.formUnion([.top, .bottom])
+        }
+
+        return roles
     }
 }
 
@@ -979,7 +1101,7 @@ struct OutfitRecommendationEngine {
         value += formalityValue.value
         notes.append(contentsOf: formalityValue.notes)
 
-        return (value.rounded(), limitedUniqueNotes(notes))
+        return (FitScoreScale.normalizedQuality(fromRaw: value), limitedUniqueNotes(notes))
     }
 
     private func itemScore(
@@ -1264,38 +1386,13 @@ struct OutfitRecommendationEngine {
     }
 
     private func isTopItem(_ item: ClothingItem, request: RecommendationRequest?) -> Bool {
-        if [.shirt, .blouse, .sweater, .dress].contains(item.category) {
-            return true
-        }
-        guard item.category == .activewear else { return false }
-        if isFootwearItem(item, request: request) {
-            return false
-        }
-        if let request, isExerciseContext(request) {
-            let text = item.name.lowercased()
-            if text.containsAny(["short", "pant", "legging", "tight", "jogger", "bottom"]) {
-                return false
-            }
-            return true
-        }
-        let text = item.name.lowercased()
-        return text.containsAny(["shirt", "tee", "t-shirt", "tank", "top", "hoodie"])
+        let roles = ClothingRoleInference.roles(for: item)
+        return roles.contains(.top) || roles.contains(.onePiece)
     }
 
     private func isBottomItem(_ item: ClothingItem, request: RecommendationRequest?) -> Bool {
-        if [.pants, .shorts, .skirt, .dress].contains(item.category) {
-            return true
-        }
-        guard item.category == .activewear else { return false }
-        if isFootwearItem(item, request: request) {
-            return false
-        }
-        if let request, isExerciseContext(request) {
-            let text = item.name.lowercased()
-            return !text.containsAny(["shirt", "tee", "t-shirt", "tank", "top", "hoodie"])
-        }
-        let text = item.name.lowercased()
-        return text.containsAny(["short", "pant", "legging", "tight", "jogger", "bottom"])
+        let roles = ClothingRoleInference.roles(for: item)
+        return roles.contains(.bottom) || roles.contains(.onePiece)
     }
 
     private func tagScore(_ tags: [String], target: String) -> Double {
@@ -1925,7 +2022,7 @@ struct OutfitRecommendationEngine {
         var isHardViolation = false
 
         for statement in statements where personalRuleMatches(statement, items: items, request: request) {
-            value -= 180
+            value -= 95
             isHardViolation = true
             notes.append("Personal rule: \(shortRuleNote(statement))")
         }
@@ -1952,6 +2049,10 @@ struct OutfitRecommendationEngine {
         let requestText = "\(request.occasion) \(request.activity)".lowercased()
 
         if isBeltWithCollaredTopRequirement(rule) {
+            return false
+        }
+
+        if isPositivePreferenceStatement(rule) {
             return false
         }
 
@@ -1983,6 +2084,7 @@ struct OutfitRecommendationEngine {
         ])
         let ruleTerms = feedbackAndRuleTerms(in: rule)
         guard !ruleTerms.isEmpty else { return false }
+        guard hardLanguage else { return false }
 
         let hasCombinationLanguage = rule.containsAny([
             " with ",
@@ -1997,16 +2099,58 @@ struct OutfitRecommendationEngine {
         let isCombinationRule = hasCombinationLanguage || Set(ruleTerms.map(ruleTermConcept)).count > 1
 
         if isCombinationRule {
-            return (hardLanguage || hasCombinationLanguage) && ruleTerms.allSatisfy { outfitContainsTerm($0, items: items) }
+            return ruleTerms.allSatisfy { outfitContainsTerm($0, items: items) }
         }
 
-        return hardLanguage && ruleTerms.contains { outfitContainsTerm($0, items: items) }
+        let hasContextLanguage = rule.containsAny([
+            "work",
+            "office",
+            "business",
+            "pilot",
+            "flight",
+            "airline",
+            "duty",
+            "gym",
+            "running",
+            "run",
+            "lifting",
+            "lift",
+            "workout",
+            "exercise",
+            "date",
+            "dinner",
+            "formal",
+            "wedding",
+            "casual"
+        ])
+        let isDirectBan = rule.containsAny(["no ", "never", "avoid", "must not", "cannot", "can't", "hard no"])
+        return (hasContextLanguage || isDirectBan) && ruleTerms.contains { outfitContainsTerm($0, items: items) }
     }
 
     private func isBeltWithCollaredTopRequirement(_ rule: String) -> Bool {
         rule.contains("belt") &&
             rule.containsAny(["collared", "collar", "button", "polo", "dress shirt", "work shirt"]) &&
             rule.containsAny(["always", "must", "need", "needs", "required", "requires", "require", "have to", "should"])
+    }
+
+    private func isPositivePreferenceStatement(_ rule: String) -> Bool {
+        let hasPositiveLanguage = rule.containsAny(["prefer", "preferred", "like", "love", "would be better", "better with", "occasionally"])
+        let hasHardNegativeLanguage = rule.containsAny([
+            "never",
+            "no ",
+            "do not",
+            "don't",
+            "avoid",
+            "must not",
+            "cannot",
+            "can't",
+            "unacceptable",
+            "against",
+            "not fashionable",
+            "not stylish",
+            "hard no"
+        ])
+        return hasPositiveLanguage && !hasHardNegativeLanguage
     }
 
     private func learnedFeedbackPenalty(_ note: String, outfitText: String) -> (value: Double, note: String)? {
@@ -2277,49 +2421,18 @@ struct OutfitRecommendationEngine {
     }
 
     private func isExerciseItem(_ item: ClothingItem) -> Bool {
-        if item.category == .activewear {
-            return true
-        }
-        let text = [
-            item.name,
-            item.notes,
-            item.activitySuitability,
-            item.occasionSuitability
-        ]
-        .joined(separator: " ")
-        .lowercased()
-        return text.containsAny(["gym", "workout", "exercise", "running", "run", "lifting", "lift", "weight", "strength", "training", "athletic", "performance", "trainer", "sneaker", "tennis"])
+        ClothingRoleInference.isExerciseSpecific(item)
     }
 
     private func isFootwearItem(_ item: ClothingItem, request: RecommendationRequest?) -> Bool {
-        if [.shoes, .heels, .flats].contains(item.category) {
-            return true
-        }
-
-        guard item.category == .activewear else {
-            return false
-        }
-
-        let text = [
-            item.name,
-            item.notes,
-            item.activitySuitability
-        ]
-        .joined(separator: " ")
-        .lowercased()
-        if request.map(isExerciseContext) == true {
-            return text.containsAny(["shoe", "sneaker", "trainer", "running shoe", "runner"])
-        }
-        return text.containsAny(["shoe", "sneaker"])
+        ClothingRoleInference.roles(for: item).contains(.footwear)
     }
 
     private func isRainShell(_ item: ClothingItem) -> Bool {
         let text = [
             item.name,
             item.brand,
-            item.notes,
-            item.weatherSuitability,
-            item.activitySuitability
+            item.notes
         ]
         .joined(separator: " ")
         .lowercased()
@@ -2330,16 +2443,7 @@ struct OutfitRecommendationEngine {
     }
 
     private func itemSearchText(_ item: ClothingItem) -> String {
-        [
-            item.name,
-            item.brand,
-            item.notes,
-            item.weatherSuitability,
-            item.occasionSuitability,
-            item.activitySuitability
-        ]
-        .joined(separator: " ")
-        .lowercased()
+        ClothingRoleInference.searchableText(for: item)
     }
 
     private func itemSortScore(_ item: ClothingItem) -> Double {

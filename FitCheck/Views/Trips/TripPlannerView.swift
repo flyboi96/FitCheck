@@ -1117,7 +1117,7 @@ private struct TripDetailView: View {
                 lines.append("Context: \(itinerary.activity)")
             }
             if let outfit = itinerary.outfit {
-                lines.append("Score: \(Int(outfit.score))")
+                lines.append("Fit: \(FitScoreScale.displayQuality(for: outfit.score))/100")
                 if !outfit.weatherSummary.isEmpty {
                     lines.append("Weather: \(outfit.weatherSummary)")
                 }
@@ -1422,7 +1422,7 @@ private struct ItineraryOutfitEditorView: View {
                 }
 
                 Section("Score") {
-                    Text("Score \(Int(outfit.score))")
+                    Text("Fit \(FitScoreScale.displayQuality(for: outfit.score))/100")
                         .font(.headline)
                     if !outfit.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         DisclosureGroup("Why this scored this way") {
@@ -1477,7 +1477,7 @@ private struct ItineraryOutfitEditorView: View {
         modelContext.insert(link)
         outfit.items.append(link)
         rescore(outfit)
-        status = "Added \(item.name) and updated the score."
+        status = "Added \(item.name) and updated the fit."
     }
 
     private func remove(_ link: OutfitItemLink, from outfit: Outfit) {
@@ -1485,7 +1485,7 @@ private struct ItineraryOutfitEditorView: View {
         outfit.items.removeAll { $0.id == link.id }
         modelContext.delete(link)
         rescore(outfit)
-        status = "Removed \(itemName) and updated the score."
+        status = "Removed \(itemName) and updated the fit."
     }
 
     private func rescore(_ outfit: Outfit) {

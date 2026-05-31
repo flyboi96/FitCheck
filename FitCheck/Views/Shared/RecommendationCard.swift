@@ -142,9 +142,9 @@ struct RecommendationCard: View {
 
     private var scoreBadge: some View {
         VStack(spacing: 2) {
-            Text("\(Int(recommendation.score))")
+            Text("\(fitQuality)")
                 .font(.headline.monospacedDigit().weight(.semibold))
-            Text("score")
+            Text("fit")
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
         }
@@ -152,14 +152,22 @@ struct RecommendationCard: View {
         .padding(.vertical, 7)
         .background(scoreTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .foregroundStyle(scoreTint)
-        .accessibilityLabel("Score \(Int(recommendation.score))")
+        .accessibilityLabel("Fit quality \(fitQuality) out of 100")
+    }
+
+    private var fitQuality: Int {
+        FitScoreScale.displayQuality(for: recommendation.score)
     }
 
     private var scoreTint: Color {
-        if recommendation.score >= 75 {
+        let quality = fitQuality
+        if quality >= 80 {
             return .green
         }
-        if recommendation.score >= 0 {
+        if quality >= 60 {
+            return .blue
+        }
+        if quality >= 40 {
             return .orange
         }
         return .red
@@ -312,7 +320,7 @@ struct RecommendationDraftEditorView: View {
                 }
 
                 Section("Score") {
-                    Text("Score \(Int(recommendation.score))")
+                    Text("Fit \(FitScoreScale.displayQuality(for: recommendation.score))/100")
                         .font(.headline)
                     if !recommendation.notes.isEmpty {
                         DisclosureGroup("Why this scored this way") {
@@ -382,7 +390,7 @@ struct RecommendationDraftEditorView: View {
         )
         updated.id = originalID
         recommendation = updated
-        status = "\(message) Score updated."
+        status = "\(message) Fit updated."
     }
 
     private func searchableText(for item: ClothingItem) -> String {

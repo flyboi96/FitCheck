@@ -159,7 +159,7 @@ struct OutfitHistoryView: View {
             outfit.wornAt.map { Self.dateFormatter.string(from: $0) },
             outfit.occasion,
             outfit.weatherSummary,
-            outfit.score > 0 ? "Score \(Int(outfit.score))" : nil
+            outfit.score != 0 ? "Fit \(FitScoreScale.displayQuality(for: outfit.score))/100" : nil
         ]
         .compactMap { $0 }
         .filter { !$0.isEmpty }
@@ -205,8 +205,8 @@ private struct HistoryOutfitCard: View {
                         .lineLimit(2)
                 }
                 Spacer()
-                if outfit.score > 0 {
-                    Text("\(Int(outfit.score))")
+                if outfit.score != 0 {
+                    Text("\(FitScoreScale.displayQuality(for: outfit.score))")
                         .font(.headline.monospacedDigit().weight(.semibold))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)

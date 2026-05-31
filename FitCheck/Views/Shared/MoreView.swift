@@ -53,7 +53,7 @@ private struct ScoringGuideView: View {
     var body: some View {
         List {
             Section("Starting Point") {
-                Text("Every outfit starts at 50 points, then each item and the full combination add or subtract points. Scores are relative rankings, not percentages. Red means the score is below zero. Socks, belts, watches, and multipack basics no longer get scored like full outfit pieces.")
+                Text("FitCheck calculates an internal ranking score, then shows a 0-100 Fit Quality number. The visible score is not the raw math. Socks, belts, watches, and multipack basics are support pieces, so they no longer get scored like full outfit pieces.")
             }
 
             Section("Weather") {
@@ -65,11 +65,11 @@ private struct ScoringGuideView: View {
             }
 
             Section("Dressiness") {
-                Text("FitCheck infers dressiness from the item name and category. A blue merino button-down scores better for dinner or work than a running tee because the item name suggests a sharper, more polished piece.")
+                Text("FitCheck infers dressiness from the current item name, category, brand, notes, color, and pattern. Old stored suitability fields are kept for backup compatibility, but they no longer steer scoring.")
             }
 
             Section("Rotation") {
-                Text("Items worn in the last few days get a strong penalty. In trip plans, washable clothing is blocked from appearing on back-to-back days. Items not worn recently, or never worn, get a small boost.")
+                Text("Recently worn washable clothing gets a category-aware penalty. Multipack basics, belts, watches, and travel accessories are treated differently from shirts and pants. In trip plans, washable clothing is blocked from appearing on back-to-back days.")
             }
 
             Section("Color") {

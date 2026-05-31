@@ -110,11 +110,6 @@ struct TripPlanningService {
         var lastPlannedDayByItemID: [UUID: Int] = [:]
         let explicitDailyPlanning = tripUsesExplicitContexts(trip)
         let activeCloset = closet.filter { $0.status == .active }
-        let existingPackingItemIDs = Set(trip.packingLists.flatMap(\.items).compactMap { $0.item?.id })
-        let preferredPackingCloset = existingPackingItemIDs.isEmpty
-            ? packingCandidates(from: activeCloset, trip: trip, days: max(1, tripDates.count))
-            : activeCloset.filter { existingPackingItemIDs.contains($0.id) }
-        let preferredPackingIDs = Set(preferredPackingCloset.map(\.id))
 
         for (dayIndex, date) in tripDates.enumerated() {
             if shouldResetLaundryCounts(for: trip, dayIndex: dayIndex) {
@@ -150,25 +145,7 @@ struct TripPlanningService {
                     dayIndex: dayIndex,
                     trip: trip
                 )
-                let availablePackingCloset = availableCloset.filter { preferredPackingIDs.contains($0.id) }
-                let primaryCloset = availablePackingCloset.isEmpty ? availableCloset : availablePackingCloset
-                let fallbackCloset = availablePackingCloset.isEmpty ? availableCloset : availablePackingCloset
-
                 let localRecommendations = engine.recommend(
-                    closet: primaryCloset,
-                    feedback: feedback,
-                    stylePreference: stylePreference,
-                    request: request,
-                    limit: 3
-                )
-                let fallbackRecommendations = engine.recommend(
-                    closet: fallbackCloset,
-                    feedback: feedback,
-                    stylePreference: stylePreference,
-                    request: request,
-                    limit: 3
-                )
-                let fullClosetRecommendations = engine.recommend(
                     closet: availableCloset,
                     feedback: feedback,
                     stylePreference: stylePreference,
@@ -176,7 +153,7 @@ struct TripPlanningService {
                     limit: 3
                 )
 
-                guard var recommendation = localRecommendations.first ?? fallbackRecommendations.first ?? fullClosetRecommendations.first else {
+                guard var recommendation = localRecommendations.first else {
                     continue
                 }
                 guard engine.isCompleteOutfit(recommendation.items, request: request) else {
@@ -186,7 +163,7 @@ struct TripPlanningService {
                 if let aiOptions,
                     let aiRecommendation = await aiFilteredRecommendation(
                     localRecommendation: recommendation,
-                    closet: primaryCloset.isEmpty ? availableCloset : primaryCloset,
+                    closet: availableCloset,
                     feedback: feedback,
                     stylePreference: stylePreference,
                     request: request,
@@ -273,7 +250,10 @@ struct TripPlanningService {
         let requestedContexts = trip.stops
             .filter(isDailyPlanStop)
             .flatMap(\.requestedContexts)
-        if !requestedContexts.isEmpty, requestedContexts.allSatisfy(isExerciseContext) {
+        let normalizedContexts = requestedContexts.compactMap {
+            OutfitContextOption(rawValue: OutfitContextOption.curatedRawValue(for: $0.rawValue))
+        }
+        if !normalizedContexts.isEmpty, normalizedContexts.allSatisfy(isExerciseContext) {
             return []
         }
 
@@ -286,7 +266,7 @@ struct TripPlanningService {
             return []
         }
 
-        let needsBeltOrDressAccessory = requestedContexts.contains { [.businessCasual, .businessFormal, .smartCasual, .smartStreetwear, .workDay, .dateNight, .dinner, .wedding].contains($0) } ||
+        let needsBeltOrDressAccessory = normalizedContexts.contains { [.businessCasual, .businessFormal, .smartCasual, .dateNight, .wedding].contains($0) } ||
             text.containsAny(["work", "office", "business", "conference", "meeting", "dinner", "date", "wedding", "formal", "collared", "belt"])
 
         if needsBeltOrDressAccessory {
@@ -477,17 +457,12 @@ struct TripPlanningService {
             return true
         }
 
-        let text = itemSearchText(item)
-        if category == .underwear,
-           [.activewear, .shorts].contains(item.category),
-           text.contains("compression"),
-           text.containsAny(["short", "brief", "underwear", "base layer", "baselayer", "liner"]) {
+        let roles = ClothingRoleInference.roles(for: item)
+        if category == .underwear, roles.contains(.underwear) {
             return true
         }
 
-        if category == .socks,
-           item.category == .activewear,
-           text.containsAny(["sock", "socks"]) {
+        if category == .socks, roles.contains(.socks) {
             return true
         }
 
@@ -870,15 +845,7 @@ struct TripPlanningService {
     }
 
     private func itemSearchText(_ item: ClothingItem) -> String {
-        [
-            item.name,
-            item.brand,
-            item.notes,
-            item.activitySuitability,
-            item.occasionSuitability
-        ]
-        .joined(separator: " ")
-        .lowercased()
+        ClothingRoleInference.searchableText(for: item)
     }
 
     private func dates(from start: Date, through end: Date) -> [Date] {

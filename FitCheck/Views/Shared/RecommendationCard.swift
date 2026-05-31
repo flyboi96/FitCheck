@@ -19,31 +19,23 @@ struct RecommendationCard: View {
     var onAvatarPreview: (() -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(recommendation.title)
-                        .font(.headline)
-                    Text("Score \(Int(recommendation.score))")
-                        .font(.subheadline)
+                        .font(.headline.weight(.semibold))
+                        .lineLimit(2)
+                    Text(itemSummary)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                scoreBadge
             }
 
-            ForEach(recommendation.items) { item in
-                HStack {
-                    Image(systemName: iconName(for: item.category))
-                        .foregroundStyle(.tint)
-                        .frame(width: 24)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.name)
-                            .font(.subheadline.weight(.semibold))
-                        Text(item.category.displayName)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
+            VStack(spacing: 8) {
+                ForEach(recommendation.items) { item in
+                    RecommendationItemRow(item: item)
                 }
             }
 
@@ -71,6 +63,9 @@ struct RecommendationCard: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             } else if let aiReviewError {
                 Label(aiReviewError, systemImage: "exclamationmark.triangle")
                     .font(.caption)
@@ -92,78 +87,159 @@ struct RecommendationCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 if let primaryTitle, let onPrimary {
                     Button(action: onPrimary) {
-                        Label(primaryTitle, systemImage: "checkmark")
+                        Label(primaryTitle, systemImage: "checkmark.circle")
+                            .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .buttonStyle(.borderedProminent)
                 }
 
-                LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
+                LazyVGrid(columns: actionColumns, alignment: .center, spacing: 8) {
                     if let onAIReview {
-                        Button(action: onAIReview) {
-                            FitCheckButtonLabel(
-                                title: isAIReviewing ? "Reviewing" : "AI Review",
-                                systemImage: "sparkles",
-                                isLoading: isAIReviewing
-                            )
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.bordered)
+                        actionButton(
+                            title: isAIReviewing ? "Reviewing" : "AI",
+                            systemImage: "sparkles",
+                            isLoading: isAIReviewing,
+                            action: onAIReview
+                        )
                         .disabled(isAIReviewing)
                     }
 
                     if let onAvatarPreview {
-                        Button(action: onAvatarPreview) {
-                            FitCheckButtonLabel(
-                                title: isGeneratingAvatarPreview ? "Generating Preview" : "Try On Avatar",
-                                systemImage: "person.crop.rectangle",
-                                isLoading: isGeneratingAvatarPreview
-                            )
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.bordered)
+                        actionButton(
+                            title: isGeneratingAvatarPreview ? "Previewing" : "Avatar",
+                            systemImage: "person.crop.rectangle",
+                            isLoading: isGeneratingAvatarPreview,
+                            action: onAvatarPreview
+                        )
                         .disabled(isGeneratingAvatarPreview)
                     }
 
                     if let onGood {
-                        Button(action: onGood) {
-                            Label("Wore + Liked", systemImage: "hand.thumbsup")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.bordered)
+                        actionButton(title: "Liked", systemImage: "hand.thumbsup", action: onGood)
                     }
                     if let onBad {
-                        Button(action: onBad) {
-                            Label("Reject", systemImage: "hand.thumbsdown")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.bordered)
+                        actionButton(title: "Reject", systemImage: "hand.thumbsdown", action: onBad)
                     }
                     if let onFeedback {
-                        Button(action: onFeedback) {
-                            Label("Feedback", systemImage: "text.bubble")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.bordered)
+                        actionButton(title: "Feedback", systemImage: "text.bubble", action: onFeedback)
                     }
                     if let onEdit {
-                        Button(action: onEdit) {
-                            Label("Edit", systemImage: "slider.horizontal.3")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.bordered)
+                        actionButton(title: "Edit", systemImage: "slider.horizontal.3", action: onEdit)
                     }
                 }
             }
         }
-        .padding(.vertical, 8)
+        .padding(12)
+        .background(.background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(.quaternary, lineWidth: 1)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
     }
 
-    private func iconName(for category: ClothingCategory) -> String {
-        category.systemImageName
+    private var scoreBadge: some View {
+        VStack(spacing: 2) {
+            Text("\(Int(recommendation.score))")
+                .font(.headline.monospacedDigit().weight(.semibold))
+            Text("score")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(scoreTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .foregroundStyle(scoreTint)
+        .accessibilityLabel("Score \(Int(recommendation.score))")
+    }
+
+    private var scoreTint: Color {
+        if recommendation.score >= 100 {
+            return .green
+        }
+        if recommendation.score >= 70 {
+            return .orange
+        }
+        return .red
+    }
+
+    private var itemSummary: String {
+        let categories = recommendation.items.map(\.category.displayName)
+        guard !categories.isEmpty else { return "No items" }
+        return categories.joined(separator: " · ")
+    }
+
+    private func actionButton(
+        title: String,
+        systemImage: String,
+        isLoading: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            FitCheckButtonLabel(title: title, systemImage: systemImage, isLoading: isLoading)
+                .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
     }
 
     private var actionColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 148), spacing: 8, alignment: .leading)]
+        [GridItem(.adaptive(minimum: 118), spacing: 8, alignment: .center)]
+    }
+}
+
+private struct RecommendationItemRow: View {
+    var item: ClothingItem
+
+    var body: some View {
+        HStack(spacing: 10) {
+            thumbnail
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                Text(detailText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 8)
+        }
+        .padding(8)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var thumbnail: some View {
+        if let photoData = item.photoData, let uiImage = UIImage(data: photoData) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 42, height: 42)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        } else {
+            Image(systemName: item.category.systemImageName)
+                .foregroundStyle(.tint)
+                .frame(width: 42, height: 42)
+                .background(.background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
+    private var detailText: String {
+        [
+            item.category.displayName,
+            item.brand.isEmpty ? nil : item.brand,
+            item.quantity > 1 ? "Qty \(item.quantity)" : nil
+        ]
+        .compactMap { $0 }
+        .filter { !$0.isEmpty }
+        .joined(separator: " · ")
     }
 }
 

@@ -194,7 +194,21 @@ private struct TripDetailView: View {
 
     var body: some View {
         List {
-            Section("Stops") {
+            Section("Plan Summary") {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        planMetric(title: "Stops", value: "\(sortedStops.count)", systemImage: "mappin.and.ellipse")
+                        planMetric(title: "Days", value: "\(planDays.count)", systemImage: "calendar")
+                    }
+                    HStack(spacing: 12) {
+                        planMetric(title: "Outfits", value: "\(requestedOutfitCount)", systemImage: "tshirt")
+                        planMetric(title: "Generated", value: "\(trip.itineraryOutfits.count)", systemImage: "checkmark.circle")
+                    }
+                }
+                FitCheckInlineStatus(message: planReadinessText, systemImage: planReadinessIcon)
+            }
+
+            Section("1. Stops") {
                 Text("Use stops for broad location ranges. Use Daily Plan below for exact outfit requests by date.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -229,7 +243,7 @@ private struct TripDetailView: View {
                 }
             }
 
-            Section("Daily Plan") {
+            Section("2. Daily Plan") {
                 Text("Set where you will be and the exact outfit types you want for each date. When Daily Plan is filled in, itinerary generation uses only the selected outfit types for each date.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -253,7 +267,7 @@ private struct TripDetailView: View {
                 }
             }
 
-            Section("Laundry & Rewear") {
+            Section("3. Laundry & Packing Rules") {
                 Stepper(value: $trip.laundryIntervalDays, in: 0...14) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Laundry")
@@ -274,7 +288,7 @@ private struct TripDetailView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Generate") {
+            Section("4. Generate") {
                 Button {
                     Task { @MainActor in
                         isGeneratingPackingList = true
@@ -290,6 +304,7 @@ private struct TripDetailView: View {
                         systemImage: "checklist",
                         isLoading: isGeneratingPackingList
                     )
+                    .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isGeneratingPackingList || trip.stops.isEmpty)
@@ -319,6 +334,7 @@ private struct TripDetailView: View {
                         systemImage: "calendar",
                         isLoading: isGeneratingItinerary
                     )
+                    .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isGeneratingItinerary || trip.stops.isEmpty)
@@ -361,7 +377,7 @@ private struct TripDetailView: View {
             }
 
             ForEach(trip.packingLists) { list in
-                Section(list.title) {
+                Section("Packing List") {
                     ForEach(list.items) { packingItem in
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
@@ -380,7 +396,7 @@ private struct TripDetailView: View {
                 }
             }
 
-            Section("Itinerary") {
+            Section("Outfit Itinerary") {
                 Text("Feedback here is saved to the same outfit feedback system used by daily recommendations.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -498,6 +514,46 @@ private struct TripDetailView: View {
         trip.stops
             .filter { !isDailyPlanStop($0) }
             .sorted { $0.startsAt < $1.startsAt }
+    }
+
+    private var requestedOutfitCount: Int {
+        planDays.reduce(0) { total, day in
+            total + requestedContexts(on: day.date).count
+        }
+    }
+
+    private var planReadinessText: String {
+        if sortedStops.isEmpty {
+            return "Add at least one stop before generating."
+        }
+        if requestedOutfitCount == 0 {
+            return "Daily Plan has no outfit requests yet."
+        }
+        return "Ready: \(requestedOutfitCount) planned outfit\(requestedOutfitCount == 1 ? "" : "s") across \(planDays.count) day\(planDays.count == 1 ? "" : "s")."
+    }
+
+    private var planReadinessIcon: String {
+        sortedStops.isEmpty || requestedOutfitCount == 0 ? "info.circle" : "checkmark.circle"
+    }
+
+    private func planMetric(title: String, value: String, systemImage: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .foregroundStyle(.tint)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value)
+                    .font(.headline.monospacedDigit())
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 
     private var planDays: [TripPlanDay] {

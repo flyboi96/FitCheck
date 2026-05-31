@@ -19,18 +19,7 @@ struct OutfitHistoryView: View {
                     ContentUnavailableView("No Outfits Logged", systemImage: "calendar")
                 } else {
                     ForEach(loggedOutfits) { outfit in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(outfit.name)
-                                .font(.headline)
-                            Text(outfitDetail(outfit))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if !outfit.items.isEmpty {
-                                Text(outfit.items.compactMap { $0.item?.name }.joined(separator: ", "))
-                                    .font(.subheadline)
-                            }
-                        }
-                        .padding(.vertical, 4)
+                        HistoryOutfitCard(outfit: outfit, detail: outfitDetail(outfit))
                     }
                     .onDelete(perform: deleteOutfits)
                 }
@@ -197,4 +186,60 @@ private struct WearLogGroup: Identifiable {
     var logs: [WearLog]
 
     var id: UUID { itemID }
+}
+
+private struct HistoryOutfitCard: View {
+    var outfit: Outfit
+    var detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(outfit.name)
+                        .font(.headline.weight(.semibold))
+                        .lineLimit(2)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+                if outfit.score > 0 {
+                    Text("\(Int(outfit.score))")
+                        .font(.headline.monospacedDigit().weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+            }
+
+            if !outfit.items.isEmpty {
+                VStack(spacing: 6) {
+                    ForEach(outfit.items.compactMap(\.item)) { item in
+                        HStack(spacing: 8) {
+                            Image(systemName: item.category.systemImageName)
+                                .foregroundStyle(.tint)
+                                .frame(width: 24)
+                            Text(item.name)
+                                .font(.subheadline.weight(.medium))
+                                .lineLimit(1)
+                            Spacer()
+                            Text(item.category.displayName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(.background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(.quaternary, lineWidth: 1)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+    }
 }

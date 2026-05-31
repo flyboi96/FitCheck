@@ -118,6 +118,7 @@ struct OutfitBuilderView: View {
                         systemImage: "wand.and.stars",
                         isLoading: isGeneratingLocal
                     )
+                    .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(selectedItem == nil || effectiveWeather == nil || isGeneratingLocal)
@@ -132,6 +133,7 @@ struct OutfitBuilderView: View {
                         systemImage: "sparkles",
                         isLoading: isAIChoosingOutfit
                     )
+                    .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .disabled(!canAskAIForOutfit)
 

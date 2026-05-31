@@ -14,16 +14,33 @@ struct ClosetView: View {
     @State private var showingBulkImport = false
     @State private var editingItem: ClothingItem?
     @State private var searchText = ""
+    @State private var selectedUseFilter = ClosetUseFilter.all
 
     var body: some View {
         List {
-            Section {
+            Section("Find Items") {
+                HStack {
+                    Label("\(filteredItems.count) shown", systemImage: "tshirt")
+                    Spacer()
+                    Text("\(activeItemCount) active")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption)
+
                 Picker("Category", selection: $selectedCategory) {
                     Text("All").tag(nil as ClothingCategory?)
                     ForEach(availableCategories) { category in
                         Text(category.displayName).tag(Optional(category))
                     }
                 }
+                .pickerStyle(.menu)
+
+                Picker("Use", selection: $selectedUseFilter) {
+                    ForEach(ClosetUseFilter.allCases) { filter in
+                        Label(filter.displayName, systemImage: filter.systemImage).tag(filter)
+                    }
+                }
+                .pickerStyle(.menu)
             }
 
             if groupedCategories.isEmpty {
@@ -108,6 +125,7 @@ struct ClosetView: View {
             if let selectedCategory {
                 guard item.category == selectedCategory else { return false }
             }
+            guard selectedUseFilter.matches(item) else { return false }
             guard !search.isEmpty else { return true }
             return searchableText(for: item).localizedCaseInsensitiveContains(search)
         }
@@ -125,6 +143,10 @@ struct ClosetView: View {
         let profileCategories = ClothingCategory.options(for: currentWearerProfile)
         let itemCategories = Set(items.map(\.category))
         return ClothingCategory.allCases.filter { profileCategories.contains($0) || itemCategories.contains($0) }
+    }
+
+    private var activeItemCount: Int {
+        items.filter { $0.status == .active }.count
     }
 
     private var currentWearerProfile: WearerProfileOption {
@@ -145,6 +167,66 @@ struct ClosetView: View {
             item.status.displayName
         ]
         .joined(separator: " ")
+    }
+}
+
+private enum ClosetUseFilter: String, CaseIterable, Identifiable {
+    case all
+    case work
+    case gym
+    case travel
+    case casual
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .all: "All Uses"
+        case .work: "Work"
+        case .gym: "Gym"
+        case .travel: "Travel"
+        case .casual: "Casual"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .all: "square.grid.2x2"
+        case .work: "briefcase"
+        case .gym: "figure.strengthtraining.traditional"
+        case .travel: "airplane"
+        case .casual: "figure.walk"
+        }
+    }
+
+    func matches(_ item: ClothingItem) -> Bool {
+        switch self {
+        case .all:
+            return true
+        case .work:
+            return matches(item, terms: ["work", "office", "business", "pilot", "flight", "collared", "button-down", "button down", "chino", "loafer", "dress"])
+        case .gym:
+            return matches(item, terms: ["gym", "workout", "exercise", "running", "run", "lifting", "lift", "training", "athletic", "performance"])
+        case .travel:
+            return matches(item, terms: ["travel", "walking", "city", "comfortable", "packable", "airport", "flight"])
+        case .casual:
+            return matches(item, terms: ["casual", "errands", "walking", "tee", "t-shirt", "jeans", "shorts", "sneaker"])
+        }
+    }
+
+    private func matches(_ item: ClothingItem, terms: [String]) -> Bool {
+        let text = [
+            item.name,
+            item.brand,
+            item.category.displayName,
+            item.occasionSuitability,
+            item.activitySuitability,
+            item.notes
+        ]
+        .joined(separator: " ")
+        .lowercased()
+
+        return terms.contains { text.contains($0) }
     }
 }
 

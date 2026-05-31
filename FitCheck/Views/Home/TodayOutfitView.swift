@@ -45,7 +45,51 @@ struct TodayOutfitView: View {
 
     var body: some View {
         List {
-            Section("Weather") {
+            Section("Today") {
+                todayDashboard
+
+                Picker("Context", selection: $selectedContext) {
+                    ForEach(OutfitContextOption.allCases) { option in
+                        Text(option.displayName).tag(option.rawValue)
+                    }
+                }
+
+                Button {
+                    generateWithVisibleFeedback()
+                } label: {
+                    FitCheckButtonLabel(
+                        title: isGeneratingLocal ? "Generating Outfit" : "Generate Outfit",
+                        systemImage: "wand.and.stars",
+                        isLoading: isGeneratingLocal
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!hasEnoughItemsForOutfit || effectiveWeather == nil || isGeneratingLocal)
+
+                Button {
+                    Task {
+                        await generateWithAIFirst()
+                    }
+                } label: {
+                    FitCheckButtonLabel(
+                        title: isAIChoosingOutfit ? "Asking AI" : "Ask AI First",
+                        systemImage: "sparkles",
+                        isLoading: isAIChoosingOutfit
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .disabled(!canAskAIForOutfit)
+
+                if !aiBuildError.isEmpty {
+                    Text(aiBuildError)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                FitCheckInlineStatus(message: recommendationStatus)
+            }
+
+            Section("Weather Details") {
                 weatherStatus
                 TextField("City or place", text: $manualLocationQuery)
                     .textInputAutocapitalization(.words)
@@ -76,45 +120,6 @@ struct TodayOutfitView: View {
                     message: weatherLookup.isLoading ? weatherLoadingMessage : weatherActionStatus,
                     isLoading: weatherLookup.isLoading
                 )
-            }
-
-            Section("Context") {
-                Picker("Context", selection: $selectedContext) {
-                    ForEach(OutfitContextOption.allCases) { option in
-                        Text(option.displayName).tag(option.rawValue)
-                    }
-                }
-                Button {
-                    generateWithVisibleFeedback()
-                } label: {
-                    FitCheckButtonLabel(
-                        title: isGeneratingLocal ? "Generating Outfit" : "Generate Outfit",
-                        systemImage: "wand.and.stars",
-                        isLoading: isGeneratingLocal
-                    )
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!hasEnoughItemsForOutfit || effectiveWeather == nil || isGeneratingLocal)
-
-                Button {
-                    Task {
-                        await generateWithAIFirst()
-                    }
-                } label: {
-                    FitCheckButtonLabel(
-                        title: isAIChoosingOutfit ? "Asking AI" : "Ask AI First",
-                        systemImage: "sparkles",
-                        isLoading: isAIChoosingOutfit
-                    )
-                }
-                .disabled(!canAskAIForOutfit)
-
-                if !aiBuildError.isEmpty {
-                    Text(aiBuildError)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                FitCheckInlineStatus(message: recommendationStatus)
             }
 
             if !hasEnoughItemsForOutfit {
@@ -221,6 +226,79 @@ struct TodayOutfitView: View {
 
     private var effectiveWeather: WeatherInput? {
         manualWeatherOverride ?? weatherLookup.result?.input
+    }
+
+    private var todayDashboard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                dashboardMetric(
+                    title: "Weather",
+                    value: dashboardWeatherText,
+                    systemImage: effectiveWeather?.isRaining == true ? "cloud.rain" : "sun.max"
+                )
+                dashboardMetric(
+                    title: "Closet",
+                    value: "\(activeItems.count) active",
+                    systemImage: "tshirt"
+                )
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                dashboardMetric(
+                    title: "Context",
+                    value: currentContext.displayName,
+                    systemImage: "calendar.badge.clock"
+                )
+                dashboardMetric(
+                    title: "Comfort",
+                    value: dashboardComfortText,
+                    systemImage: "thermometer.medium"
+                )
+            }
+
+            Text(dashboardPersonalLine)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func dashboardMetric(title: String, value: String, systemImage: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .foregroundStyle(.tint)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.82)
+                Text(title)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var dashboardWeatherText: String {
+        guard let weather = effectiveWeather else { return "Not loaded" }
+        return "\(Int(weather.temperatureF.rounded()))F\(weather.humidityPercent.map { ", \(Int($0.rounded()))%" } ?? "")"
+    }
+
+    private var dashboardComfortText: String {
+        stylePreferences.first?.temperatureSensitivity.displayName ?? "Balanced"
+    }
+
+    private var dashboardPersonalLine: String {
+        let profile = WearerProfileOption(rawValue: wearerProfile) ?? .unspecified
+        let profileText = profile == .unspecified ? "No wearer profile" : profile.displayName
+        let styleStatus = stylePreferences.first == nil ? "style profile not set" : "style profile active"
+        return "\(profileText) · \(styleStatus) · \(recommendations.isEmpty ? "No current outfit generated" : "\(recommendations.count) outfit option\(recommendations.count == 1 ? "" : "s") ready")"
     }
 
     @ViewBuilder

@@ -714,11 +714,6 @@ struct OutfitRecommendationEngine {
             reasons.append("Hot humid weather removes non-rain-shell jackets.")
         }
 
-        let personalRules = personalRuleStatements(stylePreference)
-        if !personalRules.isEmpty {
-            reasons.append("Personal rules and disliked combinations are applied as hard blockers when they match an outfit.")
-        }
-
         if reasons.isEmpty {
             reasons.append("FitCheck found closet roles, but every combination broke a hard fashion, weather, or personal rule.")
         }
@@ -1878,17 +1873,25 @@ struct OutfitRecommendationEngine {
             "hard no"
         ])
         let ruleTerms = feedbackAndRuleTerms(in: rule)
-        let matchedTerms = ruleTerms.filter { outfitContainsTerm($0, items: items) }
+        guard !ruleTerms.isEmpty else { return false }
 
-        if matchedTerms.count >= 2 {
-            return hardLanguage || rule.containsAny([" with ", " and ", "+"])
+        let hasCombinationLanguage = rule.containsAny([
+            " with ",
+            " and ",
+            "+",
+            "together",
+            "paired",
+            "pairing",
+            "combo",
+            "combination"
+        ])
+        let isCombinationRule = hasCombinationLanguage || Set(ruleTerms.map(ruleTermConcept)).count > 1
+
+        if isCombinationRule {
+            return (hardLanguage || hasCombinationLanguage) && ruleTerms.allSatisfy { outfitContainsTerm($0, items: items) }
         }
 
-        if hardLanguage, matchedTerms.count >= 1 {
-            return true
-        }
-
-        return false
+        return hardLanguage && ruleTerms.contains { outfitContainsTerm($0, items: items) }
     }
 
     private func learnedFeedbackPenalty(_ note: String, outfitText: String) -> (value: Double, note: String)? {
@@ -1961,7 +1964,59 @@ struct OutfitRecommendationEngine {
             "workout"
         ]
 
-        return Array(Set(knownTerms.filter { normalized.contains($0) })).sorted()
+        var terms = Set(knownTerms.filter { normalized.contains($0) })
+
+        if terms.contains("boots") {
+            terms.remove("boot")
+        }
+        if terms.contains("crocs") {
+            terms.remove("croc")
+        }
+        if terms.contains("clogs") {
+            terms.remove("clog")
+        }
+        if terms.contains("sneakers") {
+            terms.remove("sneaker")
+        }
+        if terms.contains("loafers") {
+            terms.remove("loafer")
+        }
+        if terms.contains("sweatpants") || terms.contains("sweat pants") || terms.contains("joggers") {
+            terms.remove("pants")
+        }
+        if terms.contains("button-down") || terms.contains("button down") || terms.contains("button-up") || terms.contains("button up") || terms.contains("dress shirt") || terms.contains("work shirt") {
+            terms.remove("shirt")
+        }
+        if terms.contains("running shoe") || terms.contains("running shoes") || terms.contains("running sock") || terms.contains("running socks") {
+            terms.remove("running")
+        }
+
+        return terms.sorted()
+    }
+
+    private func ruleTermConcept(_ term: String) -> String {
+        switch term {
+        case "boot", "boots":
+            return "boot"
+        case "croc", "crocs":
+            return "crocs"
+        case "clog", "clogs":
+            return "clog"
+        case "sneaker", "sneakers":
+            return "sneaker"
+        case "loafer", "loafers":
+            return "loafer"
+        case "button-down", "button down", "button-up", "button up", "dress shirt", "work shirt", "collar", "collared", "polo":
+            return "collared-top"
+        case "sweatpants", "sweat pants", "jogger", "joggers":
+            return "lounge-bottom"
+        case "running shoe", "running shoes":
+            return "running-shoe"
+        case "running sock", "running socks":
+            return "running-sock"
+        default:
+            return term
+        }
     }
 
     private func outfitContainsTerm(_ term: String, items: [ClothingItem]) -> Bool {

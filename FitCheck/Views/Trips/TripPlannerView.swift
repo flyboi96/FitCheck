@@ -68,6 +68,7 @@ private struct TripEditorView: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var title = ""
+    @State private var location = ""
     @State private var startsAt = Date()
     @State private var endsAt = Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date()
     @State private var notes = ""
@@ -83,11 +84,13 @@ private struct TripEditorView: View {
             Section("Plan") {
                 TextField("Title", text: $title, prompt: Text("Rome trip or Work week outfits"))
                     .textInputAutocapitalization(.words)
+                TextField("Primary city or first stop", text: $location, prompt: Text("Djibouti, Rome, Katy, TX"))
+                    .textInputAutocapitalization(.words)
                 DatePicker("Start", selection: $startsAt, displayedComponents: .date)
                 DatePicker("End", selection: $endsAt, displayedComponents: .date)
                 TextEditor(text: $notes)
                     .frame(minHeight: 96)
-                Text("Use this for travel, packing, or a normal week of planned outfits.")
+                Text("Use this for travel, packing, or a normal week of planned outfits. The city creates a full-range stop automatically; add more stops only when the location changes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -126,10 +129,12 @@ private struct TripEditorView: View {
     }
 
     private func save() {
+        let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        let endDate = maxDate(startsAt, endsAt)
         let trip = Trip(
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             startsAt: startsAt,
-            endsAt: maxDate(startsAt, endsAt),
+            endsAt: endDate,
             notes: notes,
             laundryIntervalDays: laundryIntervalDays,
             wearsBeforeWash: topWearsBeforeWash,
@@ -140,6 +145,16 @@ private struct TripEditorView: View {
             activewearWearsBeforeWash: activewearWearsBeforeWash
         )
         modelContext.insert(trip)
+        if !trimmedLocation.isEmpty {
+            let stop = TripStop(
+                location: trimmedLocation,
+                startsAt: startsAt,
+                endsAt: endDate,
+                trip: trip
+            )
+            modelContext.insert(stop)
+            trip.stops.append(stop)
+        }
         try? modelContext.save()
         dismiss()
     }

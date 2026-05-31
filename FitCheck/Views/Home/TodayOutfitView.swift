@@ -746,7 +746,8 @@ struct TodayOutfitView: View {
 
     private var styleDescription: String {
         let wearerLine = currentWearerProfile == .unspecified ? nil : "Wearer profile: \(currentWearerProfile.displayName)"
-        let contextLine = contextStyleNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : "Context style notes:\n\(contextStyleNotes)"
+        let resolvedContextStyleNotes = ContextStyleCatalog.resolvedNotes(contextStyleNotes)
+        let contextLine = "Context style notes:\n\(resolvedContextStyleNotes)"
         guard let stylePreference = stylePreferences.first else {
             return [wearerLine, contextLine]
                 .compactMap { $0 }

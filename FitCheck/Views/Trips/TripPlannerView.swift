@@ -343,33 +343,17 @@ private struct TripDetailView: View {
             }
 
             Section("4. Generate") {
-                Button {
-                    Task { @MainActor in
-                        isGeneratingPackingList = true
-                        defer { isGeneratingPackingList = false }
-                        generationStatus = "Generating packing list from your closet and trip stops."
-                        await service.rebuildPackingList(for: trip, closet: closetItems, context: modelContext)
-                        try? modelContext.save()
-                        generationStatus = "Packing list updated with \(trip.packingLists.flatMap(\.items).count) item rows."
-                    }
-                } label: {
-                    FitCheckButtonLabel(
-                        title: isGeneratingPackingList ? "Generating Packing List" : "Packing List",
-                        systemImage: "checklist",
-                        isLoading: isGeneratingPackingList
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isGeneratingPackingList || trip.stops.isEmpty)
+                Text("Recommended: generate the outfit itinerary first. FitCheck chooses outfits for each Daily Plan entry, then rebuilds the packing list from those outfits. Use Packing List only when you want to refresh packing after manual edits.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Button {
                     Task { @MainActor in
                         isGeneratingItinerary = true
                         defer { isGeneratingItinerary = false }
                         generationStatus = tripAIOptions == nil
-                            ? "Generating outfit itinerary with local scoring."
-                            : "Generating outfit itinerary with AI filtering and local scoring."
+                            ? "Generating outfit itinerary, then rebuilding packing."
+                            : "Asking AI for outfit itinerary, then rebuilding packing."
                         await service.rebuildItinerary(
                             for: trip,
                             closet: closetItems,
@@ -393,6 +377,26 @@ private struct TripDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isGeneratingItinerary || trip.stops.isEmpty)
+
+                Button {
+                    Task { @MainActor in
+                        isGeneratingPackingList = true
+                        defer { isGeneratingPackingList = false }
+                        generationStatus = "Refreshing packing list from the current itinerary and trip stops."
+                        await service.rebuildPackingList(for: trip, closet: closetItems, context: modelContext)
+                        try? modelContext.save()
+                        generationStatus = "Packing list updated with \(trip.packingLists.flatMap(\.items).count) item rows."
+                    }
+                } label: {
+                    FitCheckButtonLabel(
+                        title: isGeneratingPackingList ? "Refreshing Packing" : "Refresh Packing Only",
+                        systemImage: "checklist",
+                        isLoading: isGeneratingPackingList
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isGeneratingPackingList || trip.stops.isEmpty)
 
                 if isGeneratingItinerary {
                     ProgressView("Generating itinerary")
@@ -834,7 +838,8 @@ private struct TripDetailView: View {
     private var styleDescription: String {
         let currentWearerProfile = WearerProfileOption(rawValue: wearerProfile) ?? .unspecified
         let wearerLine = currentWearerProfile == .unspecified ? nil : "Wearer profile: \(currentWearerProfile.displayName)"
-        let contextLine = contextStyleNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : "Context style notes:\n\(contextStyleNotes)"
+        let resolvedContextStyleNotes = ContextStyleCatalog.resolvedNotes(contextStyleNotes)
+        let contextLine = "Context style notes:\n\(resolvedContextStyleNotes)"
         guard let preference = preferences.first else {
             return [wearerLine, contextLine]
                 .compactMap { $0 }

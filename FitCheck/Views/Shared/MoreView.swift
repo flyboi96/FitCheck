@@ -35,6 +35,12 @@ struct MoreView: View {
                 } label: {
                     Label("Scoring", systemImage: "sum")
                 }
+
+                NavigationLink {
+                    ContextStylesView()
+                } label: {
+                    Label("Context Styles", systemImage: "list.bullet.rectangle")
+                }
             }
 
             Section("App") {
@@ -46,6 +52,142 @@ struct MoreView: View {
             }
         }
         .navigationTitle("More")
+    }
+}
+
+struct ContextStylesView: View {
+    @AppStorage("fitcheckContextStyleNotes") private var contextStyleNotes = ContextStyleCatalog.defaultNotes
+
+    @State private var editedDefinitions: [String: String] = [:]
+    @State private var extraNotes = ""
+    @State private var statusMessage = ""
+
+    var body: some View {
+        List {
+            Section("What This Controls") {
+                Text("These definitions tell AI what each outfit context means for you. Today, Build, and Plans send the same definitions when asking AI.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Local scoring still uses built-in fashion and weather rules. Use Style Preferences for broader personal rules like colors, fit, and combinations you dislike.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Definitions") {
+                ForEach(ContextStyleCatalog.definitions) { definition in
+                    NavigationLink {
+                        ContextStyleEditorView(
+                            title: definition.context.displayName,
+                            examples: definition.examples,
+                            defaultDefinition: definition.defaultDefinition,
+                            text: definitionBinding(for: definition.context)
+                        )
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(definition.context.displayName)
+                                .font(.body.weight(.medium))
+                            Text(editedDefinitions[definition.context.rawValue] ?? definition.defaultDefinition)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                }
+            }
+
+            Section("Add Personal Context Notes") {
+                TextEditor(text: $extraNotes)
+                    .frame(minHeight: 110)
+                Text("Optional. Add custom definitions or personal variants here, such as 'Pilot work day: business casual, travel-friendly, no shorts.' These notes are sent to AI, but they do not add new selectable buttons yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Button {
+                    save()
+                } label: {
+                    Label("Save Context Styles", systemImage: "checkmark.circle")
+                }
+
+                Button(role: .destructive) {
+                    resetToDefaults()
+                } label: {
+                    Label("Reset to Defaults", systemImage: "arrow.counterclockwise")
+                }
+
+                if !statusMessage.isEmpty {
+                    Text(statusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Context Styles")
+        .onAppear(perform: load)
+    }
+
+    private func definitionBinding(for context: OutfitContextOption) -> Binding<String> {
+        Binding(
+            get: {
+                editedDefinitions[context.rawValue] ??
+                    ContextStyleCatalog.definitions.first(where: { $0.context == context })?.defaultDefinition ??
+                    ""
+            },
+            set: { editedDefinitions[context.rawValue] = $0 }
+        )
+    }
+
+    private func load() {
+        editedDefinitions = Dictionary(uniqueKeysWithValues: ContextStyleCatalog.definitions.map {
+            ($0.context.rawValue, ContextStyleCatalog.definition(for: $0.context, in: contextStyleNotes))
+        })
+        extraNotes = ContextStyleCatalog.extraNotes(from: contextStyleNotes)
+    }
+
+    private func save() {
+        contextStyleNotes = ContextStyleCatalog.notes(definitions: editedDefinitions, extraNotes: extraNotes)
+        statusMessage = "Context styles saved."
+    }
+
+    private func resetToDefaults() {
+        contextStyleNotes = ContextStyleCatalog.defaultNotes
+        load()
+        statusMessage = "Context styles reset to defaults."
+    }
+}
+
+private struct ContextStyleEditorView: View {
+    var title: String
+    var examples: String
+    var defaultDefinition: String
+    @Binding var text: String
+
+    var body: some View {
+        Form {
+            Section("Definition") {
+                TextEditor(text: $text)
+                    .frame(minHeight: 160)
+                Text("Describe what this context should mean for your closet. Keep it practical: clothing type, dressiness, shoes, weather, and any hard no's.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Examples") {
+                Text(examples)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Button {
+                    text = defaultDefinition
+                } label: {
+                    Label("Reset This Definition", systemImage: "arrow.counterclockwise")
+                }
+            }
+        }
+        .navigationTitle(title)
     }
 }
 

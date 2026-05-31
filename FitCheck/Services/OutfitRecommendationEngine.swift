@@ -208,6 +208,149 @@ enum OutfitContextOption: String, CaseIterable, Identifiable {
     }
 }
 
+struct ContextStyleDefinition: Identifiable {
+    var context: OutfitContextOption
+    var defaultDefinition: String
+    var examples: String
+
+    var id: String { context.rawValue }
+}
+
+enum ContextStyleCatalog {
+    static let definitions: [ContextStyleDefinition] = [
+        ContextStyleDefinition(
+            context: .businessFormal,
+            defaultDefinition: "Suit or blazer-level polish, tailored pants or dress/skirt, dress shoes, conservative colors.",
+            examples: "Suit, blazer, dress shirt, blouse, tie, tailored trousers, formal dress, Oxfords, heels, loafers."
+        ),
+        ContextStyleDefinition(
+            context: .businessCasual,
+            defaultDefinition: "Professional but relaxed; collared shirt or blouse, chinos/slacks/skirt, belt when it improves the look, loafers/boots/Oxfords/clean leather sneakers when appropriate.",
+            examples: "Button-down, polo, merino sweater, chinos, slacks, skirt, polished boots, loafers."
+        ),
+        ContextStyleDefinition(
+            context: .smartCasual,
+            defaultDefinition: "Elevated everyday style; mix one polished piece with one relaxed piece, clean shoes, no sloppy gym or lounge items.",
+            examples: "Merino knit with chinos, sharp shirt with dark denim, clean sneakers, loafers, casual jacket."
+        ),
+        ContextStyleDefinition(
+            context: .everydayCasual,
+            defaultDefinition: "Comfortable normal-day outfit that still looks intentional.",
+            examples: "T-shirt or casual shirt, shorts or jeans, sneakers, simple layers."
+        ),
+        ContextStyleDefinition(
+            context: .floridaCasual,
+            defaultDefinition: "Breathable hot-weather outfit; linen, cotton, shorts when appropriate, minimal layers.",
+            examples: "Linen shirt, lightweight button-down, tee, shorts, breathable sneakers or sandals where appropriate."
+        ),
+        ContextStyleDefinition(
+            context: .streetCasual,
+            defaultDefinition: "Casual expressive style using sneakers, tees, hoodies, denim/cargos, overshirts, or statement pieces.",
+            examples: "Statement tee, overshirt, denim, cargos, sneakers, bold color used intentionally."
+        ),
+        ContextStyleDefinition(
+            context: .athleisure,
+            defaultDefinition: "Athletic-inspired casual outfit for errands or travel; no belt required.",
+            examples: "Performance shirt, joggers, clean athletic sneakers, quarter zip, comfortable layers."
+        ),
+        ContextStyleDefinition(
+            context: .travelDay,
+            defaultDefinition: "Comfortable, layerable, weather-aware, airport-friendly.",
+            examples: "Breathable shirt, comfortable pants, easy shoes, light layer, low-maintenance colors."
+        ),
+        ContextStyleDefinition(
+            context: .gym,
+            defaultDefinition: "Actual workout clothing, no belts or dress accessories.",
+            examples: "Exercise shirt, exercise shorts or pants, training shoes, athletic socks."
+        ),
+        ContextStyleDefinition(
+            context: .runningDay,
+            defaultDefinition: "Running-specific workout outfit with weather-appropriate performance clothing.",
+            examples: "Running shirt, running shorts/tights, running shoes, running socks."
+        ),
+        ContextStyleDefinition(
+            context: .liftingDay,
+            defaultDefinition: "Lifting-specific workout outfit with stable shoes and gym-appropriate clothing.",
+            examples: "Training shirt, exercise shorts/pants, lifting shoes or stable trainers, lifting socks."
+        ),
+        ContextStyleDefinition(
+            context: .dateNight,
+            defaultDefinition: "Intentional dinner or date outfit; polished enough to look deliberate without defaulting to formalwear.",
+            examples: "Button-down, merino knit, dark pants, polished boots, loafers, clean elevated sneakers."
+        ),
+        ContextStyleDefinition(
+            context: .wedding,
+            defaultDefinition: "Formal event attire; respect the dress code first, then weather and comfort.",
+            examples: "Suit, tie, blazer, formal dress, dress shoes, heels, polished accessories."
+        )
+    ]
+
+    static var defaultNotes: String {
+        definitions
+            .map { "\($0.context.displayName): \($0.defaultDefinition)" }
+            .joined(separator: "\n")
+    }
+
+    static func resolvedNotes(_ storedNotes: String) -> String {
+        let trimmed = storedNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? defaultNotes : storedNotes
+    }
+
+    static func parsedDefinitions(from notes: String) -> [String: String] {
+        var result: [String: String] = [:]
+        let source = resolvedNotes(notes)
+        for line in source.components(separatedBy: .newlines) {
+            let parts = line.split(separator: ":", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty, !value.isEmpty else { continue }
+            result[key] = value
+        }
+        return result
+    }
+
+    static func definition(for context: OutfitContextOption, in notes: String) -> String {
+        let parsed = parsedDefinitions(from: notes)
+        return parsed[context.displayName.lowercased()] ??
+            definitions.first(where: { $0.context == context })?.defaultDefinition ??
+            ""
+    }
+
+    static func extraNotes(from notes: String) -> String {
+        let knownLabels = Set(definitions.map { $0.context.displayName.lowercased() })
+        let source = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty else { return "" }
+
+        return source
+            .components(separatedBy: .newlines)
+            .filter { line in
+                let parts = line.split(separator: ":", maxSplits: 1).map(String.init)
+                guard let label = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else {
+                    return true
+                }
+                return !knownLabels.contains(label)
+            }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func notes(definitions editedDefinitions: [String: String], extraNotes: String) -> String {
+        var lines = definitions.map { definition in
+            let value = editedDefinitions[definition.context.rawValue]?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return "\(definition.context.displayName): \(value?.isEmpty == false ? value! : definition.defaultDefinition)"
+        }
+
+        let trimmedExtra = extraNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedExtra.isEmpty {
+            lines.append(trimmedExtra)
+        }
+
+        return lines.joined(separator: "\n")
+    }
+}
+
 struct ClothingInference {
     struct Metadata {
         var color: String

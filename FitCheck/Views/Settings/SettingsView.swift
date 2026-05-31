@@ -5,25 +5,12 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
 
-    private static let defaultContextStyleNotes = """
-Business formal: suit or blazer-level polish, tailored pants or dress/skirt, dress shoes, conservative colors.
-Business casual: professional but relaxed; collared shirt or blouse, chinos/slacks/skirt, belt when it improves the look, loafers/boots/Oxfords/clean leather sneakers when appropriate.
-Smart casual: elevated everyday style; mix one polished piece with one relaxed piece, clean shoes, no sloppy gym or lounge items.
-Everyday casual: comfortable normal-day outfit that still looks intentional.
-Hot-weather casual: breathable warm-weather outfit; linen, cotton, shorts when appropriate, minimal layers.
-Streetwear: casual expressive style using sneakers, tees, hoodies, denim/cargos, overshirts, or statement pieces.
-Athleisure: athletic-inspired casual outfit for errands or travel; no belt required.
-Travel day: comfortable, layerable, weather-aware, airport-friendly.
-Gym / Training: actual workout clothing, no belts or dress accessories.
-"""
-
     @AppStorage("fitcheckUseAIProxy") private var useAIProxy = false
     @AppStorage("fitcheckAIProxyURL") private var aiProxyURL = ""
     @AppStorage("fitcheckAIProxyToken") private var aiProxyToken = ""
     @AppStorage("fitcheckWeatherFallbackName") private var fallbackName = WeatherLookupFallback.default.name
     @AppStorage("fitcheckWearerProfile") private var wearerProfile = WearerProfileOption.unspecified.rawValue
     @AppStorage("fitcheckDefaultOutfitContext") private var defaultOutfitContext = OutfitContextOption.businessCasual.rawValue
-    @AppStorage("fitcheckContextStyleNotes") private var contextStyleNotes = Self.defaultContextStyleNotes
 
     @State private var isExportingBackup = false
     @State private var isImportingBackup = false
@@ -66,9 +53,12 @@ Gym / Training: actual workout clothing, no belts or dress accessories.
             }
 
             Section("Context Style Notes") {
-                TextEditor(text: $contextStyleNotes)
-                    .frame(minHeight: 180)
-                Text("Edit these defaults in your own words. AI review uses them to interpret what Business Casual, Smart Casual, Florida Casual, and similar contexts mean for you.")
+                NavigationLink {
+                    ContextStylesView()
+                } label: {
+                    Label("Edit Context Styles", systemImage: "list.bullet.rectangle")
+                }
+                Text("Context definitions now live in More so they are easier to find. AI review and AI outfit itinerary use these definitions to interpret each context.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

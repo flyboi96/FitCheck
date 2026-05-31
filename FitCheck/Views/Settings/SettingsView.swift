@@ -5,11 +5,22 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
 
+    private static let defaultContextStyleNotes = """
+Business casual: collared shirt, chinos or dress pants, belt when it improves the look, polished boots/loafers/sneakers when appropriate.
+Business formal: dress shirt, tailored pants or suit, polished dress shoes, conservative colors.
+Smart casual: elevated casual outfit; sharp shirt or knit, good pants or clean shorts when weather/context allows, intentional shoes.
+Street casual: relaxed but stylish; sneakers, tees, denim, shorts, overshirts, bolder pieces allowed.
+Athleisure: athletic pieces worn casually; no belt required.
+Florida casual: hot-weather casual; shorts, breathable shirts, sneakers or sandals where appropriate.
+"""
+
     @AppStorage("fitcheckUseAIProxy") private var useAIProxy = false
     @AppStorage("fitcheckAIProxyURL") private var aiProxyURL = ""
     @AppStorage("fitcheckAIProxyToken") private var aiProxyToken = ""
     @AppStorage("fitcheckWeatherFallbackName") private var fallbackName = WeatherLookupFallback.default.name
     @AppStorage("fitcheckWearerProfile") private var wearerProfile = WearerProfileOption.unspecified.rawValue
+    @AppStorage("fitcheckDefaultOutfitContext") private var defaultOutfitContext = OutfitContextOption.businessCasual.rawValue
+    @AppStorage("fitcheckContextStyleNotes") private var contextStyleNotes = Self.defaultContextStyleNotes
 
     @State private var isExportingBackup = false
     @State private var isImportingBackup = false
@@ -36,6 +47,25 @@ struct SettingsView: View {
                     }
                 }
                 Text("Used as context for AI outfit reviews and future personalization. Keep it unset if you do not want gendered style assumptions.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Outfit Defaults") {
+                Picker("Default context", selection: $defaultOutfitContext) {
+                    ForEach(OutfitContextOption.allCases) { option in
+                        Text(option.displayName).tag(option.rawValue)
+                    }
+                }
+                Text("Today and Build start with this context. You can still change the context before generating an outfit.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Context Style Notes") {
+                TextEditor(text: $contextStyleNotes)
+                    .frame(minHeight: 180)
+                Text("Edit these defaults in your own words. AI review uses them to interpret what Business Casual, Smart Casual, Florida Casual, and similar contexts mean for you.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -286,7 +286,7 @@ struct TripPlanningService {
             return []
         }
 
-        let needsBeltOrDressAccessory = requestedContexts.contains { [.workDay, .dateNight, .dinner, .wedding].contains($0) } ||
+        let needsBeltOrDressAccessory = requestedContexts.contains { [.businessCasual, .businessFormal, .smartCasual, .smartStreetwear, .workDay, .dateNight, .dinner, .wedding].contains($0) } ||
             text.containsAny(["work", "office", "business", "conference", "meeting", "dinner", "date", "wedding", "formal", "collared", "belt"])
 
         if needsBeltOrDressAccessory {
@@ -797,7 +797,7 @@ struct TripPlanningService {
         switch context {
         case .gym, .runningDay, .liftingDay:
             return true
-        case .casualDay, .dateNight, .workDay, .travelDay, .dinner, .walkingAroundCity, .outdoors, .errands, .wedding:
+        case .businessCasual, .businessFormal, .smartCasual, .smartStreetwear, .casualDay, .everydayCasual, .streetCasual, .floridaCasual, .dateNight, .workDay, .travelDay, .dinner, .athleisure, .walkingAroundCity, .outdoors, .errands, .wedding:
             return false
         }
     }

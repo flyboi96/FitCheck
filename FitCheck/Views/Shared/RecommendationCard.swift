@@ -156,10 +156,10 @@ struct RecommendationCard: View {
     }
 
     private var scoreTint: Color {
-        if recommendation.score >= 100 {
+        if recommendation.score >= 75 {
             return .green
         }
-        if recommendation.score >= 70 {
+        if recommendation.score >= 0 {
             return .orange
         }
         return .red

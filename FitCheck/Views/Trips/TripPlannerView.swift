@@ -200,6 +200,7 @@ private struct TripDetailView: View {
     @AppStorage("fitcheckAIProxyURL") private var aiProxyURL = ""
     @AppStorage("fitcheckAIProxyToken") private var aiProxyToken = ""
     @AppStorage("fitcheckWearerProfile") private var wearerProfile = WearerProfileOption.unspecified.rawValue
+    @AppStorage("fitcheckContextStyleNotes") private var contextStyleNotes = ""
 
     @Bindable var trip: Trip
     @State private var showingStopEditor = false
@@ -833,9 +834,15 @@ private struct TripDetailView: View {
     private var styleDescription: String {
         let currentWearerProfile = WearerProfileOption(rawValue: wearerProfile) ?? .unspecified
         let wearerLine = currentWearerProfile == .unspecified ? nil : "Wearer profile: \(currentWearerProfile.displayName)"
-        guard let preference = preferences.first else { return wearerLine ?? "" }
+        let contextLine = contextStyleNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : "Context style notes:\n\(contextStyleNotes)"
+        guard let preference = preferences.first else {
+            return [wearerLine, contextLine]
+                .compactMap { $0 }
+                .joined(separator: "\n")
+        }
         return [
             wearerLine,
+            contextLine,
             preference.styleDescription,
             preference.favoriteLooks,
             preference.preferredColors,
@@ -2015,9 +2022,17 @@ private struct TripStopEditorView: View {
 }
 
 private let fitCheckPlanContextOptions: [OutfitContextOption] = [
+    .businessCasual,
+    .businessFormal,
+    .smartCasual,
+    .smartStreetwear,
+    .everydayCasual,
+    .streetCasual,
+    .floridaCasual,
     .workDay,
     .travelDay,
     .casualDay,
+    .athleisure,
     .walkingAroundCity,
     .dinner,
     .dateNight,

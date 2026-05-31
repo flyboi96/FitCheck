@@ -13,6 +13,7 @@ struct TodayOutfitView: View {
     @AppStorage("fitcheckAIProxyURL") private var aiProxyURL = ""
     @AppStorage("fitcheckAIProxyToken") private var aiProxyToken = ""
     @AppStorage("fitcheckWearerProfile") private var wearerProfile = WearerProfileOption.unspecified.rawValue
+    @AppStorage("fitcheckContextStyleNotes") private var contextStyleNotes = ""
 
     @StateObject private var weatherLookup = WeatherLookupController()
     @State private var manualLocationQuery = ""
@@ -23,7 +24,7 @@ struct TodayOutfitView: View {
     @State private var manualWeatherCondition = "Clear"
     @State private var manualWeatherIsRaining = false
     @State private var manualWeatherOverride: WeatherInput?
-    @State private var selectedContext = OutfitContextOption.casualDay.rawValue
+    @State private var selectedContext = UserDefaults.standard.string(forKey: "fitcheckDefaultOutfitContext") ?? OutfitContextOption.businessCasual.rawValue
     @State private var recommendations: [OutfitRecommendation] = []
     @State private var aiReviews: [String: AIOutfitResponse] = [:]
     @State private var aiReviewErrors: [String: String] = [:]
@@ -745,9 +746,15 @@ struct TodayOutfitView: View {
 
     private var styleDescription: String {
         let wearerLine = currentWearerProfile == .unspecified ? nil : "Wearer profile: \(currentWearerProfile.displayName)"
-        guard let stylePreference = stylePreferences.first else { return wearerLine ?? "" }
+        let contextLine = contextStyleNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : "Context style notes:\n\(contextStyleNotes)"
+        guard let stylePreference = stylePreferences.first else {
+            return [wearerLine, contextLine]
+                .compactMap { $0 }
+                .joined(separator: "\n")
+        }
         return [
             wearerLine,
+            contextLine,
             stylePreference.styleDescription,
             stylePreference.favoriteLooks,
             stylePreference.preferredColors,

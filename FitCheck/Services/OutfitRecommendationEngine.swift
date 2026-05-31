@@ -57,11 +57,19 @@ enum ActivityOption: String, CaseIterable, Identifiable {
 }
 
 enum OutfitContextOption: String, CaseIterable, Identifiable {
+    case businessCasual = "business casual"
+    case businessFormal = "business formal"
+    case smartCasual = "smart casual"
+    case smartStreetwear = "smart streetwear"
     case casualDay = "casual day"
+    case everydayCasual = "everyday casual"
+    case streetCasual = "street casual"
+    case floridaCasual = "florida casual"
     case dateNight = "date night"
     case workDay = "work day"
     case travelDay = "travel day"
     case dinner
+    case athleisure
     case gym
     case runningDay = "running day"
     case liftingDay = "lifting day"
@@ -74,11 +82,19 @@ enum OutfitContextOption: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
+        case .businessCasual: "Business Casual"
+        case .businessFormal: "Business Formal"
+        case .smartCasual: "Smart Casual"
+        case .smartStreetwear: "Smart Streetwear"
         case .casualDay: "Casual Day"
+        case .everydayCasual: "Everyday Casual"
+        case .streetCasual: "Street Casual"
+        case .floridaCasual: "Florida Casual"
         case .dateNight: "Date Night"
         case .workDay: "Work / Office"
         case .travelDay: "Travel Day"
         case .dinner: "Dinner"
+        case .athleisure: "Athleisure"
         case .gym: "Gym"
         case .runningDay: "Running"
         case .liftingDay: "Lifting"
@@ -91,7 +107,15 @@ enum OutfitContextOption: String, CaseIterable, Identifiable {
 
     var occasion: String {
         switch self {
-        case .casualDay, .errands, .outdoors:
+        case .businessCasual:
+            "business casual"
+        case .businessFormal:
+            "business formal"
+        case .smartCasual:
+            "smart casual"
+        case .smartStreetwear:
+            "smart streetwear"
+        case .casualDay, .everydayCasual, .streetCasual, .floridaCasual, .athleisure, .errands, .outdoors:
             OccasionOption.casual.rawValue
         case .dateNight:
             OccasionOption.dateNight.rawValue
@@ -112,14 +136,22 @@ enum OutfitContextOption: String, CaseIterable, Identifiable {
 
     var activity: String {
         switch self {
-        case .casualDay:
+        case .businessCasual, .workDay:
+            ActivityOption.office.rawValue
+        case .businessFormal:
+            ActivityOption.formalEvent.rawValue
+        case .smartCasual, .smartStreetwear:
+            ActivityOption.dinner.rawValue
+        case .casualDay, .everydayCasual, .streetCasual:
             ActivityOption.walkingAroundCity.rawValue
         case .dateNight, .dinner:
             ActivityOption.dinner.rawValue
-        case .workDay:
-            ActivityOption.office.rawValue
         case .travelDay:
             ActivityOption.travel.rawValue
+        case .floridaCasual:
+            ActivityOption.outdoors.rawValue
+        case .athleisure:
+            ActivityOption.errands.rawValue
         case .gym:
             ActivityOption.gym.rawValue
         case .runningDay:
@@ -1205,10 +1237,39 @@ struct OutfitRecommendationEngine {
     private func tagScore(_ tags: String, target: String) -> Double {
         let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return 0 }
-        if tags.fitcheckContainsTag(trimmed) {
+        if scoringTargets(for: trimmed).contains(where: { tags.fitcheckContainsTag($0) }) {
             return 12
         }
-        return tags.fitcheckTags.isEmpty ? 0 : -6
+        return tags.fitcheckTags.isEmpty ? 0 : -3
+    }
+
+    private func scoringTargets(for target: String) -> [String] {
+        let text = target.lowercased()
+        if text.contains("business casual") {
+            return ["business casual", "work", "office", "dinner", "casual"]
+        }
+        if text.contains("business formal") {
+            return ["business formal", "work", "formal event", "wedding"]
+        }
+        if text.contains("smart casual") {
+            return ["smart casual", "dinner", "date night", "casual"]
+        }
+        if text.contains("smart streetwear") {
+            return ["smart streetwear", "walking around city", "dinner", "casual"]
+        }
+        if text.contains("street casual") {
+            return ["street casual", "walking around city", "casual"]
+        }
+        if text.contains("everyday casual") {
+            return ["everyday casual", "walking around city", "errands", "casual"]
+        }
+        if text.contains("florida casual") {
+            return ["florida casual", "outdoors", "walking around city", "casual"]
+        }
+        if text.contains("athleisure") {
+            return ["athleisure", "gym", "walking around city", "casual"]
+        }
+        return [target]
     }
 
     private func colorCompatibilityScore(_ items: [ClothingItem]) -> (value: Double, notes: [String]) {
@@ -1394,8 +1455,8 @@ struct OutfitRecommendationEngine {
         }
 
         if collaredShirtNeedsBelt(items, stylePreference: stylePreference) {
-            value -= 55
-            notes.append("Style preference: collared shirt would be better with a belt")
+            value -= 15
+            notes.append("Style preference: add a belt with collared shirts")
         }
 
         let personalRuleValue = personalRuleScore(items: items, request: request, stylePreference: stylePreference)
@@ -1763,7 +1824,7 @@ struct OutfitRecommendationEngine {
     private func isPolishedContext(_ request: RecommendationRequest) -> Bool {
         "\(request.occasion) \(request.activity)"
             .lowercased()
-            .containsAny(["date", "dinner", "wedding", "formal", "office", "business", "work", "pilot", "flight", "airline", "duty"])
+            .containsAny(["date", "dinner", "wedding", "formal", "office", "business", "smart casual", "smart streetwear", "work", "pilot", "flight", "airline", "duty"])
     }
 
     private func styleExplicitlyLikesCasualFootwear(_ stylePreference: StylePreference?) -> Bool {
@@ -1818,10 +1879,7 @@ struct OutfitRecommendationEngine {
         let requestText = "\(request.occasion) \(request.activity)".lowercased()
 
         if isBeltWithCollaredTopRequirement(rule) {
-            let hasCollaredTop = items.contains { isCollaredTop($0) || isWorkTop($0) }
-            let hasBeltLoopBottom = items.contains(where: isBeltLoopBottom)
-            let hasBelt = items.contains { $0.category == .belt }
-            return hasCollaredTop && hasBeltLoopBottom && !hasBelt
+            return false
         }
 
         if rule.containsAny(["work", "office", "business", "pilot", "flight", "airline", "duty"]),
@@ -2111,13 +2169,13 @@ struct OutfitRecommendationEngine {
         if text.contains("wedding") || text.contains("formal") {
             return 5
         }
-        if text.contains("date") || text.contains("dinner") || text.contains("work") {
+        if text.contains("business casual") || text.contains("date") || text.contains("dinner") || text.contains("work") || text.contains("smart casual") {
             return 4
         }
-        if text.contains("travel") || text.contains("city") {
+        if text.contains("street") || text.contains("travel") || text.contains("city") {
             return 3
         }
-        if text.contains("gym") || text.contains("walk") {
+        if text.contains("florida") || text.contains("everyday") || text.contains("athleisure") || text.contains("gym") || text.contains("walk") {
             return 2
         }
         return 3

@@ -614,6 +614,175 @@ struct OutfitRecommendationEngine {
             .map { $0 }
     }
 
+    func noMatchReasons(
+        closet: [ClothingItem],
+        stylePreference: StylePreference?,
+        request: RecommendationRequest
+    ) -> [String] {
+        let activeItems = closet.filter { $0.status == .active }
+        guard !activeItems.isEmpty else {
+            return ["No active closet items are available."]
+        }
+
+        let needsExerciseClothing = isExerciseContext(request)
+        let rawTops = activeItems
+            .filter { isTopItem($0, request: request) && !isFootwearItem($0, request: request) }
+        let rawBottoms = activeItems
+            .filter { isBottomItem($0, request: request) && !isFootwearItem($0, request: request) }
+        let rawShoes = activeItems
+            .filter { isFootwearItem($0, request: request) }
+        let eligibleTops = rawTops
+            .filter { !needsExerciseClothing || isExerciseItem($0) }
+            .filter { isEligibleTop($0, request: request) }
+        let eligibleBottoms = rawBottoms
+            .filter { !needsExerciseClothing || isExerciseItem($0) }
+            .filter { isEligibleBottom($0, request: request) }
+        let eligibleShoes = rawShoes
+            .filter { !needsExerciseClothing || isExerciseItem($0) }
+            .filter { isEligibleFootwear($0, request: request) }
+
+        var reasons: [String] = []
+
+        if let selected = request.selectedItem, selected.status != .active {
+            reasons.append("\(selected.name) is not active in the closet.")
+        }
+
+        appendRoleReason(
+            rawCount: rawTops.count,
+            eligibleCount: eligibleTops.count,
+            role: "top",
+            request: request,
+            needsExerciseClothing: needsExerciseClothing,
+            reasons: &reasons
+        )
+
+        let hasDress = eligibleTops.contains { $0.category == .dress }
+        appendRoleReason(
+            rawCount: rawBottoms.count,
+            eligibleCount: hasDress ? 1 : eligibleBottoms.count,
+            role: "bottom",
+            request: request,
+            needsExerciseClothing: needsExerciseClothing,
+            reasons: &reasons
+        )
+
+        appendRoleReason(
+            rawCount: rawShoes.count,
+            eligibleCount: eligibleShoes.count,
+            role: "shoes",
+            request: request,
+            needsExerciseClothing: needsExerciseClothing,
+            reasons: &reasons
+        )
+
+        if isWorkContext(request) {
+            if activeItems.contains(where: { $0.category == .shorts }) {
+                reasons.append("Work rules remove shorts.")
+            }
+            if activeItems.contains(where: isWorkInappropriateActiveBottom) {
+                reasons.append("Work rules remove sweatpants, joggers, and exercise bottoms.")
+            }
+            if activeItems.contains(where: isWorkInappropriateFootwear) {
+                reasons.append("Work rules remove Crocs, clogs, slides, sandals, slippers, and athletic shoes.")
+            }
+            if !activeItems.contains(where: isWorkTop) {
+                reasons.append("No work top was recognized. Use names like button-down, oxford, dress shirt, collared, polo, blouse, or merino sweater.")
+            }
+            if !activeItems.contains(where: isTailoredBottom) {
+                reasons.append("No tailored work bottom was recognized. Use names like chino, khaki, slack, trouser, dress pant, wool pant, or skirt.")
+            }
+            if !activeItems.contains(where: { isFootwearItem($0, request: nil) && !isWorkInappropriateFootwear($0) }) {
+                reasons.append("No polished work shoe was recognized. Crocs, clogs, sandals, slides, and athletic shoes are blocked for work.")
+            }
+        }
+
+        if needsExerciseClothing {
+            reasons.append("Exercise contexts only use items that look like gym, running, lifting, athletic, performance, trainer, or activewear items.")
+        }
+
+        if collaredShirtNeedsBeltPossible(
+            tops: eligibleTops,
+            bottoms: eligibleBottoms,
+            activeItems: activeItems,
+            stylePreference: stylePreference
+        ) {
+            reasons.append("Your style rules require a belt with collared shirts, but no active belt can complete those outfits.")
+        }
+
+        if hotHumidJacketIsHardNo(weather: request.weather, stylePreference: stylePreference),
+           activeItems.contains(where: { $0.category == .jacket && !isRainShell($0) }) {
+            reasons.append("Hot humid weather removes non-rain-shell jackets.")
+        }
+
+        let personalRules = personalRuleStatements(stylePreference)
+        if !personalRules.isEmpty {
+            reasons.append("Personal rules and disliked combinations are applied as hard blockers when they match an outfit.")
+        }
+
+        if reasons.isEmpty {
+            reasons.append("FitCheck found closet roles, but every combination broke a hard fashion, weather, or personal rule.")
+        }
+
+        return limitedUniqueNotes(reasons)
+    }
+
+    private func appendRoleReason(
+        rawCount: Int,
+        eligibleCount: Int,
+        role: String,
+        request: RecommendationRequest,
+        needsExerciseClothing: Bool,
+        reasons: inout [String]
+    ) {
+        guard eligibleCount == 0 else { return }
+
+        if rawCount == 0 {
+            switch role {
+            case "top":
+                reasons.append("No active top or dress was found.")
+            case "bottom":
+                reasons.append("No active bottom or dress was found.")
+            case "shoes":
+                reasons.append("No active shoes were found.")
+            default:
+                reasons.append("No active \(role) was found.")
+            }
+            return
+        }
+
+        if needsExerciseClothing {
+            reasons.append("Some \(role) items exist, but none were recognized as exercise-specific for this context.")
+        } else if isWorkContext(request) {
+            switch role {
+            case "top":
+                reasons.append("Tops exist, but none passed work rules.")
+            case "bottom":
+                reasons.append("Bottoms exist, but none passed work rules.")
+            case "shoes":
+                reasons.append("Shoes exist, but none passed work rules.")
+            default:
+                reasons.append("\(role.capitalized) items exist, but none passed work rules.")
+            }
+        } else if isPolishedContext(request) {
+            reasons.append("\(role.capitalized) items exist, but polished-context rules filtered them out.")
+        } else {
+            reasons.append("\(role.capitalized) items exist, but the current context filtered them out.")
+        }
+    }
+
+    private func collaredShirtNeedsBeltPossible(
+        tops: [ClothingItem],
+        bottoms: [ClothingItem],
+        activeItems: [ClothingItem],
+        stylePreference: StylePreference?
+    ) -> Bool {
+        guard requiresBeltWithCollaredShirt(stylePreference) else { return false }
+        let hasCollaredTop = tops.contains { isCollaredTop($0) }
+        let hasBeltLoopBottom = bottoms.contains { isBeltLoopBottom($0) }
+        let hasBelt = activeItems.contains { $0.category == .belt }
+        return hasCollaredTop && hasBeltLoopBottom && !hasBelt
+    }
+
     private func constrainedPool(
         categories: Set<ClothingCategory>,
         items: [ClothingItem],

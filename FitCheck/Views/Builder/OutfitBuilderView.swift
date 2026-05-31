@@ -39,6 +39,7 @@ struct OutfitBuilderView: View {
     @State private var aiBuildError = ""
     @State private var weatherActionStatus = ""
     @State private var builderStatus = ""
+    @State private var noMatchReasons: [String] = []
     @State private var feedbackTarget: OutfitRecommendation?
     @State private var editingRecommendation: OutfitRecommendation?
 
@@ -147,6 +148,7 @@ struct OutfitBuilderView: View {
                         .foregroundStyle(.secondary)
                 }
                 FitCheckInlineStatus(message: builderStatus)
+                FitCheckNoMatchDiagnosticsView(reasons: noMatchReasons)
             }
 
             if filteredItemGroups.isEmpty {
@@ -329,20 +331,29 @@ struct OutfitBuilderView: View {
         avatarPreviews = [:]
         avatarPreviewErrors = [:]
         aiBuildError = ""
+        let request = RecommendationRequest(
+            weather: weather,
+            occasion: currentContext.occasion,
+            activity: currentContext.activity,
+            selectedItem: selectedItem
+        )
         recommendations = engine.recommend(
             closet: closetItems,
             feedback: feedback,
             stylePreference: stylePreferences.first,
-            request: RecommendationRequest(
-                weather: weather,
-                occasion: currentContext.occasion,
-                activity: currentContext.activity,
-                selectedItem: selectedItem
-            )
+            request: request
         )
-        builderStatus = recommendations.isEmpty
-            ? "No outfit matched this item and context."
-            : "Built \(recommendations.count) outfit\(recommendations.count == 1 ? "" : "s") around \(selectedItem.name)."
+        if recommendations.isEmpty {
+            noMatchReasons = engine.noMatchReasons(
+                closet: closetItems,
+                stylePreference: stylePreferences.first,
+                request: request
+            )
+            builderStatus = "No outfit matched. See blockers below."
+        } else {
+            noMatchReasons = []
+            builderStatus = "Built \(recommendations.count) outfit\(recommendations.count == 1 ? "" : "s") around \(selectedItem.name)."
+        }
     }
 
     private func generateWithVisibleFeedback() {
@@ -372,6 +383,7 @@ struct OutfitBuilderView: View {
         isAIChoosingOutfit = true
         aiBuildError = ""
         builderStatus = "Asking AI to build around your selected item."
+        noMatchReasons = []
         aiReviews = [:]
         aiReviewErrors = [:]
         avatarPreviews = [:]
@@ -408,6 +420,11 @@ struct OutfitBuilderView: View {
             guard engine.isAcceptableOutfit(chosenItems, request: request, stylePreference: stylePreferences.first) else {
                 aiBuildError = "AI returned an incomplete outfit or broke a hard style/weather rule. Try Ask AI First again or use Build Outfit."
                 builderStatus = "AI returned an unusable outfit."
+                noMatchReasons = engine.noMatchReasons(
+                    closet: closetItems,
+                    stylePreference: stylePreferences.first,
+                    request: request
+                )
                 return
             }
 
@@ -421,6 +438,7 @@ struct OutfitBuilderView: View {
 
             recommendations = [recommendation]
             aiReviews[recommendation.combinationKey] = response
+            noMatchReasons = []
             builderStatus = "AI picked an outfit and FitCheck scored it locally."
         } catch {
             aiBuildError = error.localizedDescription
@@ -453,6 +471,7 @@ struct OutfitBuilderView: View {
         aiReviewErrors = [:]
         avatarPreviews = [:]
         avatarPreviewErrors = [:]
+        noMatchReasons = []
         builderStatus = "Edited outfit and updated the score."
     }
 

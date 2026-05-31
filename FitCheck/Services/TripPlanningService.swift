@@ -29,9 +29,7 @@ struct TripPlanningService {
 
         for item in chosen {
             let reason = packingReason(for: item, trip: trip, days: days)
-            let packingItem = PackingListItem(quantity: 1, reason: reason, item: item, packingList: list)
-            context.insert(packingItem)
-            list.items.append(packingItem)
+            upsertPackingItem(quantity: 1, reason: reason, item: item, list: list, context: context)
         }
 
         let exerciseDays = exerciseTargetDays(for: trip, days: days)
@@ -82,9 +80,7 @@ struct TripPlanningService {
         )
 
         for extra in packingExtras(for: trip, days: days, chosenItems: chosen) {
-            let packingItem = PackingListItem(quantity: extra.quantity, reason: extra.title, item: nil, packingList: list)
-            context.insert(packingItem)
-            list.items.append(packingItem)
+            upsertPackingItem(quantity: extra.quantity, reason: extra.title, item: nil, list: list, context: context)
         }
     }
 
@@ -400,23 +396,55 @@ struct TripPlanningService {
 
             let quantity = min(availableQuantity, remaining)
             let reason = "\(purpose.displayName(for: category)): target \(needed); this item has \(max(1, item.quantity)) available"
-            let packingItem = PackingListItem(quantity: quantity, reason: reason, item: item, packingList: list)
-            context.insert(packingItem)
-            list.items.append(packingItem)
+            upsertPackingItem(quantity: quantity, reason: reason, item: item, list: list, context: context)
             packedQuantities[item.id, default: 0] += quantity
             remaining -= quantity
         }
 
         if remaining > 0 {
-            let packingItem = PackingListItem(
+            upsertPackingItem(
                 quantity: remaining,
                 reason: "Add \(purpose.reasonLabel(for: category))",
                 item: nil,
-                packingList: list
+                list: list,
+                context: context
             )
-            context.insert(packingItem)
-            list.items.append(packingItem)
         }
+    }
+
+    private func upsertPackingItem(
+        quantity: Int,
+        reason: String,
+        item: ClothingItem?,
+        list: PackingList,
+        context: ModelContext
+    ) {
+        if let item,
+           let existing = list.items.first(where: { $0.item?.id == item.id }) {
+            existing.quantity = max(existing.quantity, quantity)
+            existing.reason = mergedReason(existing.reason, reason)
+            return
+        }
+
+        if item == nil,
+           let existing = list.items.first(where: { $0.item == nil && $0.reason == reason }) {
+            existing.quantity += quantity
+            return
+        }
+
+        let packingItem = PackingListItem(quantity: max(1, quantity), reason: reason, item: item, packingList: list)
+        context.insert(packingItem)
+        list.items.append(packingItem)
+    }
+
+    private func mergedReason(_ first: String, _ second: String) -> String {
+        let parts = [first, second]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var seen = Set<String>()
+        return parts
+            .filter { seen.insert($0).inserted }
+            .joined(separator: " + ")
     }
 
     private func baseLayerCandidates(
@@ -425,7 +453,7 @@ struct TripPlanningService {
         trip: Trip,
         closet: [ClothingItem]
     ) -> [ClothingItem] {
-        let categoryItems = closet.filter { $0.category == category }
+        let categoryItems = closet.filter { baseLayerCategoryMatches($0, category: category) }
         guard !categoryItems.isEmpty else { return [] }
 
         let dailyItems = categoryItems.filter { !isExerciseBaseLayerItem($0) }
@@ -434,14 +462,36 @@ struct TripPlanningService {
 
         switch purpose {
         case .daily:
-            preferredItems = dailyItems
+            preferredItems = dailyItems.isEmpty ? exerciseItems : dailyItems
         case .exercise:
-            preferredItems = exerciseItems
+            preferredItems = exerciseItems.isEmpty ? dailyItems : exerciseItems
         }
 
         return preferredItems.sorted {
             baseLayerSortScore($0, purpose: purpose, trip: trip) > baseLayerSortScore($1, purpose: purpose, trip: trip)
         }
+    }
+
+    private func baseLayerCategoryMatches(_ item: ClothingItem, category: ClothingCategory) -> Bool {
+        if item.category == category {
+            return true
+        }
+
+        let text = itemSearchText(item)
+        if category == .underwear,
+           [.activewear, .shorts].contains(item.category),
+           text.contains("compression"),
+           text.containsAny(["short", "brief", "underwear", "base layer", "baselayer", "liner"]) {
+            return true
+        }
+
+        if category == .socks,
+           item.category == .activewear,
+           text.containsAny(["sock", "socks"]) {
+            return true
+        }
+
+        return false
     }
 
     private func baseLayerSortScore(_ item: ClothingItem, purpose: BaseLayerPurpose, trip: Trip) -> Double {
@@ -775,7 +825,6 @@ struct TripPlanningService {
     }
 
     private func isExerciseBaseLayerItem(_ item: ClothingItem) -> Bool {
-        guard item.category == .underwear || item.category == .socks else { return false }
         let explicitText = [
             item.name,
             item.brand,
@@ -783,6 +832,14 @@ struct TripPlanningService {
         ]
         .joined(separator: " ")
         .lowercased()
+
+        guard item.category == .underwear ||
+            item.category == .socks ||
+            baseLayerCategoryMatches(item, category: .underwear) ||
+            baseLayerCategoryMatches(item, category: .socks)
+        else {
+            return false
+        }
 
         return explicitText.containsAny([
             "compression",

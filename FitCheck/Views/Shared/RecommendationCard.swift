@@ -77,6 +77,7 @@ struct RecommendationCard: View {
                     Label("Avatar Preview", systemImage: "person.crop.rectangle")
                         .font(.caption.weight(.semibold))
                     FitCheckPhotoPreview(data: avatarPreviewData, height: 360)
+                    FitCheckSaveImageButton(data: avatarPreviewData, title: "Save Preview to Photos")
                 }
             } else if let avatarPreviewError {
                 Label(avatarPreviewError, systemImage: "exclamationmark.triangle")

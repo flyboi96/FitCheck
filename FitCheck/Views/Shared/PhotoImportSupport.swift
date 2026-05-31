@@ -1,3 +1,4 @@
+import Photos
 import SwiftUI
 import UIKit
 
@@ -90,6 +91,123 @@ struct FitCheckInlineStatus: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+struct FitCheckNoMatchDiagnosticsView: View {
+    var reasons: [String]
+
+    var body: some View {
+        if !reasons.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Why no outfit matched", systemImage: "exclamationmark.triangle")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                ForEach(reasons, id: \.self) { reason in
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.vertical, 4)
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+struct FitCheckSaveImageButton: View {
+    var data: Data
+    var title = "Save Image"
+
+    @State private var isSaving = false
+    @State private var status = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                Task {
+                    await saveImage()
+                }
+            } label: {
+                FitCheckButtonLabel(
+                    title: isSaving ? "Saving" : title,
+                    systemImage: "square.and.arrow.down",
+                    isLoading: isSaving
+                )
+            }
+            .buttonStyle(.bordered)
+            .disabled(isSaving)
+
+            if !status.isEmpty {
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @MainActor
+    private func saveImage() async {
+        guard let image = UIImage(data: data) else {
+            status = "Image could not be read."
+            return
+        }
+
+        isSaving = true
+        defer {
+            isSaving = false
+        }
+
+        do {
+            try await saveToPhotoLibrary(image)
+            status = "Saved to Photos."
+        } catch {
+            status = error.localizedDescription
+        }
+    }
+
+    private func saveToPhotoLibrary(_ image: UIImage) async throws {
+        let currentStatus = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+        let authorizedStatus: PHAuthorizationStatus
+        if currentStatus == .notDetermined {
+            authorizedStatus = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        } else {
+            authorizedStatus = currentStatus
+        }
+
+        guard authorizedStatus == .authorized || authorizedStatus == .limited else {
+            throw FitCheckImageSaveError.permissionDenied
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            } completionHandler: { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: FitCheckImageSaveError.saveFailed)
+                }
+            }
+        }
+    }
+}
+
+private enum FitCheckImageSaveError: LocalizedError {
+    case permissionDenied
+    case saveFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .permissionDenied:
+            return "Allow photo library access to save avatar images."
+        case .saveFailed:
+            return "Image could not be saved."
         }
     }
 }

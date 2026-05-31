@@ -189,8 +189,12 @@ private struct TripDetailView: View {
     @State private var feedbackItinerary: DailyItineraryOutfit?
     @State private var editingItinerary: DailyItineraryOutfit?
     @State private var editingDayPlan: TripPlanDay?
+    @State private var editingPackingItem: PackingListItem?
+    @State private var dailyWeatherSummaries: [TimeInterval: String] = [:]
+    @State private var isLoadingDailyWeather = false
 
     private let service = TripPlanningService()
+    private let weatherClient = OpenMeteoWeatherClient()
 
     var body: some View {
         List {
@@ -261,10 +265,26 @@ private struct TripDetailView: View {
                             Text(contexts.isEmpty ? "No outfits selected" : contexts.map(\.displayName).joined(separator: ", "))
                                 .font(.caption)
                                 .foregroundStyle(contexts.isEmpty ? .tertiary : .secondary)
+                            Label(dailyWeatherText(for: day.date) ?? "Weather not loaded for this date", systemImage: "cloud.sun")
+                                .font(.caption)
+                                .foregroundStyle(dailyWeatherText(for: day.date) == nil ? .tertiary : .secondary)
                         }
                     }
                     .buttonStyle(.plain)
                 }
+
+                Button {
+                    Task {
+                        await refreshDailyWeather()
+                    }
+                } label: {
+                    FitCheckButtonLabel(
+                        title: isLoadingDailyWeather ? "Updating Weather" : "Update Daily Weather",
+                        systemImage: "cloud.sun",
+                        isLoading: isLoadingDailyWeather
+                    )
+                }
+                .disabled(isLoadingDailyWeather || sortedStops.isEmpty)
             }
 
             Section("3. Laundry & Packing Rules") {
@@ -325,6 +345,7 @@ private struct TripDetailView: View {
                             aiOptions: tripAIOptions
                         )
                         await service.rebuildPackingList(for: trip, closet: closetItems, context: modelContext)
+                        cacheItineraryWeather()
                         try? modelContext.save()
                         generationStatus = "Itinerary and packing list updated."
                     }
@@ -378,17 +399,21 @@ private struct TripDetailView: View {
 
             ForEach(trip.packingLists) { list in
                 Section("Packing List") {
-                    ForEach(list.items) { packingItem in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(packingTitle(for: packingItem))
-                                Spacer()
-                                Text("x\(packingItem.quantity)")
-                                    .foregroundStyle(.secondary)
+                    ForEach(packingGroups(for: list)) { group in
+                        DisclosureGroup {
+                            ForEach(group.items) { packingItem in
+                                PackingListRowView(
+                                    packingItem: packingItem,
+                                    title: packingTitle(for: packingItem),
+                                    onEdit: { editingPackingItem = packingItem }
+                                )
                             }
-                            if packingItem.item != nil, !packingItem.reason.isEmpty {
-                                Text(packingItem.reason)
-                                    .font(.caption)
+                        } label: {
+                            HStack {
+                                Label(group.title, systemImage: group.systemImage)
+                                Spacer()
+                                Text("\(group.totalQuantity)")
+                                    .font(.caption.weight(.semibold))
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -476,6 +501,11 @@ private struct TripDetailView: View {
                 ItineraryOutfitEditorView(itinerary: itinerary)
             }
         }
+        .sheet(item: $editingPackingItem) { packingItem in
+            NavigationStack {
+                PackingListItemEditorView(packingItem: packingItem)
+            }
+        }
         .sheet(item: $editingDayPlan) { day in
             NavigationStack {
                 TripDayPlanEditorView(
@@ -485,6 +515,9 @@ private struct TripDetailView: View {
                     fallbackLocation: locationLabel(for: day.date)
                 )
             }
+        }
+        .onAppear {
+            cacheItineraryWeather()
         }
         .onChange(of: trip.laundryIntervalDays) { _, _ in
             try? modelContext.save()
@@ -738,11 +771,179 @@ private struct TripDetailView: View {
         .joined(separator: " - ")
     }
 
+    private func dailyWeatherText(for date: Date) -> String? {
+        let key = dayKey(for: date)
+        if let cached = dailyWeatherSummaries[key] {
+            return cached
+        }
+
+        return trip.itineraryOutfits
+            .first { Calendar.current.isDate($0.date, inSameDayAs: date) }?
+            .outfit?
+            .weatherSummary
+    }
+
+    private func cacheItineraryWeather() {
+        var updated = dailyWeatherSummaries
+        for itinerary in trip.itineraryOutfits {
+            if let summary = itinerary.outfit?.weatherSummary,
+               !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                updated[dayKey(for: itinerary.date)] = summary
+            }
+        }
+        dailyWeatherSummaries = updated
+    }
+
+    @MainActor
+    private func refreshDailyWeather() async {
+        guard !isLoadingDailyWeather else { return }
+        isLoadingDailyWeather = true
+        generationStatus = "Updating weather for each plan day."
+        defer {
+            isLoadingDailyWeather = false
+        }
+
+        var updated = dailyWeatherSummaries
+        var updatedCount = 0
+
+        for day in planDays {
+            let location = primaryLocation(for: day.date)
+            guard !location.isEmpty else { continue }
+
+            if let result = try? await weatherClient.dailyWeather(for: location, date: day.date) {
+                updated[dayKey(for: day.date)] = weatherSummaryText(for: result)
+                updatedCount += 1
+            }
+        }
+
+        dailyWeatherSummaries = updated
+        generationStatus = updatedCount == 0
+            ? "Daily weather lookup did not return results. Manual weather can still be set per day."
+            : "Updated weather for \(updatedCount) day\(updatedCount == 1 ? "" : "s")."
+    }
+
+    private func primaryLocation(for date: Date) -> String {
+        if let dailyPlanLocation = dailyPlanStop(on: date)?.location.trimmingCharacters(in: .whitespacesAndNewlines),
+           !dailyPlanLocation.isEmpty {
+            return dailyPlanLocation
+        }
+
+        return locationStops(on: date)
+            .last?
+            .location
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private func weatherSummaryText(for result: WeatherLookupResult) -> String {
+        [
+            "\(Int(result.input.temperatureF.rounded()))F",
+            result.condition,
+            "wind \(Int(result.input.windMph.rounded())) mph",
+            result.input.humidityPercent.map { "humidity \(Int($0.rounded()))%" }
+        ]
+        .compactMap { $0 }
+        .joined(separator: ", ")
+    }
+
+    private func dayKey(for date: Date) -> TimeInterval {
+        Calendar.current.startOfDay(for: date).timeIntervalSinceReferenceDate
+    }
+
     private func packingTitle(for item: PackingListItem) -> String {
         if let clothingName = item.item?.name {
             return clothingName
         }
         return item.reason.isEmpty ? "Packing item" : item.reason
+    }
+
+    private func packingGroups(for list: PackingList) -> [PackingListGroup] {
+        let grouped = Dictionary(grouping: list.items) { packingGroupTitle(for: $0) }
+        return grouped
+            .map { title, items in
+                PackingListGroup(
+                    title: title,
+                    systemImage: packingGroupSystemImage(for: title),
+                    items: items.sorted(by: packingItemSort),
+                    sortIndex: packingGroupSortIndex(title)
+                )
+            }
+            .sorted {
+                if $0.sortIndex == $1.sortIndex {
+                    return $0.title < $1.title
+                }
+                return $0.sortIndex < $1.sortIndex
+            }
+    }
+
+    private func packingGroupTitle(for packingItem: PackingListItem) -> String {
+        if packingItem.item == nil {
+            return "Needs"
+        }
+
+        switch packingItem.item?.category {
+        case .shirt, .blouse, .sweater, .dress:
+            return "Tops"
+        case .pants, .shorts, .skirt:
+            return "Bottoms"
+        case .underwear, .socks:
+            return "Underwear & Socks"
+        case .shoes, .heels, .flats:
+            return "Shoes"
+        case .jacket:
+            return "Outerwear"
+        case .activewear:
+            let reason = packingItem.reason.lowercased()
+            if reason.contains("underwear") || reason.contains("socks") {
+                return "Underwear & Socks"
+            }
+            return "Exercise"
+        case .belt, .watch, .jewelry, .accessory, .bag, .purse:
+            return "Accessories"
+        case .other, nil:
+            return "Other"
+        }
+    }
+
+    private func packingGroupSystemImage(for title: String) -> String {
+        switch title {
+        case "Tops":
+            return "tshirt"
+        case "Bottoms":
+            return "figure.stand"
+        case "Underwear & Socks":
+            return "shoeprints.fill"
+        case "Shoes":
+            return "shoeprints.fill"
+        case "Outerwear":
+            return "cloud"
+        case "Exercise":
+            return "figure.run"
+        case "Accessories":
+            return "sparkles"
+        case "Needs":
+            return "exclamationmark.triangle"
+        default:
+            return "list.bullet"
+        }
+    }
+
+    private func packingGroupSortIndex(_ title: String) -> Int {
+        ["Needs", "Tops", "Bottoms", "Underwear & Socks", "Shoes", "Outerwear", "Exercise", "Accessories", "Other"]
+            .firstIndex(of: title) ?? 99
+    }
+
+    private func packingItemSort(_ first: PackingListItem, _ second: PackingListItem) -> Bool {
+        let firstTitle = packingTitle(for: first)
+        let secondTitle = packingTitle(for: second)
+        if first.item?.category == second.item?.category {
+            return firstTitle.localizedCaseInsensitiveCompare(secondTitle) == .orderedAscending
+        }
+        return categorySortIndex(first.item?.category) < categorySortIndex(second.item?.category)
+    }
+
+    private func categorySortIndex(_ category: ClothingCategory?) -> Int {
+        guard let category else { return -1 }
+        return ClothingCategory.allCases.firstIndex(of: category) ?? ClothingCategory.allCases.count
     }
 
     private var packingListExportText: String {
@@ -782,10 +983,13 @@ private struct TripDetailView: View {
 
         for list in trip.packingLists.sorted(by: { $0.createdAt < $1.createdAt }) {
             lines.append(list.title)
-            for packingItem in list.items.sorted(by: { packingTitle(for: $0) < packingTitle(for: $1) }) {
-                lines.append("- \(packingTitle(for: packingItem)) x\(packingItem.quantity)")
-                if packingItem.item != nil, !packingItem.reason.isEmpty {
-                    lines.append("  \(packingItem.reason)")
+            for group in packingGroups(for: list) {
+                lines.append(group.title)
+                for packingItem in group.items {
+                    lines.append("- \(packingTitle(for: packingItem)) x\(packingItem.quantity)")
+                    if packingItem.item != nil, !packingItem.reason.isEmpty {
+                        lines.append("  \(packingItem.reason)")
+                    }
                 }
             }
             lines.append("")
@@ -838,6 +1042,222 @@ private struct TripDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+private struct PackingListGroup: Identifiable {
+    var title: String
+    var systemImage: String
+    var items: [PackingListItem]
+    var sortIndex: Int
+
+    var id: String { title }
+
+    var totalQuantity: Int {
+        items.reduce(0) { $0 + max(1, $1.quantity) }
+    }
+}
+
+private struct PackingListRowView: View {
+    var packingItem: PackingListItem
+    var title: String
+    var onEdit: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: packingItem.item?.category.systemImageName ?? "exclamationmark.triangle")
+                .foregroundStyle(.tint)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                    Spacer(minLength: 8)
+                    Text("x\(packingItem.quantity)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                if let item = packingItem.item {
+                    Text([item.category.displayName, item.brand.isEmpty ? nil : item.brand].compactMap { $0 }.joined(separator: " - "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !packingItem.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(packingItem.reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Button(action: onEdit) {
+                Image(systemName: "slider.horizontal.3")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Edit \(title)")
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct PackingListItemEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \ClothingItem.name) private var closetItems: [ClothingItem]
+
+    @Bindable var packingItem: PackingListItem
+    @State private var searchText = ""
+    @State private var selectedCategoryRawValue = "current"
+    @State private var status = ""
+
+    var body: some View {
+        Form {
+            Section("Current Packing Item") {
+                if let item = packingItem.item {
+                    LabeledContent("Item", value: item.name)
+                    LabeledContent("Category", value: item.category.displayName)
+                } else {
+                    TextField("Manual item", text: $packingItem.reason)
+                        .textInputAutocapitalization(.sentences)
+                }
+
+                Stepper(value: $packingItem.quantity, in: 1...99) {
+                    LabeledContent("Quantity", value: "\(packingItem.quantity)")
+                }
+
+                if packingItem.item != nil {
+                    TextField("Packing note", text: $packingItem.reason)
+                        .textInputAutocapitalization(.sentences)
+                }
+            }
+
+            Section("Swap From Closet") {
+                Picker("Category", selection: $selectedCategoryRawValue) {
+                    Text("Same Category").tag("current")
+                    Text("All Categories").tag("all")
+                    ForEach(availableCategories) { category in
+                        Text(category.displayName).tag(category.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                TextField("Search closet", text: $searchText)
+                    .textInputAutocapitalization(.words)
+
+                ForEach(Array(replacementItems.prefix(40))) { item in
+                    Button {
+                        replace(with: item)
+                    } label: {
+                        HStack {
+                            Label(item.name, systemImage: item.category.systemImageName)
+                            Spacer()
+                            Text(item.quantity > 1 ? "Qty \(item.quantity)" : item.category.displayName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            Section {
+                Button(role: .destructive) {
+                    deletePackingItem()
+                } label: {
+                    Label("Remove From Packing List", systemImage: "trash")
+                }
+
+                if !status.isEmpty {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Edit Packing")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") {
+                    saveAndDismiss()
+                }
+            }
+        }
+        .onChange(of: packingItem.quantity) { _, _ in
+            try? modelContext.save()
+        }
+        .onChange(of: packingItem.reason) { _, _ in
+            try? modelContext.save()
+        }
+    }
+
+    private var availableCategories: [ClothingCategory] {
+        let categories = Set(closetItems.filter { $0.status == .active }.map(\.category))
+        return ClothingCategory.allCases.filter { categories.contains($0) }
+    }
+
+    private var replacementItems: [ClothingItem] {
+        let activeItems = closetItems.filter { $0.status == .active && $0.id != packingItem.item?.id }
+        let categoryFiltered = activeItems.filter { item in
+            switch selectedCategoryRawValue {
+            case "current":
+                guard let currentCategory = packingItem.item?.category else { return true }
+                return item.category == currentCategory
+            case "all":
+                return true
+            default:
+                return item.category.rawValue == selectedCategoryRawValue
+            }
+        }
+        let search = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return categoryFiltered
+            .filter { search.isEmpty || searchableText(for: $0).localizedCaseInsensitiveContains(search) }
+            .sorted {
+                if $0.category == $1.category {
+                    return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
+                return categorySortIndex($0.category) < categorySortIndex($1.category)
+            }
+    }
+
+    private func replace(with item: ClothingItem) {
+        packingItem.item = item
+        if packingItem.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            packingItem.reason.localizedCaseInsensitiveContains("Add ") {
+            packingItem.reason = "Manual packing swap"
+        }
+        try? modelContext.save()
+        status = "Now packing \(item.name)."
+    }
+
+    private func deletePackingItem() {
+        packingItem.packingList?.items.removeAll { $0.id == packingItem.id }
+        modelContext.delete(packingItem)
+        try? modelContext.save()
+        dismiss()
+    }
+
+    private func saveAndDismiss() {
+        packingItem.quantity = max(1, packingItem.quantity)
+        try? modelContext.save()
+        dismiss()
+    }
+
+    private func searchableText(for item: ClothingItem) -> String {
+        [
+            item.name,
+            item.brand,
+            item.category.displayName,
+            ClothingInference.color(for: item),
+            ClothingInference.pattern(for: item),
+            item.notes
+        ]
+        .joined(separator: " ")
+    }
+
+    private func categorySortIndex(_ category: ClothingCategory) -> Int {
+        ClothingCategory.allCases.firstIndex(of: category) ?? ClothingCategory.allCases.count
     }
 }
 

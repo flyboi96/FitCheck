@@ -36,6 +36,7 @@ struct TodayOutfitView: View {
     @State private var aiBuildError = ""
     @State private var weatherActionStatus = ""
     @State private var recommendationStatus = ""
+    @State private var noMatchReasons: [String] = []
     @State private var lastAction: TodayUndoAction?
     @State private var feedbackTarget: OutfitRecommendation?
     @State private var editingRecommendation: OutfitRecommendation?
@@ -87,6 +88,7 @@ struct TodayOutfitView: View {
                         .foregroundStyle(.secondary)
                 }
                 FitCheckInlineStatus(message: recommendationStatus)
+                FitCheckNoMatchDiagnosticsView(reasons: noMatchReasons)
             }
 
             Section("Weather Details") {
@@ -383,20 +385,29 @@ struct TodayOutfitView: View {
         avatarPreviews = [:]
         avatarPreviewErrors = [:]
         aiBuildError = ""
+        let request = RecommendationRequest(
+            weather: currentWeather,
+            occasion: currentContext.occasion,
+            activity: currentContext.activity,
+            selectedItem: nil
+        )
         recommendations = engine.recommend(
             closet: closetItems,
             feedback: feedback,
             stylePreference: stylePreferences.first,
-            request: RecommendationRequest(
-                weather: currentWeather,
-                occasion: currentContext.occasion,
-                activity: currentContext.activity,
-                selectedItem: nil
-            )
+            request: request
         )
-        recommendationStatus = recommendations.isEmpty
-            ? "No outfit matched this setup."
-            : "Generated \(recommendations.count) outfit\(recommendations.count == 1 ? "" : "s")."
+        if recommendations.isEmpty {
+            noMatchReasons = engine.noMatchReasons(
+                closet: closetItems,
+                stylePreference: stylePreferences.first,
+                request: request
+            )
+            recommendationStatus = "No outfit matched. See blockers below."
+        } else {
+            noMatchReasons = []
+            recommendationStatus = "Generated \(recommendations.count) outfit\(recommendations.count == 1 ? "" : "s")."
+        }
     }
 
     private func generateWithVisibleFeedback() {
@@ -426,6 +437,7 @@ struct TodayOutfitView: View {
         isAIChoosingOutfit = true
         aiBuildError = ""
         recommendationStatus = "Asking AI to choose from your closet."
+        noMatchReasons = []
         aiReviews = [:]
         aiReviewErrors = [:]
         avatarPreviews = [:]
@@ -457,6 +469,11 @@ struct TodayOutfitView: View {
             guard engine.isAcceptableOutfit(chosenItems, request: request, stylePreference: stylePreferences.first) else {
                 aiBuildError = "AI returned an incomplete outfit or broke a hard style/weather rule. Try Ask AI First again or use Generate Outfit."
                 recommendationStatus = "AI returned an unusable outfit."
+                noMatchReasons = engine.noMatchReasons(
+                    closet: closetItems,
+                    stylePreference: stylePreferences.first,
+                    request: request
+                )
                 return
             }
 
@@ -470,6 +487,7 @@ struct TodayOutfitView: View {
 
             recommendations = [recommendation]
             aiReviews[recommendation.combinationKey] = response
+            noMatchReasons = []
             recommendationStatus = "AI picked an outfit and FitCheck scored it locally."
         } catch {
             aiBuildError = error.localizedDescription
@@ -558,6 +576,7 @@ struct TodayOutfitView: View {
         aiReviewErrors = [:]
         avatarPreviews = [:]
         avatarPreviewErrors = [:]
+        noMatchReasons = []
         recommendationStatus = "Edited outfit and updated the score."
     }
 

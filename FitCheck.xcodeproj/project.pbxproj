@@ -523,6 +523,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
 				INFOPLIST_KEY_NSCameraUsageDescription = "FitCheck uses the camera to photograph clothing items and avatar reference photos.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FitCheck uses your location to look up local weather for outfit recommendations.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "FitCheck saves generated avatar images to your photo library.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "FitCheck uses selected photos to import clothing items and create avatar reference photos.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -551,6 +552,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
 				INFOPLIST_KEY_NSCameraUsageDescription = "FitCheck uses the camera to photograph clothing items and avatar reference photos.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FitCheck uses your location to look up local weather for outfit recommendations.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "FitCheck saves generated avatar images to your photo library.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "FitCheck uses selected photos to import clothing items and create avatar reference photos.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

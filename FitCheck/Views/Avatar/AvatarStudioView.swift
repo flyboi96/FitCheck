@@ -45,7 +45,8 @@ struct AvatarStudioView: View {
             }
 
             Section("Avatar") {
-                FitCheckPhotoPreview(data: avatar?.avatarImageData ?? avatar?.sourcePhotoData, height: 460)
+                let avatarImageData = avatar?.avatarImageData ?? avatar?.sourcePhotoData
+                FitCheckPhotoPreview(data: avatarImageData, height: 460)
 
                 if avatar?.avatarImageData != nil {
                     Label("Saved avatar ready", systemImage: "checkmark.circle")
@@ -70,6 +71,10 @@ struct AvatarStudioView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!canGenerateBaseAvatar)
+
+                if let avatarImageData {
+                    FitCheckSaveImageButton(data: avatarImageData, title: "Save Avatar to Photos")
+                }
 
                 FitCheckInlineStatus(
                     message: avatarStatus,

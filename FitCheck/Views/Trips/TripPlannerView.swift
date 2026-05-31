@@ -2021,26 +2021,7 @@ private struct TripStopEditorView: View {
 
 }
 
-private let fitCheckPlanContextOptions: [OutfitContextOption] = [
-    .businessCasual,
-    .businessFormal,
-    .smartCasual,
-    .smartStreetwear,
-    .everydayCasual,
-    .streetCasual,
-    .floridaCasual,
-    .workDay,
-    .travelDay,
-    .casualDay,
-    .athleisure,
-    .walkingAroundCity,
-    .dinner,
-    .dateNight,
-    .runningDay,
-    .liftingDay,
-    .gym,
-    .wedding
-]
+private let fitCheckPlanContextOptions = OutfitContextOption.curatedOptions
 
 private extension String {
     var fitcheckLines: [String] {

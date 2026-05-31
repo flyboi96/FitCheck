@@ -6,12 +6,15 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
 
     private static let defaultContextStyleNotes = """
-Business casual: collared shirt, chinos or dress pants, belt when it improves the look, polished boots/loafers/sneakers when appropriate.
-Business formal: dress shirt, tailored pants or suit, polished dress shoes, conservative colors.
-Smart casual: elevated casual outfit; sharp shirt or knit, good pants or clean shorts when weather/context allows, intentional shoes.
-Street casual: relaxed but stylish; sneakers, tees, denim, shorts, overshirts, bolder pieces allowed.
-Athleisure: athletic pieces worn casually; no belt required.
-Florida casual: hot-weather casual; shorts, breathable shirts, sneakers or sandals where appropriate.
+Business formal: suit or blazer-level polish, tailored pants or dress/skirt, dress shoes, conservative colors.
+Business casual: professional but relaxed; collared shirt or blouse, chinos/slacks/skirt, belt when it improves the look, loafers/boots/Oxfords/clean leather sneakers when appropriate.
+Smart casual: elevated everyday style; mix one polished piece with one relaxed piece, clean shoes, no sloppy gym or lounge items.
+Everyday casual: comfortable normal-day outfit that still looks intentional.
+Hot-weather casual: breathable warm-weather outfit; linen, cotton, shorts when appropriate, minimal layers.
+Streetwear: casual expressive style using sneakers, tees, hoodies, denim/cargos, overshirts, or statement pieces.
+Athleisure: athletic-inspired casual outfit for errands or travel; no belt required.
+Travel day: comfortable, layerable, weather-aware, airport-friendly.
+Gym / Training: actual workout clothing, no belts or dress accessories.
 """
 
     @AppStorage("fitcheckUseAIProxy") private var useAIProxy = false
@@ -53,7 +56,7 @@ Florida casual: hot-weather casual; shorts, breathable shirts, sneakers or sanda
 
             Section("Outfit Defaults") {
                 Picker("Default context", selection: $defaultOutfitContext) {
-                    ForEach(OutfitContextOption.allCases) { option in
+                    ForEach(OutfitContextOption.curatedOptions) { option in
                         Text(option.displayName).tag(option.rawValue)
                     }
                 }
@@ -140,6 +143,9 @@ Florida casual: hot-weather casual; shorts, breathable shirts, sneakers or sanda
             }
         }
         .navigationTitle("Settings")
+        .onAppear {
+            defaultOutfitContext = OutfitContextOption.curatedRawValue(for: defaultOutfitContext)
+        }
         .fileExporter(
             isPresented: $isExportingBackup,
             document: backupDocument,

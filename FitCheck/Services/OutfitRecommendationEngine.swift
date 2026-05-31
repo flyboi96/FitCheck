@@ -80,6 +80,44 @@ enum OutfitContextOption: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    static var curatedOptions: [OutfitContextOption] {
+        [
+            .businessFormal,
+            .businessCasual,
+            .smartCasual,
+            .everydayCasual,
+            .floridaCasual,
+            .streetCasual,
+            .athleisure,
+            .travelDay,
+            .gym,
+            .runningDay,
+            .liftingDay,
+            .dateNight,
+            .wedding
+        ]
+    }
+
+    static func curatedRawValue(for rawValue: String?) -> String {
+        let option = rawValue.flatMap(OutfitContextOption.init(rawValue:)) ?? .businessCasual
+        if curatedOptions.contains(option) {
+            return option.rawValue
+        }
+
+        switch option {
+        case .workDay:
+            return OutfitContextOption.businessCasual.rawValue
+        case .casualDay, .walkingAroundCity, .outdoors, .errands:
+            return OutfitContextOption.everydayCasual.rawValue
+        case .dinner:
+            return OutfitContextOption.dateNight.rawValue
+        case .smartStreetwear:
+            return OutfitContextOption.streetCasual.rawValue
+        case .businessCasual, .businessFormal, .smartCasual, .everydayCasual, .streetCasual, .floridaCasual, .dateNight, .travelDay, .athleisure, .gym, .runningDay, .liftingDay, .wedding:
+            return option.rawValue
+        }
+    }
+
     var displayName: String {
         switch self {
         case .businessCasual: "Business Casual"
@@ -88,20 +126,20 @@ enum OutfitContextOption: String, CaseIterable, Identifiable {
         case .smartStreetwear: "Smart Streetwear"
         case .casualDay: "Casual Day"
         case .everydayCasual: "Everyday Casual"
-        case .streetCasual: "Street Casual"
-        case .floridaCasual: "Florida Casual"
-        case .dateNight: "Date Night"
+        case .streetCasual: "Streetwear"
+        case .floridaCasual: "Hot-Weather Casual"
+        case .dateNight: "Dinner / Date"
         case .workDay: "Work / Office"
         case .travelDay: "Travel Day"
         case .dinner: "Dinner"
         case .athleisure: "Athleisure"
-        case .gym: "Gym"
+        case .gym: "Gym / Training"
         case .runningDay: "Running"
         case .liftingDay: "Lifting"
         case .walkingAroundCity: "Walking Around City"
         case .outdoors: "Outdoors"
         case .errands: "Errands"
-        case .wedding: "Wedding / Formal"
+        case .wedding: "Formal Event"
         }
     }
 
@@ -958,25 +996,28 @@ struct OutfitRecommendationEngine {
         value += comfort.value
         notes.append(contentsOf: comfort.notes)
 
-        let occasionTags = ClothingInference.occasionTags(for: item)
-        let activityTags = ClothingInference.activityTags(for: item)
-        value += tagScore(occasionTags, target: request.occasion)
-        value += tagScore(activityTags, target: request.activity)
+        if isContextScoredItem(item) {
+            let occasionTags = ClothingInference.occasionTags(for: item)
+            let activityTags = ClothingInference.activityTags(for: item)
+            value += tagScore(occasionTags, target: request.occasion)
+            value += tagScore(activityTags, target: request.activity)
+        }
         let exerciseValue = exerciseSpecificityScore(item, request: request)
         value += exerciseValue.value
         notes.append(contentsOf: exerciseValue.notes)
 
-        let targetFormality = targetFormality(for: request.occasion)
-        let formalityDistance = abs(ClothingInference.formalityLevel(for: item) - targetFormality)
-        value -= Double(formalityDistance * 4)
+        if isContextScoredItem(item) {
+            let targetFormality = targetFormality(for: request.occasion)
+            let formalityDistance = abs(ClothingInference.formalityLevel(for: item) - targetFormality)
+            value -= Double(formalityDistance * 3)
+        }
 
         if let lastWornAt = item.lastWornAt {
             let days = Calendar.current.dateComponents([.day], from: lastWornAt, to: Date()).day ?? 0
-            if days <= 3 {
-                value -= 30
+            let rotation = rotationPenalty(for: item, daysSinceWorn: days)
+            value += rotation.value
+            if rotation.shouldNote {
                 notes.append("\(item.name) was worn recently")
-            } else if days <= 7 {
-                value -= 14
             } else if days >= 21 {
                 value += 6
             }
@@ -1007,6 +1048,38 @@ struct OutfitRecommendationEngine {
         }
 
         return (value, notes)
+    }
+
+    private func isContextScoredItem(_ item: ClothingItem) -> Bool {
+        switch item.category {
+        case .shirt, .blouse, .pants, .shorts, .dress, .skirt, .shoes, .heels, .flats, .jacket, .sweater, .activewear:
+            return true
+        case .underwear, .socks, .belt, .watch, .jewelry, .accessory, .bag, .purse, .other:
+            return false
+        }
+    }
+
+    private func rotationPenalty(for item: ClothingItem, daysSinceWorn days: Int) -> (value: Double, shouldNote: Bool) {
+        guard days <= 7 else { return (0, false) }
+
+        if item.quantity > 1 {
+            return days <= 1 ? (-3, false) : (0, false)
+        }
+
+        switch item.category {
+        case .belt, .watch, .jewelry, .accessory, .bag, .purse:
+            return (0, false)
+        case .shoes, .heels, .flats:
+            return days <= 3 ? (-4, false) : (-2, false)
+        case .jacket, .sweater:
+            return days <= 3 ? (-6, false) : (-3, false)
+        case .underwear, .socks:
+            return days <= 3 ? (-6, false) : (-3, false)
+        case .shirt, .blouse, .pants, .shorts, .dress, .skirt, .activewear:
+            return days <= 3 ? (-12, true) : (-6, false)
+        case .other:
+            return days <= 3 ? (-4, false) : (-2, false)
+        }
     }
 
     private func weatherScore(_ item: ClothingItem, weather: WeatherInput) -> Double {

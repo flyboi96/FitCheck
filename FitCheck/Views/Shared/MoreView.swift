@@ -53,7 +53,7 @@ private struct ScoringGuideView: View {
     var body: some View {
         List {
             Section("Starting Point") {
-                Text("Every outfit starts at 50 points, then each item and the full combination add or subtract points. Scores are relative rankings, not percentages. Red now means the score is below zero. A missing belt with a collared shirt is a small preference penalty, not a catastrophic failure.")
+                Text("Every outfit starts at 50 points, then each item and the full combination add or subtract points. Scores are relative rankings, not percentages. Red means the score is below zero. Socks, belts, watches, and multipack basics no longer get scored like full outfit pieces.")
             }
 
             Section("Weather") {
@@ -61,7 +61,7 @@ private struct ScoringGuideView: View {
             }
 
             Section("Context") {
-                Text("You choose one context, such as Business Casual, Business Formal, Smart Casual, Street Casual, Florida Casual, Athleisure, Running, or Lifting. Settings controls the default context used by Today and Build.")
+                Text("The visible context list is intentionally curated: Business Formal, Business Casual, Smart Casual, Everyday Casual, Hot-Weather Casual, Streetwear, Athleisure, Travel Day, Gym / Training, Running, Lifting, Dinner / Date, and Formal Event. Settings controls the default context used by Today and Build.")
             }
 
             Section("Dressiness") {

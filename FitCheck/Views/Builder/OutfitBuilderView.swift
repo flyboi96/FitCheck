@@ -27,7 +27,7 @@ struct OutfitBuilderView: View {
     @State private var selectedItemID: UUID?
     @State private var itemSearchText = ""
     @State private var selectedCategoryRawValue = "all"
-    @State private var selectedContext = UserDefaults.standard.string(forKey: "fitcheckDefaultOutfitContext") ?? OutfitContextOption.businessCasual.rawValue
+    @State private var selectedContext = OutfitContextOption.curatedRawValue(for: UserDefaults.standard.string(forKey: "fitcheckDefaultOutfitContext"))
     @State private var recommendations: [OutfitRecommendation] = []
     @State private var aiReviews: [String: AIOutfitResponse] = [:]
     @State private var aiReviewErrors: [String: String] = [:]
@@ -108,7 +108,7 @@ struct OutfitBuilderView: View {
 
             Section("Context") {
                 Picker("Context", selection: $selectedContext) {
-                    ForEach(OutfitContextOption.allCases) { option in
+                    ForEach(OutfitContextOption.curatedOptions) { option in
                         Text(option.displayName).tag(option.rawValue)
                     }
                 }
@@ -650,7 +650,7 @@ struct OutfitBuilderView: View {
     }
 
     private var currentContext: OutfitContextOption {
-        OutfitContextOption(rawValue: selectedContext) ?? .casualDay
+        OutfitContextOption(rawValue: selectedContext) ?? .businessCasual
     }
 
     private var currentRecommendationRequest: RecommendationRequest? {

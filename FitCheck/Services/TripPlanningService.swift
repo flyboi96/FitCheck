@@ -721,7 +721,7 @@ struct TripPlanningService {
             contexts.append(.travelDay)
         }
         if hasWorkContext {
-            contexts.append(.workDay)
+            contexts.append(.businessCasual)
         }
         if text.containsAny(["wedding", "formal", "ceremony"]) {
             contexts.append(.wedding)
@@ -729,10 +729,10 @@ struct TripPlanningService {
         if text.containsAny(["date", "date night"]) {
             contexts.append(.dateNight)
         } else if text.containsAny(["dinner", "night", "restaurant", "evening"]) {
-            contexts.append(.dinner)
+            contexts.append(.dateNight)
         }
         if text.containsAny(["casual", "fun", "sightseeing", "walking", "tour", "errands"]) {
-            contexts.append(.walkingAroundCity)
+            contexts.append(.everydayCasual)
         }
         if text.containsAny(["run", "running"]) {
             contexts.append(.runningDay)
@@ -743,7 +743,7 @@ struct TripPlanningService {
         }
 
         if contexts.isEmpty {
-            contexts.append(isTravelDay ? .travelDay : .casualDay)
+            contexts.append(isTravelDay ? .travelDay : .everydayCasual)
         }
 
         return contexts
@@ -751,7 +751,9 @@ struct TripPlanningService {
 
     private func deduplicatedContexts(_ contexts: [OutfitContextOption]) -> [OutfitContextOption] {
         var seen = Set<String>()
-        return contexts.filter { seen.insert($0.rawValue).inserted }
+        return contexts
+            .compactMap { OutfitContextOption(rawValue: OutfitContextOption.curatedRawValue(for: $0.rawValue)) }
+            .filter { seen.insert($0.rawValue).inserted }
     }
 
     private func exerciseTargetDays(for trip: Trip, days: Int) -> Int {

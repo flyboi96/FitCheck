@@ -84,13 +84,19 @@ private struct TripEditorView: View {
             Section("Plan") {
                 TextField("Title", text: $title, prompt: Text("Rome trip or Work week outfits"))
                     .textInputAutocapitalization(.words)
-                TextField("Primary city or first stop", text: $location, prompt: Text("Djibouti, Rome, Katy, TX"))
+                TextField("Starting city", text: $location, prompt: Text("Djibouti"))
                     .textInputAutocapitalization(.words)
                 DatePicker("Start", selection: $startsAt, displayedComponents: .date)
                 DatePicker("End", selection: $endsAt, displayedComponents: .date)
+                Text("Enter one starting city here. Add more cities later as Stops only when the location changes.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Notes") {
                 TextEditor(text: $notes)
                     .frame(minHeight: 96)
-                Text("Use this for travel, packing, or a normal week of planned outfits. The city creates a full-range stop automatically; add more stops only when the location changes.")
+                Text("Optional. Add broad constraints like laundry access, dress code, work week, vacation, special events, or packing priorities.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -214,6 +220,9 @@ private struct TripDetailView: View {
     var body: some View {
         List {
             Section("Plan Summary") {
+                TextField("Plan name", text: $trip.title)
+                    .textInputAutocapitalization(.words)
+
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 12) {
                         planMetric(title: "Stops", value: "\(sortedStops.count)", systemImage: "mappin.and.ellipse")
@@ -533,6 +542,9 @@ private struct TripDetailView: View {
         }
         .onAppear {
             cacheItineraryWeather()
+        }
+        .onChange(of: trip.title) { _, _ in
+            try? modelContext.save()
         }
         .onChange(of: trip.laundryIntervalDays) { _, _ in
             try? modelContext.save()

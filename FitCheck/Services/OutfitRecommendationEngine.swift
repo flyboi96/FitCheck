@@ -459,15 +459,9 @@ struct OutfitRecommendationEngine {
         let activeItems = closet.filter { $0.status == .active }
         let selected = request.selectedItem
         let needsExerciseClothing = isExerciseContext(request)
-        let topCategories: Set<ClothingCategory> = needsExerciseClothing
-            ? [.shirt, .blouse, .sweater, .dress, .activewear]
-            : [.shirt, .blouse, .sweater, .dress]
-        let bottomCategories: Set<ClothingCategory> = needsExerciseClothing
-            ? [.pants, .shorts, .skirt, .activewear]
-            : [.pants, .shorts, .skirt]
-        let shoeCategories: Set<ClothingCategory> = needsExerciseClothing
-            ? [.shoes, .heels, .flats, .activewear]
-            : [.shoes, .heels, .flats]
+        let topCategories: Set<ClothingCategory> = [.shirt, .blouse, .sweater, .dress, .activewear]
+        let bottomCategories: Set<ClothingCategory> = [.pants, .shorts, .skirt, .activewear]
+        let shoeCategories: Set<ClothingCategory> = [.shoes, .heels, .flats, .activewear]
         let selectedTop = selected.flatMap { isTopItem($0, request: request) ? $0 : nil }
         let selectedBottom = selected.flatMap { isBottomItem($0, request: request) ? $0 : nil }
         let selectedShoe = selected.flatMap { isFootwearItem($0, request: request) ? $0 : nil }
@@ -537,27 +531,27 @@ struct OutfitRecommendationEngine {
 
         var recommendations: [OutfitRecommendation] = []
 
-        for top in tops.prefix(8) {
+        for top in tops.prefix(14) {
             let availableBottoms = bottoms.filter { $0?.id != top.id }
             let bottomOptions = top.category == .dress || (needsExerciseClothing && availableBottoms.isEmpty && isBottomItem(top, request: request))
                 ? [nil]
-                : Array(availableBottoms.prefix(8))
+                : Array(availableBottoms.prefix(14))
             for bottom in bottomOptions {
                 if let bottom, bottom.id == top.id {
                     continue
                 }
-                for shoe in shoes.prefix(6) {
+                for shoe in shoes.prefix(12) {
                     if shoe.id == top.id || bottom.map({ shoe.id == $0.id }) == true {
                         continue
                     }
-                    for jacket in jackets.prefix(4) {
+                    for jacket in jackets.prefix(5) {
                         if let jacket,
                            jacket.id == top.id ||
                             bottom.map({ jacket.id == $0.id }) == true ||
                             jacket.id == shoe.id {
                             continue
                         }
-                        for accessory in accessories.prefix(4) {
+                        for accessory in accessories.prefix(6) {
                             if let accessory,
                                accessory.id == top.id ||
                                 bottom.map({ accessory.id == $0.id }) == true ||
@@ -676,13 +670,13 @@ struct OutfitRecommendationEngine {
         )
 
         if isWorkContext(request) {
-            if activeItems.contains(where: { $0.category == .shorts }) {
+            if eligibleBottoms.isEmpty, rawBottoms.contains(where: { $0.category == .shorts }) {
                 reasons.append("Work rules remove shorts.")
             }
-            if activeItems.contains(where: isWorkInappropriateActiveBottom) {
+            if eligibleBottoms.isEmpty, rawBottoms.contains(where: isWorkInappropriateActiveBottom) {
                 reasons.append("Work rules remove sweatpants, joggers, and exercise bottoms.")
             }
-            if activeItems.contains(where: isWorkInappropriateFootwear) {
+            if eligibleShoes.isEmpty, rawShoes.contains(where: isWorkInappropriateFootwear) {
                 reasons.append("Work rules remove Crocs, clogs, slides, sandals, slippers, and athletic shoes.")
             }
             if !activeItems.contains(where: isWorkTop) {
@@ -698,15 +692,6 @@ struct OutfitRecommendationEngine {
 
         if needsExerciseClothing {
             reasons.append("Exercise contexts only use items that look like gym, running, lifting, athletic, performance, trainer, or activewear items.")
-        }
-
-        if collaredShirtNeedsBeltPossible(
-            tops: eligibleTops,
-            bottoms: eligibleBottoms,
-            activeItems: activeItems,
-            stylePreference: stylePreference
-        ) {
-            reasons.append("Your style rules require a belt with collared shirts, but no active belt can complete those outfits.")
         }
 
         if hotHumidJacketIsHardNo(weather: request.weather, stylePreference: stylePreference),
@@ -763,19 +748,6 @@ struct OutfitRecommendationEngine {
         } else {
             reasons.append("\(role.capitalized) items exist, but the current context filtered them out.")
         }
-    }
-
-    private func collaredShirtNeedsBeltPossible(
-        tops: [ClothingItem],
-        bottoms: [ClothingItem],
-        activeItems: [ClothingItem],
-        stylePreference: StylePreference?
-    ) -> Bool {
-        guard requiresBeltWithCollaredShirt(stylePreference) else { return false }
-        let hasCollaredTop = tops.contains { isCollaredTop($0) }
-        let hasBeltLoopBottom = bottoms.contains { isBeltLoopBottom($0) }
-        let hasBelt = activeItems.contains { $0.category == .belt }
-        return hasCollaredTop && hasBeltLoopBottom && !hasBelt
     }
 
     private func constrainedPool(
@@ -1427,8 +1399,8 @@ struct OutfitRecommendationEngine {
         }
 
         if collaredShirtNeedsBelt(items, stylePreference: stylePreference) {
-            value -= 120
-            notes.append("Hard style rule: collared shirt needs a belt")
+            value -= 55
+            notes.append("Style preference: collared shirt would be better with a belt")
         }
 
         let personalRuleValue = personalRuleScore(items: items, request: request, stylePreference: stylePreference)
@@ -1488,10 +1460,6 @@ struct OutfitRecommendationEngine {
             return true
         }
 
-        if collaredShirtNeedsBelt(items, stylePreference: stylePreference) {
-            return true
-        }
-
         if personalRuleScore(items: items, request: request, stylePreference: stylePreference).isHardViolation {
             return true
         }
@@ -1543,11 +1511,15 @@ struct OutfitRecommendationEngine {
             return true
         }
         guard [.pants, .shorts, .activewear].contains(item.category) else { return false }
-        return item.category == .activewear && itemSearchText(item).containsAny([
+        let text = itemSearchText(item)
+        if item.category == .activewear,
+           text.containsAny(["chino", "khaki", "slack", "trouser", "dress pant", "tailored", "five-pocket", "5-pocket"]) {
+            return false
+        }
+        return item.category == .activewear && text.containsAny([
             "sweat",
             "jogger",
             "track",
-            "athletic",
             "running",
             "gym",
             "workout",
@@ -1668,9 +1640,13 @@ struct OutfitRecommendationEngine {
     }
 
     private func isWorkTop(_ item: ClothingItem) -> Bool {
-        guard [.shirt, .blouse, .sweater, .dress].contains(item.category) else { return false }
+        guard [.shirt, .blouse, .sweater, .dress, .activewear].contains(item.category) else { return false }
         let text = itemSearchText(item)
         if text.containsAny(["t-shirt", "tee", "graphic", "tank", "hoodie", "sweatshirt", "henley", "jersey", "lounge", "pajama"]) {
+            return false
+        }
+        if item.category == .activewear,
+           text.containsAny(["gym", "running", "runner", "workout", "training", "jersey"]) {
             return false
         }
         if item.category == .sweater {
@@ -1683,12 +1659,12 @@ struct OutfitRecommendationEngine {
     }
 
     private func isTailoredBottom(_ item: ClothingItem) -> Bool {
-        guard [.pants, .skirt].contains(item.category) else { return false }
+        guard [.pants, .skirt, .activewear].contains(item.category) else { return false }
         let text = itemSearchText(item)
         if isLoungeBottom(item) || text.containsAny(["shorts", "jeans", "denim", "cargo", "gym", "running", "workout"]) {
             return false
         }
-        return text.containsAny(["chino", "khaki", "slack", "trouser", "dress pant", "wool", "tailored", "suit pant", "skirt"]) ||
+        return text.containsAny(["chino", "khaki", "slack", "trouser", "dress pant", "wool", "tailored", "suit pant", "skirt", "five-pocket", "5-pocket"]) ||
             item.category == .pants ||
             item.category == .skirt
     }
@@ -2181,7 +2157,7 @@ struct OutfitRecommendationEngine {
             return true
         }
 
-        guard item.category == .activewear, request.map(isExerciseContext) == true else {
+        guard item.category == .activewear else {
             return false
         }
 
@@ -2192,7 +2168,10 @@ struct OutfitRecommendationEngine {
         ]
         .joined(separator: " ")
         .lowercased()
-        return text.containsAny(["shoe", "sneaker", "trainer", "running shoe", "runner"])
+        if request.map(isExerciseContext) == true {
+            return text.containsAny(["shoe", "sneaker", "trainer", "running shoe", "runner"])
+        }
+        return text.containsAny(["shoe", "sneaker"])
     }
 
     private func isRainShell(_ item: ClothingItem) -> Bool {

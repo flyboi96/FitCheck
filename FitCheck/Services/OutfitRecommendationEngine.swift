@@ -578,10 +578,6 @@ struct OutfitRecommendationEngine {
                             if needsExerciseClothing && !outfitItems.contains(where: isExerciseItem) {
                                 continue
                             }
-                            if violatesHardFashionRules(outfitItems, request: request, stylePreference: stylePreference) {
-                                continue
-                            }
-
                             let scored = score(
                                 items: outfitItems,
                                 feedback: feedback,
@@ -700,7 +696,7 @@ struct OutfitRecommendationEngine {
         }
 
         if reasons.isEmpty {
-            reasons.append("FitCheck found closet roles, but every combination broke a hard fashion, weather, or personal rule.")
+            reasons.append("FitCheck could not build a complete top, bottom, and shoe outfit from the current closet roles. Check item categories and active/laundry status.")
         }
 
         return limitedUniqueNotes(reasons)

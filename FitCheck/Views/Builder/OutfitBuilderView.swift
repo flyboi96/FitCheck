@@ -417,9 +417,9 @@ struct OutfitBuilderView: View {
                 selectedItem: selectedItem
             )
 
-            guard engine.isAcceptableOutfit(chosenItems, request: request, stylePreference: stylePreferences.first) else {
-                aiBuildError = "AI returned an incomplete outfit or broke a hard style/weather rule. Try Ask AI First again or use Build Outfit."
-                builderStatus = "AI returned an unusable outfit."
+            guard engine.isCompleteOutfit(chosenItems, request: request) else {
+                aiBuildError = "AI returned an incomplete outfit. Try Ask AI First again or use Build Outfit."
+                builderStatus = "AI returned an incomplete outfit."
                 noMatchReasons = engine.noMatchReasons(
                     closet: closetItems,
                     stylePreference: stylePreferences.first,

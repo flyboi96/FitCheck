@@ -414,6 +414,7 @@ final class UserAvatar: Identifiable {
     var sourcePhotoData: Data?
     var avatarImageData: Data?
     var latestPreviewData: Data?
+    var latestPreviewCombinationKey: String = ""
     var notes: String
     var createdAt: Date
     var updatedAt: Date
@@ -423,6 +424,7 @@ final class UserAvatar: Identifiable {
         sourcePhotoData: Data? = nil,
         avatarImageData: Data? = nil,
         latestPreviewData: Data? = nil,
+        latestPreviewCombinationKey: String = "",
         notes: String = "",
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -431,6 +433,7 @@ final class UserAvatar: Identifiable {
         self.sourcePhotoData = sourcePhotoData
         self.avatarImageData = avatarImageData
         self.latestPreviewData = latestPreviewData
+        self.latestPreviewCombinationKey = latestPreviewCombinationKey
         self.notes = notes
         self.createdAt = createdAt
         self.updatedAt = updatedAt

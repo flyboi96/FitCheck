@@ -1170,25 +1170,32 @@ struct OutfitRecommendationEngine {
 
     private func feedbackScore(items: [ClothingItem], feedback: [Feedback]) -> (value: Double, notes: [String]) {
         let combinationKey = OutfitRecommendation.combinationKey(for: items)
+        let outfitText = outfitSearchText(items)
         var value = 0.0
         var notes: [String] = []
 
         for entry in feedback {
             if entry.type == .goodOutfit {
                 if !entry.combinationKey.isEmpty && entry.combinationKey == combinationKey {
-                    value += 18
-                    notes.append("Past positive combo")
+                    value += 24
+                    notes.append("You liked this exact combination before")
                 }
                 if let feedbackItem = entry.item, items.contains(where: { $0.id == feedbackItem.id }) {
-                    value += 4
+                    value += 6
                 }
             } else if entry.type.isNegative {
                 if !entry.combinationKey.isEmpty && entry.combinationKey == combinationKey {
-                    value -= 45
-                    notes.append("Past negative combo")
+                    value -= 80
+                    notes.append("Avoided score: you rejected this exact combination before")
                 }
                 if let feedbackItem = entry.item, items.contains(where: { $0.id == feedbackItem.id }) {
-                    value -= 8
+                    value -= 18
+                    notes.append("Past feedback disliked one selected item")
+                }
+
+                if let learnedPenalty = learnedFeedbackPenalty(entry.note, outfitText: outfitText) {
+                    value -= learnedPenalty.value
+                    notes.append(learnedPenalty.note)
                 }
             }
         }
@@ -1260,6 +1267,10 @@ struct OutfitRecommendationEngine {
             notes.append("Hard style rule: collared shirt needs a belt")
         }
 
+        let personalRuleValue = personalRuleScore(items: items, request: request, stylePreference: stylePreference)
+        value += personalRuleValue.value
+        notes.append(contentsOf: personalRuleValue.notes)
+
         let coherence = fashionCoherenceScore(items: items, request: request)
         value += coherence.value
         notes.append(contentsOf: coherence.notes)
@@ -1314,6 +1325,10 @@ struct OutfitRecommendationEngine {
         }
 
         if collaredShirtNeedsBelt(items, stylePreference: stylePreference) {
+            return true
+        }
+
+        if personalRuleScore(items: items, request: request, stylePreference: stylePreference).isHardViolation {
             return true
         }
 
@@ -1626,6 +1641,203 @@ struct OutfitRecommendationEngine {
         .joined(separator: " ")
         .lowercased()
         return text.containsAny(["crocs", "clogs"])
+    }
+
+    private func personalRuleScore(
+        items: [ClothingItem],
+        request: RecommendationRequest,
+        stylePreference: StylePreference?
+    ) -> (value: Double, notes: [String], isHardViolation: Bool) {
+        let statements = personalRuleStatements(stylePreference)
+        guard !statements.isEmpty else { return (0, [], false) }
+
+        var value = 0.0
+        var notes: [String] = []
+        var isHardViolation = false
+
+        for statement in statements where personalRuleMatches(statement, items: items, request: request) {
+            value -= 180
+            isHardViolation = true
+            notes.append("Personal rule: \(shortRuleNote(statement))")
+        }
+
+        return (value, notes, isHardViolation)
+    }
+
+    private func personalRuleStatements(_ stylePreference: StylePreference?) -> [String] {
+        guard let stylePreference else { return [] }
+        let text = [
+            stylePreference.rules,
+            stylePreference.dislikedCombinations
+        ]
+        .joined(separator: "\n")
+
+        return text
+            .components(separatedBy: CharacterSet(charactersIn: "\n.;"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func personalRuleMatches(_ statement: String, items: [ClothingItem], request: RecommendationRequest) -> Bool {
+        let rule = statement.lowercased()
+        let requestText = "\(request.occasion) \(request.activity)".lowercased()
+
+        if rule.containsAny(["work", "office", "business", "pilot", "flight", "airline", "duty"]),
+           !isWorkContext(request) {
+            return false
+        }
+
+        if rule.containsAny(["gym", "running", "run", "lifting", "lift", "workout", "exercise"]),
+           !isExerciseContext(request),
+           !requestText.containsAny(["gym", "running", "run", "lifting", "lift", "workout", "exercise"]) {
+            return false
+        }
+
+        let hardLanguage = rule.containsAny([
+            "never",
+            "no ",
+            "do not",
+            "don't",
+            "avoid",
+            "must not",
+            "cannot",
+            "can't",
+            "unacceptable",
+            "against",
+            "not fashionable",
+            "not stylish",
+            "hard no"
+        ])
+        let ruleTerms = feedbackAndRuleTerms(in: rule)
+        let matchedTerms = ruleTerms.filter { outfitContainsTerm($0, items: items) }
+
+        if matchedTerms.count >= 2 {
+            return hardLanguage || rule.containsAny([" with ", " and ", "+"])
+        }
+
+        if hardLanguage, matchedTerms.count >= 1 {
+            return true
+        }
+
+        return false
+    }
+
+    private func learnedFeedbackPenalty(_ note: String, outfitText: String) -> (value: Double, note: String)? {
+        let terms = feedbackAndRuleTerms(in: note)
+        guard !terms.isEmpty else { return nil }
+
+        let matchedTerms = terms.filter { outfitText.contains($0) }
+        guard matchedTerms.count >= 2 else { return nil }
+
+        let label = matchedTerms.prefix(3).joined(separator: ", ")
+        return (22, "Learned from feedback: avoid \(label)")
+    }
+
+    private func feedbackAndRuleTerms(in text: String) -> [String] {
+        let normalized = text.lowercased()
+        let knownTerms = [
+            "activewear",
+            "athletic",
+            "belt",
+            "blazer",
+            "boot",
+            "boots",
+            "button-down",
+            "button down",
+            "button-up",
+            "button up",
+            "chino",
+            "clog",
+            "clogs",
+            "collar",
+            "collared",
+            "crocs",
+            "croc",
+            "dress shirt",
+            "dress shoe",
+            "flip flop",
+            "flip-flop",
+            "gym",
+            "henley",
+            "jacket",
+            "jeans",
+            "jogger",
+            "joggers",
+            "loafer",
+            "loafers",
+            "lounge",
+            "pajama",
+            "pants",
+            "polo",
+            "rain shell",
+            "rainshell",
+            "running",
+            "running shoe",
+            "running shoes",
+            "running sock",
+            "running socks",
+            "sandals",
+            "shirt",
+            "shorts",
+            "slides",
+            "sneaker",
+            "sneakers",
+            "socks",
+            "sweatpants",
+            "sweat pants",
+            "tee",
+            "t-shirt",
+            "underwear",
+            "work shirt",
+            "workout"
+        ]
+
+        return Array(Set(knownTerms.filter { normalized.contains($0) })).sorted()
+    }
+
+    private func outfitContainsTerm(_ term: String, items: [ClothingItem]) -> Bool {
+        switch term {
+        case "belt":
+            return items.contains { $0.category == .belt }
+        case "boot", "boots":
+            return items.contains(where: isBoot)
+        case "crocs", "croc":
+            return items.contains(where: isCrocsOrFoamClog)
+        case "clog", "clogs":
+            return items.contains(where: isClog)
+        case "shorts":
+            return items.contains { $0.category == .shorts || itemSearchText($0).contains("shorts") }
+        case "sweatpants", "sweat pants", "jogger", "joggers":
+            return items.contains(where: isSweatpantsOrJoggers)
+        case "lounge", "pajama":
+            return items.contains(where: isLoungeBottom)
+        case "collar", "collared", "button-down", "button down", "button-up", "button up", "dress shirt", "work shirt", "polo":
+            return items.contains(where: isCollaredTop)
+        case "running", "running shoe", "running shoes", "running sock", "running socks":
+            return items.contains { itemSearchText($0).containsAny(["running", "runner", "run"]) }
+        case "gym", "workout", "activewear", "athletic":
+            return items.contains(where: isExerciseItem)
+        case "pants":
+            return items.contains { $0.category == .pants }
+        case "shirt", "tee", "t-shirt", "henley":
+            return items.contains { [.shirt, .blouse, .sweater, .activewear].contains($0.category) && itemSearchText($0).contains(term) }
+        case "sneaker", "sneakers":
+            return items.contains { itemSearchText($0).containsAny(["sneaker", "trainer", "tennis shoe"]) }
+        case "sandals", "slides", "flip flop", "flip-flop":
+            return items.contains { itemSearchText($0).contains(term) }
+        default:
+            return outfitSearchText(items).contains(term)
+        }
+    }
+
+    private func outfitSearchText(_ items: [ClothingItem]) -> String {
+        items.map(itemSearchText).joined(separator: " ")
+    }
+
+    private func shortRuleNote(_ statement: String) -> String {
+        let trimmed = statement.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 84 else { return trimmed }
+        return "\(trimmed.prefix(81))..."
     }
 
     private func collaredShirtNeedsBelt(_ items: [ClothingItem], stylePreference: StylePreference?) -> Bool {

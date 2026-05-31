@@ -209,6 +209,7 @@ struct AvatarStudioView: View {
         avatar.sourcePhotoData = data
         avatar.avatarImageData = nil
         avatar.latestPreviewData = nil
+        avatar.latestPreviewCombinationKey = ""
         avatar.updatedAt = Date()
         try? modelContext.save()
         errorMessage = ""
@@ -254,6 +255,7 @@ struct AvatarStudioView: View {
             let avatar = ensureAvatar()
             avatar.avatarImageData = imageData
             avatar.latestPreviewData = imageData
+            avatar.latestPreviewCombinationKey = ""
             avatar.updatedAt = Date()
             try? modelContext.save()
             avatarStatus = "Full-body avatar saved."

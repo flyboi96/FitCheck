@@ -11,6 +11,7 @@ struct WardrobePhotoImportView: View {
     @AppStorage("fitcheckAIProxyURL") private var aiProxyURL = ""
     @AppStorage("fitcheckAIProxyToken") private var aiProxyToken = ""
     @AppStorage("fitcheckWearerProfile") private var wearerProfile = WearerProfileOption.unspecified.rawValue
+    @AppStorage("fitcheckAutoDescribeClothingPhotos") private var autoDescribePhotos = true
 
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var photoData: Data?
@@ -49,6 +50,8 @@ struct WardrobePhotoImportView: View {
             }
 
             Section("AI Import") {
+                Toggle("Describe photos automatically", isOn: $autoDescribePhotos)
+
                 Button {
                     Task {
                         await describeWithAI()
@@ -111,6 +114,14 @@ struct WardrobePhotoImportView: View {
                         .foregroundStyle(.secondary)
                     }
                 }
+
+                Button {
+                    saveItem(dismissAfterSave: false)
+                } label: {
+                    Label("Save & Add Another", systemImage: "plus.circle")
+                }
+                .buttonStyle(.bordered)
+                .disabled(!canSave)
             }
         }
         .navigationTitle("Photo Import")
@@ -122,7 +133,7 @@ struct WardrobePhotoImportView: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
-                    saveItem()
+                    saveItem(dismissAfterSave: true)
                 }
                 .disabled(!canSave)
             }
@@ -238,9 +249,17 @@ struct WardrobePhotoImportView: View {
         photoData = data
         aiSuggestion = nil
         statusMessage = ""
+        maybeAutoDescribe()
     }
 
-    private func saveItem() {
+    private func maybeAutoDescribe() {
+        guard autoDescribePhotos, canDescribeWithAI else { return }
+        Task {
+            await describeWithAI()
+        }
+    }
+
+    private func saveItem(dismissAfterSave: Bool) {
         let trimmedName = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallback = ClothingInference.metadata(name: trimmedName, category: draftCategory)
         let item = ClothingItem(
@@ -261,7 +280,24 @@ struct WardrobePhotoImportView: View {
 
         modelContext.insert(item)
         try? modelContext.save()
-        dismiss()
+        if dismissAfterSave {
+            dismiss()
+        } else {
+            resetDraft()
+            statusMessage = "Saved. Add another item."
+        }
+    }
+
+    private func resetDraft() {
+        selectedPhotoItem = nil
+        photoData = nil
+        userDescription = ""
+        draftName = ""
+        draftBrand = ""
+        draftCategory = .shirt
+        draftQuantity = 1
+        draftNotes = ""
+        aiSuggestion = nil
     }
 
     private func preferredValue(_ values: String?...) -> String {

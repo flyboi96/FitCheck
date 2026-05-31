@@ -677,7 +677,7 @@ private struct TripDetailView: View {
         modelContext.insert(entry)
         outfit.feedback.append(entry)
         try? modelContext.save()
-        feedbackStatus = "Saved \(type.displayName.lowercased()) feedback."
+        feedbackStatus = "Feedback saved. Similar itinerary outfits will be adjusted next time."
     }
 
     private func latestFeedback(for outfit: Outfit) -> Feedback? {
@@ -1045,6 +1045,7 @@ private struct TripDayPlanEditorView: View {
     @State private var expectedWeather = ""
     @State private var notes = ""
     @State private var selectedContextRawValues: Set<String>
+    @State private var applyToEmptyDays = false
 
     init(trip: Trip, date: Date, existingStop: TripStop?, fallbackLocation: String) {
         self.trip = trip
@@ -1076,6 +1077,13 @@ private struct TripDayPlanEditorView: View {
                 }
             }
 
+            Section("Apply") {
+                Toggle("Copy to empty days", isOn: $applyToEmptyDays)
+                Text("Copies this location, manual weather, notes, and outfit requests only to dates that do not already have a Daily Plan.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Notes") {
                 TextField("Plans for this date", text: $notes, prompt: Text("Work day, dinner, run before work"))
                     .textInputAutocapitalization(.sentences)
@@ -1099,30 +1107,86 @@ private struct TripDayPlanEditorView: View {
 
     private func save() {
         let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedWeather = expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines)
+        let contexts = selectedContexts
         if let existingStop {
             existingStop.location = trimmedLocation
             existingStop.startsAt = date
             existingStop.endsAt = date
-            existingStop.expectedWeather = expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines)
+            existingStop.expectedWeather = trimmedWeather
             existingStop.customsNotes = notes
-            existingStop.requestedContexts = selectedContexts
+            existingStop.requestedContexts = contexts
             existingStop.isDailyPlanEntry = true
         } else {
             let stop = TripStop(
                 location: trimmedLocation,
                 startsAt: date,
                 endsAt: date,
-                expectedWeather: expectedWeather.trimmingCharacters(in: .whitespacesAndNewlines),
+                expectedWeather: trimmedWeather,
                 customsNotes: notes,
-                requestedContextRawValues: selectedContexts.map(\.rawValue).joined(separator: "\n"),
+                requestedContextRawValues: contexts.map(\.rawValue).joined(separator: "\n"),
                 isDailyPlanEntry: true,
                 trip: trip
             )
             modelContext.insert(stop)
             trip.stops.append(stop)
         }
+
+        if applyToEmptyDays {
+            copyPlanToEmptyDays(
+                location: trimmedLocation,
+                weather: trimmedWeather,
+                notes: notes,
+                contexts: contexts
+            )
+        }
+
         try? modelContext.save()
         dismiss()
+    }
+
+    private func copyPlanToEmptyDays(
+        location: String,
+        weather: String,
+        notes: String,
+        contexts: [OutfitContextOption]
+    ) {
+        for day in dates(from: trip.startsAt, through: trip.endsAt) {
+            guard !Calendar.current.isDate(day, inSameDayAs: date), dailyPlanStop(on: day) == nil else {
+                continue
+            }
+
+            let stop = TripStop(
+                location: location,
+                startsAt: day,
+                endsAt: day,
+                expectedWeather: weather,
+                customsNotes: notes,
+                requestedContextRawValues: contexts.map(\.rawValue).joined(separator: "\n"),
+                isDailyPlanEntry: true,
+                trip: trip
+            )
+            modelContext.insert(stop)
+            trip.stops.append(stop)
+        }
+    }
+
+    private func dailyPlanStop(on date: Date) -> TripStop? {
+        let startOfDay = Calendar.current.startOfDay(for: date)
+        return trip.stops.first { stop in
+            Calendar.current.startOfDay(for: stop.startsAt) == startOfDay &&
+                Calendar.current.startOfDay(for: stop.endsAt) == startOfDay &&
+                stop.isDailyPlanEntry
+        }
+    }
+
+    private func dates(from start: Date, through end: Date) -> [Date] {
+        let calendar = Calendar.current
+        let startDay = calendar.startOfDay(for: start)
+        let endDay = calendar.startOfDay(for: end)
+        let dayCount = calendar.dateComponents([.day], from: startDay, to: endDay).day ?? 0
+        guard dayCount >= 0 else { return [startDay] }
+        return (0...dayCount).compactMap { calendar.date(byAdding: .day, value: $0, to: startDay) }
     }
 
     private var selectedContexts: [OutfitContextOption] {

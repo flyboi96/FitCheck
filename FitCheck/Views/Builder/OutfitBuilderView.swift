@@ -441,7 +441,7 @@ struct OutfitBuilderView: View {
         let entry = Feedback(type: type, note: note, combinationKey: recommendation.combinationKey)
         modelContext.insert(entry)
         try? modelContext.save()
-        builderStatus = "Saved \(type.displayName.lowercased()) feedback and refreshed outfits."
+        builderStatus = "Feedback saved. Similar builder outfits will be adjusted next time."
         generate()
     }
 
@@ -457,6 +457,16 @@ struct OutfitBuilderView: View {
     }
 
     private func avatarPreviewAction(for recommendation: OutfitRecommendation) -> (() -> Void)? {
+        let key = recommendation.combinationKey
+        if let avatar = avatars.first,
+           avatar.latestPreviewCombinationKey == key,
+           let previewData = avatar.latestPreviewData {
+            return {
+                avatarPreviews[key] = previewData
+                builderStatus = "Reused saved avatar preview."
+            }
+        }
+
         guard useAIProxy, configuredAIProxyURL != nil, avatarReferencePhoto != nil else { return nil }
         return {
             Task {
@@ -547,6 +557,7 @@ struct OutfitBuilderView: View {
             avatarPreviews[key] = imageData
             if let avatar = avatars.first {
                 avatar.latestPreviewData = imageData
+                avatar.latestPreviewCombinationKey = key
                 avatar.updatedAt = Date()
                 try? modelContext.save()
             }

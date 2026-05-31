@@ -546,7 +546,7 @@ struct TodayOutfitView: View {
         modelContext.insert(entry)
         try? modelContext.save()
         lastAction = .feedback(entry.id, "Saved \(type.displayName.lowercased()) feedback.")
-        recommendationStatus = "Feedback saved and recommendations refreshed."
+        recommendationStatus = "Feedback saved. Similar outfits will be adjusted next time."
         generate()
     }
 
@@ -594,6 +594,16 @@ struct TodayOutfitView: View {
     }
 
     private func avatarPreviewAction(for recommendation: OutfitRecommendation) -> (() -> Void)? {
+        let key = recommendation.combinationKey
+        if let avatar = avatars.first,
+           avatar.latestPreviewCombinationKey == key,
+           let previewData = avatar.latestPreviewData {
+            return {
+                avatarPreviews[key] = previewData
+                recommendationStatus = "Reused saved avatar preview."
+            }
+        }
+
         guard useAIProxy, configuredAIProxyURL != nil, avatarReferencePhoto != nil else { return nil }
         return {
             Task {
@@ -678,6 +688,7 @@ struct TodayOutfitView: View {
             avatarPreviews[key] = imageData
             if let avatar = avatars.first {
                 avatar.latestPreviewData = imageData
+                avatar.latestPreviewCombinationKey = key
                 avatar.updatedAt = Date()
                 try? modelContext.save()
             }

@@ -497,18 +497,43 @@ private struct UserAvatarBackup: Codable {
     var sourcePhotoData: Data?
     var avatarImageData: Data?
     var latestPreviewData: Data?
+    var latestPreviewCombinationKey: String
     var notes: String
     var createdAt: Date
     var updatedAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case sourcePhotoData
+        case avatarImageData
+        case latestPreviewData
+        case latestPreviewCombinationKey
+        case notes
+        case createdAt
+        case updatedAt
+    }
 
     init(avatar: UserAvatar) {
         id = avatar.id
         sourcePhotoData = avatar.sourcePhotoData
         avatarImageData = avatar.avatarImageData
         latestPreviewData = avatar.latestPreviewData
+        latestPreviewCombinationKey = avatar.latestPreviewCombinationKey
         notes = avatar.notes
         createdAt = avatar.createdAt
         updatedAt = avatar.updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        sourcePhotoData = try container.decodeIfPresent(Data.self, forKey: .sourcePhotoData)
+        avatarImageData = try container.decodeIfPresent(Data.self, forKey: .avatarImageData)
+        latestPreviewData = try container.decodeIfPresent(Data.self, forKey: .latestPreviewData)
+        latestPreviewCombinationKey = try container.decodeIfPresent(String.self, forKey: .latestPreviewCombinationKey) ?? ""
+        notes = try container.decode(String.self, forKey: .notes)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
 
     var model: UserAvatar {
@@ -517,6 +542,7 @@ private struct UserAvatarBackup: Codable {
             sourcePhotoData: sourcePhotoData,
             avatarImageData: avatarImageData,
             latestPreviewData: latestPreviewData,
+            latestPreviewCombinationKey: latestPreviewCombinationKey,
             notes: notes,
             createdAt: createdAt,
             updatedAt: updatedAt

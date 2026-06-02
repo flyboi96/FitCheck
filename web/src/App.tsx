@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react'
+import { lazy, Suspense, type FormEvent, type ReactNode, useState } from 'react'
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -22,14 +22,6 @@ import {
   Wand2,
 } from 'lucide-react'
 import './App.css'
-import { AIProxySettingsPanel } from './components/AIProxySettingsPanel'
-import { AvatarStudioPanel } from './components/AvatarStudioPanel'
-import { ClosetPanel } from './components/ClosetPanel'
-import { DataPortabilityPanel } from './components/DataPortabilityPanel'
-import { HistoryPanel } from './components/HistoryPanel'
-import { OutfitExperiencePanel } from './components/OutfitExperiencePanel'
-import { PlansPanel } from './components/PlansPanel'
-import { ContextStyleEditorPanel, ScoringGuidePanel } from './components/ScoringAndContextPanel'
 import { useAuthProfile } from './hooks/useAuthProfile'
 import { auth, firebaseStatus } from './lib/firebase'
 import {
@@ -40,7 +32,52 @@ import {
   type UserProfileDraft,
   type WearerProfile,
 } from './lib/profile'
-import { buildStyleProfileFromAnswers } from './lib/styleCoach'
+
+const LazyAIProxySettingsPanel = lazy(() =>
+  import('./components/AIProxySettingsPanel').then((module) => ({
+    default: module.AIProxySettingsPanel,
+  })),
+)
+const LazyClosetPanel = lazy(() =>
+  import('./components/ClosetPanel').then((module) => ({
+    default: module.ClosetPanel,
+  })),
+)
+const LazyOutfitExperiencePanel = lazy(() =>
+  import('./components/OutfitExperiencePanel').then((module) => ({
+    default: module.OutfitExperiencePanel,
+  })),
+)
+const LazyPlansPanel = lazy(() =>
+  import('./components/PlansPanel').then((module) => ({
+    default: module.PlansPanel,
+  })),
+)
+const LazyAvatarStudioPanel = lazy(() =>
+  import('./components/AvatarStudioPanel').then((module) => ({
+    default: module.AvatarStudioPanel,
+  })),
+)
+const LazyDataPortabilityPanel = lazy(() =>
+  import('./components/DataPortabilityPanel').then((module) => ({
+    default: module.DataPortabilityPanel,
+  })),
+)
+const LazyHistoryPanel = lazy(() =>
+  import('./components/HistoryPanel').then((module) => ({
+    default: module.HistoryPanel,
+  })),
+)
+const LazyContextStyleEditorPanel = lazy(() =>
+  import('./components/ScoringAndContextPanel').then((module) => ({
+    default: module.ContextStyleEditorPanel,
+  })),
+)
+const LazyScoringGuidePanel = lazy(() =>
+  import('./components/ScoringAndContextPanel').then((module) => ({
+    default: module.ScoringGuidePanel,
+  })),
+)
 
 const tabs = [
   { id: 'today', label: 'Today', icon: CloudSun },
@@ -173,7 +210,7 @@ function AuthGate() {
         <div className="panel-heading">
           <UserRound size={28} aria-hidden="true" />
           <div>
-            <p className="eyebrow">PWA phase 06</p>
+            <p className="eyebrow">PWA phase 07</p>
             <h1 id="auth-title">FitCheck</h1>
           </div>
         </div>
@@ -265,7 +302,7 @@ function AuthenticatedShell({
     <main className="app-shell">
       <section className="top-bar" aria-label="FitCheck PWA status">
         <div>
-          <p className="eyebrow">PWA phase 06</p>
+          <p className="eyebrow">PWA phase 07</p>
           <h1>FitCheck</h1>
         </div>
         <div className="status-pill ready">
@@ -298,7 +335,9 @@ function AuthenticatedShell({
           </div>
         ) : null}
 
-        {renderTabPanel(activeTab, user, profile, refreshProfile)}
+        <Suspense fallback={<TabPanelFallback label={tabs.find((tab) => tab.id === activeTab)?.label ?? 'Tab'} />}>
+          {renderTabPanel(activeTab, user, profile, refreshProfile)}
+        </Suspense>
       </section>
 
       <nav className="tab-bar" aria-label="FitCheck sections">
@@ -331,16 +370,28 @@ function renderTabPanel(
 ) {
   switch (activeTab) {
     case 'today':
-      return <OutfitExperiencePanel mode="today" profile={profile} userId={user.uid} />
+      return <LazyOutfitExperiencePanel mode="today" profile={profile} userId={user.uid} />
     case 'plans':
-      return <PlansPanel profile={profile} userId={user.uid} />
+      return <LazyPlansPanel profile={profile} userId={user.uid} />
     case 'closet':
-      return <ClosetPanel userId={user.uid} wearerProfile={profile?.gender ?? 'unspecified'} />
+      return <LazyClosetPanel userId={user.uid} wearerProfile={profile?.gender ?? 'unspecified'} />
     case 'build':
-      return <OutfitExperiencePanel mode="build" profile={profile} userId={user.uid} />
+      return <LazyOutfitExperiencePanel mode="build" profile={profile} userId={user.uid} />
     case 'more':
       return <MorePanel profile={profile} refreshProfile={refreshProfile} user={user} />
   }
+}
+
+function TabPanelFallback({ label }: { label: string }) {
+  return (
+    <div className="placeholder-panel">
+      <span className="spinner small" aria-hidden="true" />
+      <div>
+        <h3>Loading {label}</h3>
+        <p>Preparing this section.</p>
+      </div>
+    </div>
+  )
 }
 
 function MorePanel({
@@ -355,12 +406,24 @@ function MorePanel({
   return (
     <div className="tab-content">
       <ProfileEditor profile={profile} refreshProfile={refreshProfile} user={user} />
-      <AvatarStudioPanel profile={profile} userId={user.uid} />
-      <HistoryPanel userId={user.uid} />
-      <DataPortabilityPanel userId={user.uid} />
-      <ScoringGuidePanel />
-      <ContextStyleEditorPanel userId={user.uid} />
-      <AIProxySettingsPanel />
+      <LazyMoreSection>
+        <LazyAvatarStudioPanel profile={profile} userId={user.uid} />
+      </LazyMoreSection>
+      <LazyMoreSection>
+        <LazyHistoryPanel userId={user.uid} />
+      </LazyMoreSection>
+      <LazyMoreSection>
+        <LazyDataPortabilityPanel userId={user.uid} />
+      </LazyMoreSection>
+      <LazyMoreSection>
+        <LazyScoringGuidePanel />
+      </LazyMoreSection>
+      <LazyMoreSection>
+        <LazyContextStyleEditorPanel userId={user.uid} />
+      </LazyMoreSection>
+      <LazyMoreSection>
+        <LazyAIProxySettingsPanel />
+      </LazyMoreSection>
       <section className="profile-form">
         <div className="section-title">
           <Database size={20} aria-hidden="true" />
@@ -387,6 +450,20 @@ function MorePanel({
         Sign Out
       </button>
     </div>
+  )
+}
+
+function LazyMoreSection({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<MoreSectionFallback />}>{children}</Suspense>
+}
+
+function MoreSectionFallback() {
+  return (
+    <section className="profile-form">
+      <p className="helper-text">
+        <span className="spinner small" aria-hidden="true" /> Loading More section.
+      </p>
+    </section>
   )
 }
 
@@ -428,6 +505,7 @@ function ProfileEditor({
     setError(null)
 
     try {
+      const { buildStyleProfileFromAnswers } = await import('./lib/styleCoach')
       const styleDraft = await buildStyleProfileFromAnswers({
         answers: styleAnswers,
         currentDraft: draft,

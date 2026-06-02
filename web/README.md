@@ -30,6 +30,9 @@ This is the Progressive Web App version of FitCheck. It lives beside the native 
 - Scoring guide and editable context styles under More
 - Reorderable plan days, editable generated itinerary cards, and editable packing list rows
 - Firestore IndexedDB persistence for offline resilience
+- More panels are lazy-loaded/code-split so backup, history, avatar, scoring, and context tools do not inflate the initial route
+- Today, Plans, Closet, and Build are lazy-loaded/code-split by tab
+- Vite manual chunks split React, Firebase, icons, and app feature code
 
 The profile document currently stores:
 

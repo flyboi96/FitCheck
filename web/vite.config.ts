@@ -6,6 +6,39 @@ const githubPagesBase = '/FitCheck/'
 
 export default defineConfig({
   base: githubPagesBase,
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return undefined
+          }
+
+          if (id.includes('/react/') || id.includes('/react-dom/')) {
+            return 'vendor-react'
+          }
+
+          if (
+            id.includes('/firebase/') ||
+            id.includes('/@firebase/') ||
+            id.includes('/idb/')
+          ) {
+            return 'vendor-firebase'
+          }
+
+          if (id.includes('/lucide-react/')) {
+            return 'vendor-icons'
+          }
+
+          if (id.includes('/workbox-') || id.includes('/vite-plugin-pwa/')) {
+            return 'vendor-pwa'
+          }
+
+          return 'vendor'
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({

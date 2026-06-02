@@ -56,6 +56,9 @@ Included:
 - Direct packing-list name, quantity, and remove controls
 - Clearer itinerary-to-packing-list flow
 - Firestore IndexedDB offline persistence
+- More panels are lazy-loaded/code-split to reduce initial PWA bundle size
+- Today, Plans, Closet, and Build tabs are lazy-loaded/code-split
+- Vite manual chunks split React, Firebase, icons, and app feature code
 
 ## Next Ideas
 

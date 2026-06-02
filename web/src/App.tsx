@@ -23,17 +23,22 @@ import {
 } from 'lucide-react'
 import './App.css'
 import { AIProxySettingsPanel } from './components/AIProxySettingsPanel'
+import { AvatarStudioPanel } from './components/AvatarStudioPanel'
 import { ClosetPanel } from './components/ClosetPanel'
+import { HistoryPanel } from './components/HistoryPanel'
 import { OutfitExperiencePanel } from './components/OutfitExperiencePanel'
 import { PlansPanel } from './components/PlansPanel'
 import { useAuthProfile } from './hooks/useAuthProfile'
 import { auth, firebaseStatus } from './lib/firebase'
 import {
+  emptyUserProfileDraft,
+  temperatureSensitivityLabel,
   upsertUserProfile,
   type UserProfile,
   type UserProfileDraft,
   type WearerProfile,
 } from './lib/profile'
+import { buildStyleProfileFromAnswers } from './lib/styleCoach'
 
 const tabs = [
   { id: 'today', label: 'Today', icon: CloudSun },
@@ -52,11 +57,7 @@ const wearerOptions: Array<{ value: WearerProfile; label: string }> = [
   { value: 'female', label: 'Female' },
 ]
 
-const defaultProfileDraft: UserProfileDraft = {
-  displayName: '',
-  gender: 'unspecified',
-  styleDescription: '',
-}
+const defaultProfileDraft: UserProfileDraft = emptyUserProfileDraft()
 
 function App() {
   const authState = useAuthProfile()
@@ -151,9 +152,8 @@ function AuthGate() {
         }
 
         await upsertUserProfile(credential.user, {
+          ...draft,
           displayName,
-          gender: draft.gender,
-          styleDescription: draft.styleDescription,
         })
       } else {
         await signInWithEmailAndPassword(auth, email.trim(), password)
@@ -171,7 +171,7 @@ function AuthGate() {
         <div className="panel-heading">
           <UserRound size={28} aria-hidden="true" />
           <div>
-            <p className="eyebrow">PWA phase 05</p>
+            <p className="eyebrow">PWA phase 06</p>
             <h1 id="auth-title">FitCheck</h1>
           </div>
         </div>
@@ -227,7 +227,7 @@ function AuthGate() {
             </div>
           </label>
 
-          {isRegistering ? <ProfileFields draft={draft} setDraft={setDraft} /> : null}
+          {isRegistering ? <ProfileFields compact draft={draft} setDraft={setDraft} /> : null}
 
           {error ? <p className="error-message">{error}</p> : null}
 
@@ -263,7 +263,7 @@ function AuthenticatedShell({
     <main className="app-shell">
       <section className="top-bar" aria-label="FitCheck PWA status">
         <div>
-          <p className="eyebrow">PWA phase 05</p>
+          <p className="eyebrow">PWA phase 06</p>
           <h1>FitCheck</h1>
         </div>
         <div className="status-pill ready">
@@ -353,6 +353,8 @@ function MorePanel({
   return (
     <div className="tab-content">
       <ProfileEditor profile={profile} refreshProfile={refreshProfile} user={user} />
+      <AvatarStudioPanel profile={profile} userId={user.uid} />
+      <HistoryPanel userId={user.uid} />
       <AIProxySettingsPanel />
       <button
         type="button"
@@ -383,10 +385,44 @@ function ProfileEditor({
     displayName: profile?.displayName ?? user.displayName ?? '',
     gender: profile?.gender ?? 'unspecified',
     styleDescription: profile?.styleDescription ?? '',
+    favoriteLooks: profile?.favoriteLooks ?? '',
+    preferredColors: profile?.preferredColors ?? '',
+    preferredFit: profile?.preferredFit ?? '',
+    temperatureSensitivity: profile?.temperatureSensitivity ?? 'neutral',
+    statementPiecePreference: profile?.statementPiecePreference ?? '',
+    dislikedCombinations: profile?.dislikedCombinations ?? '',
+    rules: profile?.rules ?? '',
   }))
+  const [styleAnswers, setStyleAnswers] = useState('')
+  const [isBuildingStyleProfile, setIsBuildingStyleProfile] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  async function handleBuildStyleProfile() {
+    if (!styleAnswers.trim()) {
+      setError('Answer the style questions first.')
+      return
+    }
+
+    setIsBuildingStyleProfile(true)
+    setStatus(null)
+    setError(null)
+
+    try {
+      const styleDraft = await buildStyleProfileFromAnswers({
+        answers: styleAnswers,
+        currentDraft: draft,
+        profile,
+      })
+      setDraft({ ...draft, ...styleDraft })
+      setStatus('AI drafted your style profile. Review it, then save.')
+    } catch (styleError) {
+      setError(styleError instanceof Error ? styleError.message : 'Could not build style profile.')
+    } finally {
+      setIsBuildingStyleProfile(false)
+    }
+  }
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -418,6 +454,55 @@ function ProfileEditor({
         <p className="helper-text">{user.email}</p>
       </div>
 
+      <div className="style-coach-card">
+        <div className="section-title">
+          <Wand2 size={20} aria-hidden="true" />
+          <div>
+            <p className="eyebrow">AI Style Coach</p>
+            <h3>Build Profile from Answers</h3>
+          </div>
+        </div>
+
+        <details className="nested-details">
+          <summary>Questions to answer</summary>
+          <ul>
+            <li>What outfits make you feel most like yourself?</li>
+            <li>What do you wear most often now?</li>
+            <li>What colors, fits, brands, and materials do you usually like?</li>
+            <li>Do you run hot or cold compared with other people?</li>
+            <li>How often should one bold item show up?</li>
+            <li>What feels too flashy, too formal, too casual, or just wrong?</li>
+            <li>Are there any hard rules FitCheck should follow?</li>
+          </ul>
+        </details>
+
+        <label className="form-field">
+          <span>Your Answers</span>
+          <textarea
+            onChange={(event) => setStyleAnswers(event.target.value)}
+            placeholder="Example: I usually wear business casual, run hot, like merino/cotton, dislike shorts with boots, and want one bold item occasionally."
+            rows={5}
+            value={styleAnswers}
+          />
+        </label>
+
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={isBuildingStyleProfile}
+          onClick={() => {
+            void handleBuildStyleProfile()
+          }}
+        >
+          {isBuildingStyleProfile ? (
+            <span className="spinner small" aria-hidden="true" />
+          ) : (
+            <Wand2 size={20} aria-hidden="true" />
+          )}
+          Build Profile from Answers
+        </button>
+      </div>
+
       <ProfileFields draft={draft} setDraft={setDraft} />
 
       {status ? <p className="success-message">{status}</p> : null}
@@ -432,9 +517,11 @@ function ProfileEditor({
 }
 
 function ProfileFields({
+  compact = false,
   draft,
   setDraft,
 }: {
+  compact?: boolean
   draft: UserProfileDraft
   setDraft: (draft: UserProfileDraft) => void
 }) {
@@ -468,7 +555,7 @@ function ProfileFields({
       </label>
 
       <label className="form-field">
-        <span>Style Preferences</span>
+        <span>Style Summary</span>
         <textarea
           onChange={(event) => setDraft({ ...draft, styleDescription: event.target.value })}
           placeholder="Business casual most days, runs hot, dislikes shorts with boots, wants bold pieces occasionally."
@@ -476,6 +563,95 @@ function ProfileFields({
           value={draft.styleDescription}
         />
       </label>
+
+      {compact ? null : (
+        <>
+          <label className="form-field">
+            <span>Favorite Looks</span>
+            <textarea
+              onChange={(event) => setDraft({ ...draft, favoriteLooks: event.target.value })}
+              placeholder="Looks you want FitCheck to aim for."
+              rows={4}
+              value={draft.favoriteLooks}
+            />
+          </label>
+
+          <div className="two-column-fields">
+            <label className="form-field">
+              <span>Preferred Colors</span>
+              <input
+                onChange={(event) => setDraft({ ...draft, preferredColors: event.target.value })}
+                placeholder="Navy, white, khaki, olive"
+                type="text"
+                value={draft.preferredColors}
+              />
+            </label>
+
+            <label className="form-field">
+              <span>Preferred Fit</span>
+              <input
+                onChange={(event) => setDraft({ ...draft, preferredFit: event.target.value })}
+                placeholder="Trim but not tight"
+                type="text"
+                value={draft.preferredFit}
+              />
+            </label>
+          </div>
+
+          <label className="form-field">
+            <span>Temperature Comfort</span>
+            <select
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  temperatureSensitivity: event.target.value as UserProfileDraft['temperatureSensitivity'],
+                })
+              }
+              value={draft.temperatureSensitivity}
+            >
+              {(['runs_hot', 'neutral', 'runs_cold'] as const).map((option) => (
+                <option key={option} value={option}>
+                  {temperatureSensitivityLabel(option)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="form-field">
+            <span>Statement Pieces</span>
+            <textarea
+              onChange={(event) =>
+                setDraft({ ...draft, statementPiecePreference: event.target.value })
+              }
+              placeholder="How often bold items should appear and how to balance them."
+              rows={3}
+              value={draft.statementPiecePreference}
+            />
+          </label>
+
+          <label className="form-field">
+            <span>Disliked Combinations</span>
+            <textarea
+              onChange={(event) =>
+                setDraft({ ...draft, dislikedCombinations: event.target.value })
+              }
+              placeholder="Shorts with boots, sweatpants for work, colors that clash for you."
+              rows={4}
+              value={draft.dislikedCombinations}
+            />
+          </label>
+
+          <label className="form-field">
+            <span>Personal Rules</span>
+            <textarea
+              onChange={(event) => setDraft({ ...draft, rules: event.target.value })}
+              placeholder="Example: collared shirts need a belt with belt-loop pants."
+              rows={4}
+              value={draft.rules}
+            />
+          </label>
+        </>
+      )}
     </>
   )
 }

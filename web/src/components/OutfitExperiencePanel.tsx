@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   AlertTriangle,
   Bot,
+  CalendarCheck,
   CheckCircle2,
   CloudSun,
   Download,
@@ -16,7 +17,9 @@ import {
   Wand2,
 } from 'lucide-react'
 import { useClosetItems } from '../hooks/useClosetItems'
+import { useSavedAvatar } from '../hooks/useSavedAvatar'
 import { generateAvatarPreview, type AvatarPreview } from '../lib/avatar'
+import { logOutfitWear } from '../lib/history'
 import { categoryName } from '../lib/outfits'
 import {
   defaultWeatherInput,
@@ -52,6 +55,9 @@ export function OutfitExperiencePanel({
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null)
   const [feedbackError, setFeedbackError] = useState<string | null>(null)
   const [isSavingFeedback, setIsSavingFeedback] = useState(false)
+  const [isLoggingWear, setIsLoggingWear] = useState(false)
+  const [wearLogMessage, setWearLogMessage] = useState<string | null>(null)
+  const [wearLogError, setWearLogError] = useState<string | null>(null)
   const [isLookingUpWeather, setIsLookingUpWeather] = useState(false)
   const [weatherStatus, setWeatherStatus] = useState<string | null>(null)
   const [weatherError, setWeatherError] = useState<string | null>(null)
@@ -75,6 +81,8 @@ export function OutfitExperiencePanel({
     setGenerationError(null)
     setFeedbackMessage(null)
     setFeedbackError(null)
+    setWearLogMessage(null)
+    setWearLogError(null)
 
     try {
       const nextRecommendation = await generateOutfit({
@@ -136,6 +144,32 @@ export function OutfitExperiencePanel({
       setFeedbackError(error instanceof Error ? error.message : 'Could not save feedback.')
     } finally {
       setIsSavingFeedback(false)
+    }
+  }
+
+  async function handleLogWear(note: string) {
+    if (!recommendation) {
+      return
+    }
+
+    setIsLoggingWear(true)
+    setWearLogMessage(null)
+    setWearLogError(null)
+
+    try {
+      await logOutfitWear({
+        context,
+        contextLabel: outfitContexts.find((option) => option.value === context)?.label ?? context,
+        note,
+        recommendation,
+        userId,
+        weather,
+      })
+      setWearLogMessage('Wear logged. Rotation data updated.')
+    } catch (error) {
+      setWearLogError(error instanceof Error ? error.message : 'Could not log wear.')
+    } finally {
+      setIsLoggingWear(false)
     }
   }
 
@@ -343,13 +377,20 @@ export function OutfitExperiencePanel({
           feedbackError={feedbackError}
           feedbackMessage={feedbackMessage}
           isSavingFeedback={isSavingFeedback}
+          isLoggingWear={isLoggingWear}
           onFeedback={(type) => {
             void handleFeedback(type)
+          }}
+          onLogWear={(note) => {
+            void handleLogWear(note)
           }}
           onNoteChange={setFeedbackNote}
           profile={profile}
           recommendation={recommendation}
+          userId={userId}
           weather={weather}
+          wearLogError={wearLogError}
+          wearLogMessage={wearLogMessage}
         />
       ) : null}
     </div>
@@ -361,30 +402,42 @@ function OutfitResultCard({
   feedbackMessage,
   feedbackNote,
   isSavingFeedback,
+  isLoggingWear,
   onFeedback,
+  onLogWear,
   onNoteChange,
   profile,
   recommendation,
+  userId,
   weather,
+  wearLogError,
+  wearLogMessage,
 }: {
   feedbackError: string | null
   feedbackMessage: string | null
   feedbackNote: string
   isSavingFeedback: boolean
+  isLoggingWear: boolean
   onFeedback: (type: OutfitFeedbackType) => void
+  onLogWear: (note: string) => void
   onNoteChange: (note: string) => void
   profile: UserProfile | null
   recommendation: OutfitRecommendation
+  userId: string
   weather: WeatherInput
+  wearLogError: string | null
+  wearLogMessage: string | null
 }) {
+  const { avatar: savedAvatar } = useSavedAvatar(userId)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<AvatarPreview | null>(null)
   const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false)
   const [avatarError, setAvatarError] = useState<string | null>(null)
+  const [wearNote, setWearNote] = useState('')
 
   async function handleAvatarPreview() {
-    if (!avatarFile) {
-      setAvatarError('Choose a full-body reference photo first.')
+    if (!savedAvatar && !avatarFile) {
+      setAvatarError('Choose a full-body reference photo or save an avatar in More first.')
       return
     }
 
@@ -397,6 +450,7 @@ function OutfitResultCard({
           file: avatarFile,
           profile,
           recommendation,
+          savedAvatar,
           weather,
         }),
       )
@@ -436,6 +490,33 @@ function OutfitResultCard({
         ))}
       </div>
 
+      <div className="wear-log-panel">
+        <label className="form-field">
+          <span>Wear Note</span>
+          <textarea
+            onChange={(event) => setWearNote(event.target.value)}
+            placeholder="Optional: where you wore it, what worked, or what to remember."
+            rows={2}
+            value={wearNote}
+          />
+        </label>
+        <button
+          type="button"
+          className="primary-button"
+          disabled={isLoggingWear}
+          onClick={() => onLogWear(wearNote)}
+        >
+          {isLoggingWear ? (
+            <span className="spinner small" aria-hidden="true" />
+          ) : (
+            <CalendarCheck size={20} aria-hidden="true" />
+          )}
+          Log Wear
+        </button>
+        {wearLogMessage ? <p className="success-message">{wearLogMessage}</p> : null}
+        {wearLogError ? <p className="error-message">{wearLogError}</p> : null}
+      </div>
+
       <div className="reason-block">
         <div className="section-title">
           {recommendation.source === 'ai' ? <Bot size={20} /> : <CheckCircle2 size={20} />}
@@ -469,7 +550,9 @@ function OutfitResultCard({
           <h3>Avatar Preview</h3>
         </div>
         <p className="helper-text">
-          Use a full-body reference photo with head, hair, and shoes visible.
+          {savedAvatar
+            ? 'Using your saved avatar from More. You can still upload a one-time reference photo to override it.'
+            : 'Use a full-body reference photo with head, hair, and shoes visible.'}
         </p>
         <label className="form-field">
           <span>Reference Photo</span>
@@ -489,7 +572,7 @@ function OutfitResultCard({
           }}
         >
           {isGeneratingAvatar ? <span className="spinner small" aria-hidden="true" /> : <ImageIcon size={20} />}
-          Generate Avatar
+          {savedAvatar ? 'Generate with Saved Avatar' : 'Generate Avatar'}
         </button>
         {avatarError ? <p className="error-message">{avatarError}</p> : null}
         {avatarPreview ? (

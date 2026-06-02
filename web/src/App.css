@@ -377,6 +377,44 @@ h3 {
   background: var(--surface);
 }
 
+.style-coach-card,
+.wear-log-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.collapsible-card,
+.nested-details {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.collapsible-card summary,
+.nested-details summary {
+  min-height: 36px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.nested-details ul {
+  display: grid;
+  gap: 7px;
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
 .closet-panel {
   display: grid;
   gap: 14px;
@@ -642,6 +680,16 @@ h3 {
   color: #ff7b7b;
 }
 
+.full-width {
+  width: 100%;
+}
+
+.icon-sized {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+}
+
 .outfit-panel {
   display: grid;
   gap: 14px;
@@ -764,7 +812,8 @@ h3 {
 
 .reason-block,
 .caution-block,
-.feedback-panel {
+.feedback-panel,
+.history-list {
   display: grid;
   gap: 10px;
 }
@@ -819,6 +868,49 @@ h3 {
 
 .avatar-preview-result a {
   text-decoration: none;
+}
+
+.history-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.history-card,
+.rotation-row {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.history-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history-card ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.rotation-row strong,
+.rotation-row span {
+  overflow-wrap: anywhere;
+}
+
+.rotation-row span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.35;
 }
 
 .helper-text svg {
@@ -1072,6 +1164,7 @@ h3 {
   .filter-row,
   .two-column-fields,
   .weather-grid,
+  .history-summary-grid,
   .generation-actions,
   .feedback-actions,
   .weather-actions,

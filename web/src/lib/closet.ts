@@ -48,9 +48,10 @@ export type ClothingItem = {
   notes: string
   status: ClothingStatus
   wearCount: number
+  lastWornAt: string
 }
 
-export type ClothingItemDraft = Omit<ClothingItem, 'id' | 'wearCount'>
+export type ClothingItemDraft = Omit<ClothingItem, 'id' | 'wearCount' | 'lastWornAt'>
 
 export const clothingCategories: Array<{
   value: ClothingCategory
@@ -168,6 +169,7 @@ function normalizeItem(id: string, data: Record<string, unknown>): ClothingItem 
     notes: stringValue(data.notes),
     status: statusValue(data.status ?? data.statusRawValue),
     wearCount: Math.max(0, Math.floor(numberValue(data.wearCount, 0))),
+    lastWornAt: stringValue(data.lastWornAt),
   }
 }
 

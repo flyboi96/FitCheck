@@ -23,6 +23,9 @@ This is the Progressive Web App version of FitCheck. It lives beside the native 
 - Weather lookup by city/current location through Open-Meteo
 - Closet photo import through the backend proxy
 - Avatar outfit previews through the backend proxy
+- Outfit history, item wear logs, delete/clear history, and rotation stats
+- Rich style profile fields plus AI Style Coach
+- Saved avatar studio for reusable outfit previews
 
 The profile document currently stores:
 
@@ -30,6 +33,13 @@ The profile document currently stores:
 displayName
 gender
 styleDescription
+favoriteLooks
+preferredColors
+preferredFit
+temperatureSensitivity
+statementPiecePreference
+dislikedCombinations
+rules
 ```
 
 Each clothing item document currently stores:
@@ -46,6 +56,7 @@ notes
 status
 statusRawValue
 wearCount
+lastWornAt
 createdAt
 updatedAt
 ```
@@ -63,6 +74,48 @@ score
 source
 rationale
 createdAt
+```
+
+Each logged outfit document under `users/{uid}/outfits` stores:
+
+```text
+name
+context
+contextLabel
+wornAt
+weatherSummary
+itemIDs
+itemNames
+score
+scoreLabel
+source
+rationale
+note
+createdAt
+updatedAt
+```
+
+Each wear log document under `users/{uid}/wearLogs` stores:
+
+```text
+outfitID
+outfitName
+itemID
+itemName
+category
+wornAt
+context
+note
+createdAt
+```
+
+The saved avatar document under `users/{uid}/avatars/default` stores:
+
+```text
+imageBase64
+mimeType
+notes
+updatedAt
 ```
 
 Each plan document currently stores:

@@ -62,4 +62,4 @@ to browser code. Never put `OPENAI_API_KEY` in `web/`.
 - `POST /style-profile-draft` turns guided style answers into editable style-preference fields.
 - `POST /avatar-outfit-preview` accepts a compressed user reference photo plus outfit, weather, location, and style context, then returns a base64 PNG preview.
 
-The PWA now uses `clothing-item-description` for closet photo import and `avatar-outfit-preview` for generated outfit previews.
+The PWA uses `clothing-item-description` for closet photo import, `style-profile-draft` for AI Style Coach, and `avatar-outfit-preview` for saved-avatar and outfit previews.

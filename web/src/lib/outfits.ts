@@ -5,7 +5,7 @@ import {
   type ClothingCategory,
   type ClothingItem,
 } from './closet'
-import type { UserProfile } from './profile'
+import { profileStyleSummary, type UserProfile } from './profile'
 import { getAIProxySettings } from './settings'
 
 export type OutfitContext = 'work' | 'casual' | 'travel' | 'dinner' | 'gym'
@@ -282,7 +282,7 @@ async function requestAIOutfit(request: OutfitGenerationRequest): Promise<Outfit
       weatherSummary: weatherSummary(request.weather),
       occasion: outfitContexts.find((context) => context.value === request.context)?.label,
       activity: request.context,
-      styleDescription: request.profile?.styleDescription ?? '',
+      styleDescription: profileStyleSummary(request.profile),
       selectedItemID: request.selectedItemId ?? null,
       candidateItemIDs: [],
       localScore: localCandidate.score,
@@ -555,8 +555,8 @@ function scoreItem(
     }
   }
 
-  if (profile?.styleDescription) {
-    const styleText = profile.styleDescription.toLowerCase()
+  const styleText = profileStyleSummary(profile).toLowerCase()
+  if (styleText) {
     if (styleText.includes('runs hot') && weather.temperatureF >= 74 && isHeatFriendly(item)) {
       score += 8
     }
@@ -568,7 +568,47 @@ function scoreItem(
     }
   }
 
+  if (profile?.temperatureSensitivity === 'runs_hot' && weather.temperatureF >= 74) {
+    if (isHeatFriendly(item)) {
+      score += 7
+    }
+    if (/jacket|sweater|fleece|heavy/.test(text)) {
+      score -= 10
+    }
+  }
+
+  if (profile?.temperatureSensitivity === 'runs_cold' && weather.temperatureF <= 76) {
+    if (/pants|sweater|jacket|wool|merino|layer/.test(text)) {
+      score += 7
+    }
+    if (/shorts|tank|sleeveless/.test(text)) {
+      score -= 7
+    }
+  }
+
+  score -= recentWearPenalty(item)
+
   return score
+}
+
+function recentWearPenalty(item: ClothingItem) {
+  if (!item.lastWornAt || item.category === 'belt' || item.category === 'watch') {
+    return 0
+  }
+
+  const daysSinceWorn = Math.floor(
+    (Date.now() - new Date(item.lastWornAt).getTime()) / (1000 * 60 * 60 * 24),
+  )
+
+  if (!Number.isFinite(daysSinceWorn) || daysSinceWorn < 0) {
+    return 0
+  }
+
+  if (daysSinceWorn === 0) return 18
+  if (daysSinceWorn === 1) return 14
+  if (daysSinceWorn <= 3) return 9
+  if (daysSinceWorn <= 6) return 5
+  return 0
 }
 
 function itemRole(item: ClothingItem): ItemRole {

@@ -4,7 +4,7 @@ The native iOS app remains the reference implementation. The PWA lives in `web/`
 
 ## Current Phase
 
-### `pwa-05-plans`
+### `pwa-06-history-style-avatar`
 
 Status: complete.
 
@@ -16,7 +16,7 @@ Included:
 - GitHub Pages deployment workflow for `web/dist`
 - FitCheck app shell with Today, Plans, Closet, Build, and More
 - Firebase Auth login/register/logout
-- User profile document under `users/{uid}` with `displayName`, `gender`, and `styleDescription`
+- User profile document under `users/{uid}` with account, gender/profile, rich style preferences, temperature comfort, disliked combinations, and rules
 - Firestore read/write helpers
 - Protected app shell for signed-in users
 - GitHub Pages workflow updated to Node 24-compatible Actions majors
@@ -39,12 +39,21 @@ Included:
 - Weather lookup for Today and plan days using Open-Meteo
 - Closet photo import in the PWA through the backend proxy
 - Avatar outfit previews in the PWA through the backend proxy
+- Outfit history under `users/{uid}/outfits`
+- Item wear logs under `users/{uid}/wearLogs`
+- Log Wear action from generated outfits
+- Wear count and last-worn rotation stats on closet items
+- Clear/delete outfit history controls
+- AI Style Coach through the existing backend proxy
+- Saved avatar reference/base image under `users/{uid}/avatars/default`
+- Avatar Studio in More
 
 ## Next Ideas
 
-- Saved avatar reference image
+- Backup/export/import for PWA Firestore data
 - Calendar import
 - Weather fallback for dates outside forecast range
+- Editable context-style definitions in the PWA
 
 ## Hosting Setup
 

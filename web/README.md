@@ -18,6 +18,8 @@ This is the Progressive Web App version of FitCheck. It lives beside the native 
 - Manual weather/context inputs for outfit scoring
 - Ask AI First through the Render backend proxy
 - Outfit feedback saved under `users/{uid}/outfitFeedback`
+- Plans saved under `users/{uid}/plans`
+- Daily outfit requests, AI/local itinerary generation, derived packing list, and share text
 
 The profile document currently stores:
 
@@ -58,6 +60,20 @@ score
 source
 rationale
 createdAt
+```
+
+Each plan document currently stores:
+
+```text
+name
+startDate
+endDate
+notes
+days
+itinerary
+packingList
+createdAt
+updatedAt
 ```
 
 ## Local Setup

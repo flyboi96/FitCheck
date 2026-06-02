@@ -25,6 +25,7 @@ import './App.css'
 import { AIProxySettingsPanel } from './components/AIProxySettingsPanel'
 import { ClosetPanel } from './components/ClosetPanel'
 import { OutfitExperiencePanel } from './components/OutfitExperiencePanel'
+import { PlansPanel } from './components/PlansPanel'
 import { useAuthProfile } from './hooks/useAuthProfile'
 import { auth, firebaseStatus } from './lib/firebase'
 import {
@@ -170,7 +171,7 @@ function AuthGate() {
         <div className="panel-heading">
           <UserRound size={28} aria-hidden="true" />
           <div>
-            <p className="eyebrow">PWA phase 04</p>
+            <p className="eyebrow">PWA phase 05</p>
             <h1 id="auth-title">FitCheck</h1>
           </div>
         </div>
@@ -262,7 +263,7 @@ function AuthenticatedShell({
     <main className="app-shell">
       <section className="top-bar" aria-label="FitCheck PWA status">
         <div>
-          <p className="eyebrow">PWA phase 04</p>
+          <p className="eyebrow">PWA phase 05</p>
           <h1>FitCheck</h1>
         </div>
         <div className="status-pill ready">
@@ -330,13 +331,7 @@ function renderTabPanel(
     case 'today':
       return <OutfitExperiencePanel mode="today" profile={profile} userId={user.uid} />
     case 'plans':
-      return (
-        <PlaceholderPanel
-          icon={CalendarDays}
-          title="Plans come next"
-          detail="Phase 05 will rebuild trip and weekly planning on top of this signed-in Firebase account."
-        />
-      )
+      return <PlansPanel profile={profile} userId={user.uid} />
     case 'closet':
       return <ClosetPanel userId={user.uid} wearerProfile={profile?.gender ?? 'unspecified'} />
     case 'build':
@@ -482,26 +477,6 @@ function ProfileFields({
         />
       </label>
     </>
-  )
-}
-
-function PlaceholderPanel({
-  detail,
-  icon: Icon,
-  title,
-}: {
-  detail: string
-  icon: typeof CalendarDays
-  title: string
-}) {
-  return (
-    <div className="placeholder-panel">
-      <Icon size={28} aria-hidden="true" />
-      <div>
-        <h3>{title}</h3>
-        <p>{detail}</p>
-      </div>
-    </div>
   )
 }
 

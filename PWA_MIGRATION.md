@@ -4,7 +4,7 @@ The native iOS app remains the reference implementation. The PWA lives in `web/`
 
 ## Current Phase
 
-### `pwa-04-today-build-ai`
+### `pwa-05-plans`
 
 Status: complete.
 
@@ -31,16 +31,17 @@ Included:
 - Local outfit scoring with 0-100 fit-quality display
 - Ask AI First through the existing backend proxy
 - Outfit feedback saved under `users/{uid}/outfitFeedback`
-
-## Next Phases
-
-### `pwa-05-plans`
-
 - Trip/week plan editor
 - Daily outfit requests
 - AI itinerary generation
 - Packing list derived from itinerary
 - Share/export text
+
+## Next Phases
+
+- Weather lookup for plan days
+- Closet photo import in the PWA
+- Avatar outfit previews in the PWA
 
 ## Hosting Setup
 

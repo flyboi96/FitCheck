@@ -790,6 +790,149 @@ h3 {
   vertical-align: -2px;
 }
 
+.plans-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.plan-create-card,
+.plan-workspace,
+.plan-editor-card,
+.generated-section {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.plan-selector-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.bulk-tools {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.day-list,
+.itinerary-list {
+  display: grid;
+  gap: 12px;
+}
+
+.day-card,
+.itinerary-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.day-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.request-list {
+  display: grid;
+  gap: 8px;
+}
+
+.request-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.request-row select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.itinerary-card ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.itinerary-card details {
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.4;
+}
+
+.itinerary-card summary {
+  min-height: 36px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.itinerary-card details p {
+  margin-top: 8px;
+}
+
+.packing-category {
+  display: grid;
+  gap: 8px;
+}
+
+.packing-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.packing-row div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.packing-row strong,
+.packing-row span {
+  overflow-wrap: anywhere;
+}
+
+.packing-row span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.share-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .spinner {
   width: 30px;
   height: 30px;
@@ -895,12 +1038,16 @@ h3 {
   .two-column-fields,
   .weather-grid,
   .generation-actions,
-  .feedback-actions {
+  .feedback-actions,
+  .bulk-tools,
+  .plan-selector-row,
+  .share-actions {
     grid-template-columns: 1fr;
   }
 
   .recommendation-header,
-  .outfit-item-row {
+  .outfit-item-row,
+  .packing-row {
     display: grid;
   }
 }

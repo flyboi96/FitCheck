@@ -378,6 +378,8 @@ h3 {
 }
 
 .style-coach-card,
+.weather-source-card,
+.plan-flow-card,
 .wear-log-panel {
   display: grid;
   gap: 12px;
@@ -385,6 +387,35 @@ h3 {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
+}
+
+.weather-source-card,
+.plan-summary-card,
+.plan-flow-card {
+  gap: 5px;
+}
+
+.weather-source-card strong,
+.plan-summary-card strong,
+.plan-flow-card strong {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.weather-source-card span,
+.plan-summary-card span,
+.plan-flow-card span {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.plan-summary-card {
+  display: grid;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
 }
 
 .collapsible-card,
@@ -413,6 +444,11 @@ h3 {
   color: var(--muted);
   font-size: 0.92rem;
   line-height: 1.4;
+}
+
+.context-definition-list {
+  display: grid;
+  gap: 10px;
 }
 
 .closet-panel {
@@ -976,6 +1012,22 @@ h3 {
   gap: 12px;
 }
 
+.compact-icon-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.compact-icon-actions .icon-button {
+  width: 42px;
+  min-height: 42px;
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .request-list {
   display: grid;
   gap: 8px;
@@ -1052,6 +1104,34 @@ h3 {
 .packing-row span {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.packing-row.editable {
+  display: grid;
+  align-items: stretch;
+}
+
+.packing-row input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.packing-edit-actions {
+  display: grid;
+  grid-template-columns: 76px 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.packing-edit-actions .secondary-button,
+.packing-edit-actions .danger-button {
+  min-height: 42px;
+  padding: 0 10px;
 }
 
 .share-actions {

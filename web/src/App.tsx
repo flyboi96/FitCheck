@@ -25,9 +25,11 @@ import './App.css'
 import { AIProxySettingsPanel } from './components/AIProxySettingsPanel'
 import { AvatarStudioPanel } from './components/AvatarStudioPanel'
 import { ClosetPanel } from './components/ClosetPanel'
+import { DataPortabilityPanel } from './components/DataPortabilityPanel'
 import { HistoryPanel } from './components/HistoryPanel'
 import { OutfitExperiencePanel } from './components/OutfitExperiencePanel'
 import { PlansPanel } from './components/PlansPanel'
+import { ContextStyleEditorPanel, ScoringGuidePanel } from './components/ScoringAndContextPanel'
 import { useAuthProfile } from './hooks/useAuthProfile'
 import { auth, firebaseStatus } from './lib/firebase'
 import {
@@ -355,7 +357,23 @@ function MorePanel({
       <ProfileEditor profile={profile} refreshProfile={refreshProfile} user={user} />
       <AvatarStudioPanel profile={profile} userId={user.uid} />
       <HistoryPanel userId={user.uid} />
+      <DataPortabilityPanel userId={user.uid} />
+      <ScoringGuidePanel />
+      <ContextStyleEditorPanel userId={user.uid} />
       <AIProxySettingsPanel />
+      <section className="profile-form">
+        <div className="section-title">
+          <Database size={20} aria-hidden="true" />
+          <div>
+            <p className="eyebrow">Offline</p>
+            <h2>Offline Cache</h2>
+          </div>
+        </div>
+        <p className="helper-text">
+          Firestore local persistence is enabled. Recently opened closet, profile, plans, history,
+          avatar, and context data can continue loading when the connection is weak.
+        </p>
+      </section>
       <button
         type="button"
         className="secondary-button"

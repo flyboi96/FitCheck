@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Bot,
@@ -61,6 +61,7 @@ export function OutfitExperiencePanel({
   const [isLookingUpWeather, setIsLookingUpWeather] = useState(false)
   const [weatherStatus, setWeatherStatus] = useState<string | null>(null)
   const [weatherError, setWeatherError] = useState<string | null>(null)
+  const autoWeatherAttempted = useRef(false)
 
   const activeItems = useMemo(() => items.filter((item) => item.status === 'active'), [items])
   const selectedItem = activeItems.find((item) => item.id === selectedItemId)
@@ -75,6 +76,39 @@ export function OutfitExperiencePanel({
         ),
     [activeItems],
   )
+
+  useEffect(() => {
+    if (mode !== 'today' || autoWeatherAttempted.current) {
+      return
+    }
+
+    autoWeatherAttempted.current = true
+
+    const timer = window.setTimeout(() => {
+      setIsLookingUpWeather(true)
+      setWeatherStatus('Trying current-location weather.')
+      setWeatherError(null)
+
+      lookupWeatherAtCurrentLocation()
+        .then((nextWeather) => {
+          setWeather(nextWeather)
+          setWeatherStatus(`Auto weather loaded: ${weatherSummary(nextWeather)}`)
+        })
+        .catch((error: unknown) => {
+          setWeatherStatus('Using manual weather until you enter a city or allow location access.')
+          setWeatherError(
+            error instanceof Error ? error.message : 'Current-location weather lookup failed.',
+          )
+        })
+        .finally(() => {
+          setIsLookingUpWeather(false)
+        })
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [mode])
 
   async function handleGenerate(askAIFirst: boolean) {
     setIsGenerating(true)
@@ -213,6 +247,15 @@ export function OutfitExperiencePanel({
         <p className="helper-text">
           {outfitContexts.find((option) => option.value === context)?.description}
         </p>
+
+        <div className="weather-source-card">
+          <strong>Weather Source</strong>
+          <span>
+            {weather.location.trim()
+              ? `${weather.location} - ${weather.temperatureF}F, ${weather.condition}, ${weather.humidityPercent}% humidity`
+              : 'Manual weather values until current location or city lookup succeeds.'}
+          </span>
+        </div>
 
         <div className="weather-actions">
           <button

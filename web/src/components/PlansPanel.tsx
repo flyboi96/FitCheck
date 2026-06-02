@@ -1,5 +1,7 @@
 import { type FormEvent, useMemo, useState } from 'react'
 import {
+  ArrowDown,
+  ArrowUp,
   CalendarDays,
   Clipboard,
   Copy,
@@ -17,6 +19,7 @@ import { usePlans } from '../hooks/usePlans'
 import {
   addDaysISO,
   buildPackingList,
+  createDaysFromRange,
   createOutfitRequest,
   createPlan,
   defaultNewPlanDraft,
@@ -299,6 +302,38 @@ export function PlansPanel({
     }))
   }
 
+  async function handleSaveItinerary(nextItinerary: Plan['itinerary']) {
+    if (!selectedPlan) {
+      return
+    }
+
+    setStatusMessage(null)
+    setErrorMessage(null)
+
+    try {
+      await saveGeneratedPlan(userId, selectedPlan.id, nextItinerary, selectedPlan.packingList)
+      setStatusMessage('Itinerary edits saved. Packing list unchanged.')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not save itinerary edits.')
+    }
+  }
+
+  async function handleSavePackingList(nextPackingList: Plan['packingList']) {
+    if (!selectedPlan) {
+      return
+    }
+
+    setStatusMessage(null)
+    setErrorMessage(null)
+
+    try {
+      await saveGeneratedPlan(userId, selectedPlan.id, selectedPlan.itinerary, nextPackingList)
+      setStatusMessage('Packing list edits saved.')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not save packing edits.')
+    }
+  }
+
   return (
     <div className="plans-panel">
       <form className="plan-create-card" onSubmit={handleCreatePlan}>
@@ -306,9 +341,13 @@ export function PlansPanel({
           <CalendarDays size={20} aria-hidden="true" />
           <div>
             <p className="eyebrow">New plan</p>
-            <h2>Add Plan</h2>
+            <h2>Start Plan</h2>
           </div>
         </div>
+        <p className="helper-text">
+          This creates one editable day first. Add more days only when you need them, or expand
+          the full date range inside the plan editor.
+        </p>
 
         <label className="form-field">
           <span>Plan Name</span>
@@ -352,6 +391,10 @@ export function PlansPanel({
             value={newPlanDraft.location}
           />
         </label>
+        <p className="helper-text">
+          Use one city here, such as `Djibouti` or `Katy, TX`. Add other cities on individual
+          days after the plan is created.
+        </p>
 
         <label className="form-field">
           <span>Notes</span>
@@ -362,6 +405,10 @@ export function PlansPanel({
             value={newPlanDraft.notes}
           />
         </label>
+        <p className="helper-text">
+          Notes are for constraints: work days, dinners, exercise goals, laundry, or packing
+          preferences. They are not parsed as stops.
+        </p>
 
         <button type="submit" className="primary-button" disabled={isSavingPlan}>
           {isSavingPlan ? <span className="spinner small" aria-hidden="true" /> : <Plus size={20} />}
@@ -457,8 +504,19 @@ export function PlansPanel({
               }}
             />
 
-            <ItinerarySection plan={selectedPlan} />
-            <PackingSection groupedPackingList={groupedPackingList} />
+            <ItinerarySection
+              onChange={(nextItinerary) => {
+                void handleSaveItinerary(nextItinerary)
+              }}
+              plan={selectedPlan}
+            />
+            <PackingSection
+              groupedPackingList={groupedPackingList}
+              onChange={(nextPackingList) => {
+                void handleSavePackingList(nextPackingList)
+              }}
+              plan={selectedPlan}
+            />
 
             <div className="share-actions">
               <button
@@ -539,6 +597,23 @@ function PlanEditor({
     })
   }
 
+  function moveDay(dayId: string, direction: -1 | 1) {
+    const currentIndex = draft.days.findIndex((day) => day.id === dayId)
+    const nextIndex = currentIndex + direction
+
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= draft.days.length) {
+      return
+    }
+
+    const nextDays = draft.days.slice()
+    const [movedDay] = nextDays.splice(currentIndex, 1)
+    nextDays.splice(nextIndex, 0, movedDay)
+    onChange({
+      ...draft,
+      days: nextDays,
+    })
+  }
+
   function addDay() {
     const lastDay = draft.days[draft.days.length - 1]
     const nextDate = addDaysISO(lastDay?.date ?? draft.endDate ?? todayISO(), 1)
@@ -564,6 +639,27 @@ function PlanEditor({
       ...draft,
       endDate: nextDate,
       days: [...draft.days, nextDay],
+    })
+  }
+
+  function expandDateRange() {
+    const confirmed =
+      draft.days.length <= 1 ||
+      window.confirm(
+        `Replace the current ${draft.days.length} day card${draft.days.length === 1 ? '' : 's'} with one card for every date from ${draft.startDate} to ${draft.endDate}?`,
+      )
+
+    if (!confirmed) {
+      return
+    }
+
+    onChange({
+      ...draft,
+      days: createDaysFromRange({
+        startDate: draft.startDate,
+        endDate: draft.endDate,
+        location: draft.days[0]?.location ?? '',
+      }),
     })
   }
 
@@ -595,6 +691,50 @@ function PlanEditor({
           value={draft.name}
         />
       </label>
+
+      <div className="two-column-fields">
+        <label className="form-field compact">
+          <span>Start</span>
+          <input
+            onChange={(event) => onChange({ ...draft, startDate: event.target.value })}
+            type="date"
+            value={draft.startDate}
+          />
+        </label>
+        <label className="form-field compact">
+          <span>End</span>
+          <input
+            min={draft.startDate}
+            onChange={(event) => onChange({ ...draft, endDate: event.target.value })}
+            type="date"
+            value={draft.endDate}
+          />
+        </label>
+      </div>
+
+      <div className="plan-summary-card">
+        <strong>{draft.days.length}</strong>
+        <span>
+          editable day card{draft.days.length === 1 ? '' : 's'} for {draft.startDate} to{' '}
+          {draft.endDate}
+        </span>
+      </div>
+
+      <div className="weather-source-card">
+        <strong>Plan Weather</strong>
+        <span>
+          Set the location on each day, then tap Look Up All Weather. FitCheck stores the day-by-day
+          forecast on the plan before generating outfits.
+        </span>
+      </div>
+
+      <div className="plan-flow-card">
+        <strong>Flow</strong>
+        <span>1. Set days and outfit requests.</span>
+        <span>2. Look up weather.</span>
+        <span>3. Generate itinerary.</span>
+        <span>4. Packing list is derived from the itinerary, then you can edit it.</span>
+      </div>
 
       <label className="form-field">
         <span>Plan Notes</span>
@@ -639,22 +779,35 @@ function PlanEditor({
         </button>
       </div>
 
-      <div className="day-list">
-        {draft.days.map((day) => (
-          <PlanDayEditor
-            day={day}
-            key={day.id}
-            onChange={(nextDay) => updateDay(day.id, () => nextDay)}
-            onLookupWeather={() => onLookupDayWeather(day.id)}
-            onRemove={() => removeDay(day.id)}
-          />
-        ))}
-      </div>
+      <details className="collapsible-card" open={draft.days.length <= 10}>
+        <summary>Daily Details ({draft.days.length})</summary>
+        <div className="day-list">
+          {draft.days.map((day, index) => (
+            <PlanDayEditor
+              canMoveDown={index < draft.days.length - 1}
+              canMoveUp={index > 0}
+              day={day}
+              key={day.id}
+              onChange={(nextDay) => updateDay(day.id, () => nextDay)}
+              onLookupWeather={() => onLookupDayWeather(day.id)}
+              onMoveDown={() => moveDay(day.id, 1)}
+              onMoveUp={() => moveDay(day.id, -1)}
+              onRemove={() => removeDay(day.id)}
+            />
+          ))}
+        </div>
+      </details>
 
-      <button type="button" className="secondary-button" onClick={addDay}>
-        <Plus size={20} aria-hidden="true" />
-        Add Day
-      </button>
+      <div className="generation-actions">
+        <button type="button" className="secondary-button" onClick={addDay}>
+          <Plus size={20} aria-hidden="true" />
+          Add One Day
+        </button>
+        <button type="button" className="secondary-button" onClick={expandDateRange}>
+          <CalendarDays size={20} aria-hidden="true" />
+          Expand Date Range
+        </button>
+      </div>
 
       <div className="generation-actions">
         <button
@@ -704,14 +857,22 @@ function planToDraft(plan: Plan): PlanDraft {
 }
 
 function PlanDayEditor({
+  canMoveDown,
+  canMoveUp,
   day,
   onChange,
   onLookupWeather,
+  onMoveDown,
+  onMoveUp,
   onRemove,
 }: {
+  canMoveDown: boolean
+  canMoveUp: boolean
   day: PlanDay
   onChange: (day: PlanDay) => void
   onLookupWeather: () => void
+  onMoveDown: () => void
+  onMoveUp: () => void
   onRemove: () => void
 }) {
   function updateWeather(weather: WeatherInput) {
@@ -748,9 +909,29 @@ function PlanDayEditor({
           <p className="eyebrow">{day.date}</p>
           <h3>{day.location || 'Location TBD'}</h3>
         </div>
-        <button type="button" className="icon-button" onClick={onRemove} aria-label="Remove day">
-          <X size={20} />
-        </button>
+        <div className="compact-icon-actions">
+          <button
+            type="button"
+            className="icon-button"
+            disabled={!canMoveUp}
+            onClick={onMoveUp}
+            aria-label="Move day up"
+          >
+            <ArrowUp size={18} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            disabled={!canMoveDown}
+            onClick={onMoveDown}
+            aria-label="Move day down"
+          >
+            <ArrowDown size={18} />
+          </button>
+          <button type="button" className="icon-button" onClick={onRemove} aria-label="Remove day">
+            <X size={20} />
+          </button>
+        </div>
       </div>
 
       <div className="two-column-fields">
@@ -897,7 +1078,13 @@ function PlanDayEditor({
   )
 }
 
-function ItinerarySection({ plan }: { plan: Plan }) {
+function ItinerarySection({
+  onChange,
+  plan,
+}: {
+  onChange: (itinerary: Plan['itinerary']) => void
+  plan: Plan
+}) {
   if (plan.itinerary.length === 0) {
     return (
       <div className="empty-state">
@@ -916,46 +1103,126 @@ function ItinerarySection({ plan }: { plan: Plan }) {
       </div>
       <div className="itinerary-list">
         {plan.itinerary.map((outfit) => (
-          <article className="itinerary-card" key={outfit.id}>
-            <div className="recommendation-header">
-              <div>
-                <p className="eyebrow">
-                  {outfit.date} - {outfit.location || 'Location TBD'}
-                </p>
-                <h3>{outfit.label}</h3>
-                <p className="helper-text">{outfit.weatherSummary}</p>
-              </div>
-              <div className={`score-badge ${scoreClass(outfit.score)}`}>
-                <strong>{outfit.score}</strong>
-                <span>{outfit.scoreLabel}</span>
-              </div>
-            </div>
-            <ul>
-              {outfit.itemNames.map((itemName) => (
-                <li key={itemName}>{itemName}</li>
-              ))}
-            </ul>
-            <details>
-              <summary>Why this scored this way</summary>
-              <p>{outfit.rationale}</p>
-              {outfit.reasons.map((reason) => (
-                <p key={reason}>{reason}</p>
-              ))}
-              {outfit.cautions.map((caution) => (
-                <p key={caution}>Watch-out: {caution}</p>
-              ))}
-            </details>
-          </article>
+          <EditableItineraryCard
+            key={outfit.id}
+            onChange={(nextOutfit) =>
+              onChange(plan.itinerary.map((entry) => (entry.id === outfit.id ? nextOutfit : entry)))
+            }
+            onRemove={() => onChange(plan.itinerary.filter((entry) => entry.id !== outfit.id))}
+            outfit={outfit}
+          />
         ))}
       </div>
     </section>
   )
 }
 
+function EditableItineraryCard({
+  onChange,
+  onRemove,
+  outfit,
+}: {
+  onChange: (outfit: Plan['itinerary'][number]) => void
+  onRemove: () => void
+  outfit: Plan['itinerary'][number]
+}) {
+  const [date, setDate] = useState(outfit.date)
+  const [location, setLocation] = useState(outfit.location)
+  const [label, setLabel] = useState(outfit.label)
+  const [itemNamesText, setItemNamesText] = useState(outfit.itemNames.join('\n'))
+
+  function saveEdits() {
+    const itemNames = itemNamesText
+      .split(/\r?\n/)
+      .map((itemName) => itemName.trim())
+      .filter(Boolean)
+
+    onChange({
+      ...outfit,
+      date,
+      location,
+      label,
+      itemNames,
+    })
+  }
+
+  return (
+    <article className="itinerary-card">
+      <div className="recommendation-header">
+        <div>
+          <p className="eyebrow">
+            {outfit.date} - {outfit.location || 'Location TBD'}
+          </p>
+          <h3>{outfit.label}</h3>
+          <p className="helper-text">{outfit.weatherSummary}</p>
+        </div>
+        <div className={`score-badge ${scoreClass(outfit.score)}`}>
+          <strong>{outfit.score}</strong>
+          <span>{outfit.scoreLabel}</span>
+        </div>
+      </div>
+      <ul>
+        {outfit.itemNames.map((itemName) => (
+          <li key={itemName}>{itemName}</li>
+        ))}
+      </ul>
+      <details>
+        <summary>Why this scored this way</summary>
+        <p>{outfit.rationale}</p>
+        {outfit.reasons.map((reason) => (
+          <p key={reason}>{reason}</p>
+        ))}
+        {outfit.cautions.map((caution) => (
+          <p key={caution}>Watch-out: {caution}</p>
+        ))}
+      </details>
+      <details>
+        <summary>Edit this outfit</summary>
+        <div className="two-column-fields">
+          <label className="form-field compact">
+            <span>Date</span>
+            <input onChange={(event) => setDate(event.target.value)} type="date" value={date} />
+          </label>
+          <label className="form-field compact">
+            <span>Location</span>
+            <input onChange={(event) => setLocation(event.target.value)} type="text" value={location} />
+          </label>
+        </div>
+        <label className="form-field compact">
+          <span>Label</span>
+          <input onChange={(event) => setLabel(event.target.value)} type="text" value={label} />
+        </label>
+        <label className="form-field">
+          <span>Items, one per line</span>
+          <textarea
+            onChange={(event) => setItemNamesText(event.target.value)}
+            rows={5}
+            value={itemNamesText}
+          />
+        </label>
+        <div className="generation-actions">
+          <button type="button" className="danger-button" onClick={onRemove}>
+            <Trash2 size={18} aria-hidden="true" />
+            Remove Outfit
+          </button>
+          <button type="button" className="secondary-button" onClick={saveEdits}>
+            <Save size={20} aria-hidden="true" />
+            Save Outfit Edits
+          </button>
+        </div>
+      </details>
+    </article>
+  )
+}
+
 function PackingSection({
   groupedPackingList,
+  onChange,
+  plan,
 }: {
   groupedPackingList: Array<[string, Plan['packingList']]>
+  onChange: (packingList: Plan['packingList']) => void
+  plan: Plan
 }) {
   if (groupedPackingList.length === 0) {
     return null
@@ -972,19 +1239,72 @@ function PackingSection({
         <div className="packing-category" key={category}>
           <h3>{category}</h3>
           {items.map((item) => (
-            <div className="packing-row" key={item.itemID}>
-              <div>
-                <strong>{item.name}</strong>
-                <span>
-                  Used {item.useCount}x - available {item.availableQuantity}
-                </span>
-              </div>
-              <span className="quantity-chip">Pack {item.packQuantity}</span>
-            </div>
+            <EditablePackingRow
+              item={item}
+              key={item.itemID}
+              onChange={(nextItem) =>
+                onChange(
+                  plan.packingList.map((entry) =>
+                    entry.itemID === item.itemID ? nextItem : entry,
+                  ),
+                )
+              }
+              onRemove={() =>
+                onChange(plan.packingList.filter((entry) => entry.itemID !== item.itemID))
+              }
+            />
           ))}
         </div>
       ))}
     </section>
+  )
+}
+
+function EditablePackingRow({
+  item,
+  onChange,
+  onRemove,
+}: {
+  item: Plan['packingList'][number]
+  onChange: (item: Plan['packingList'][number]) => void
+  onRemove: () => void
+}) {
+  const [name, setName] = useState(item.name)
+  const [packQuantity, setPackQuantity] = useState(item.packQuantity)
+
+  return (
+    <div className="packing-row editable">
+      <div>
+        <input
+          aria-label="Packing item name"
+          onChange={(event) => setName(event.target.value)}
+          type="text"
+          value={name}
+        />
+        <span>
+          Used {item.useCount}x - available {item.availableQuantity}
+        </span>
+      </div>
+      <div className="packing-edit-actions">
+        <input
+          aria-label="Pack quantity"
+          min={0}
+          onChange={(event) => setPackQuantity(numberInput(event.target.value, item.packQuantity))}
+          type="number"
+          value={packQuantity}
+        />
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => onChange({ ...item, name, packQuantity })}
+        >
+          Save
+        </button>
+        <button type="button" className="danger-button" onClick={onRemove}>
+          Remove
+        </button>
+      </div>
+    </div>
   )
 }
 

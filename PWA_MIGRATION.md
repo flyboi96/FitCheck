@@ -4,7 +4,7 @@ The native iOS app remains the reference implementation. The PWA lives in `web/`
 
 ## Current Phase
 
-### `pwa-06-history-style-avatar`
+### `pwa-07-portability-context-plan-offline`
 
 Status: complete.
 
@@ -47,13 +47,21 @@ Included:
 - AI Style Coach through the existing backend proxy
 - Saved avatar reference/base image under `users/{uid}/avatars/default`
 - Avatar Studio in More
+- JSON backup/export/import for profile, closet, plans, history, feedback, avatar, and context metadata
+- Scoring guide in More
+- Editable context-style definitions under `users/{uid}/contextStyles/default`
+- Context style definitions included in AI outfit requests
+- Reorderable plan days
+- Editable generated itinerary cards
+- Direct packing-list name, quantity, and remove controls
+- Clearer itinerary-to-packing-list flow
+- Firestore IndexedDB offline persistence
 
 ## Next Ideas
 
-- Backup/export/import for PWA Firestore data
 - Calendar import
 - Weather fallback for dates outside forecast range
-- Editable context-style definitions in the PWA
+- PWA backup merge mode instead of replace-only import
 
 ## Hosting Setup
 

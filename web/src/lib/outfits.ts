@@ -5,6 +5,7 @@ import {
   type ClothingCategory,
   type ClothingItem,
 } from './closet'
+import { contextStylesPrompt, loadContextStyles } from './contextStyles'
 import { profileStyleSummary, type UserProfile } from './profile'
 import { getAIProxySettings } from './settings'
 
@@ -254,6 +255,7 @@ async function requestAIOutfit(request: OutfitGenerationRequest): Promise<Outfit
   }
 
   const recentFeedback = await loadRecentFeedback(request.userId)
+  const contextStyles = await loadContextStyles(request.userId)
   const localCandidate = generateLocalOutfit({ ...request, askAIFirst: false })
 
   const response = await fetch(`${baseURL}/outfit-recommendation`, {
@@ -282,7 +284,13 @@ async function requestAIOutfit(request: OutfitGenerationRequest): Promise<Outfit
       weatherSummary: weatherSummary(request.weather),
       occasion: outfitContexts.find((context) => context.value === request.context)?.label,
       activity: request.context,
-      styleDescription: profileStyleSummary(request.profile),
+      styleDescription: [
+        profileStyleSummary(request.profile),
+        'Context style definitions:',
+        contextStylesPrompt(contextStyles),
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
       selectedItemID: request.selectedItemId ?? null,
       candidateItemIDs: [],
       localScore: localCandidate.score,

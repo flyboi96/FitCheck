@@ -26,6 +26,10 @@ This is the Progressive Web App version of FitCheck. It lives beside the native 
 - Outfit history, item wear logs, delete/clear history, and rotation stats
 - Rich style profile fields plus AI Style Coach
 - Saved avatar studio for reusable outfit previews
+- JSON backup/export/import under More
+- Scoring guide and editable context styles under More
+- Reorderable plan days, editable generated itinerary cards, and editable packing list rows
+- Firestore IndexedDB persistence for offline resilience
 
 The profile document currently stores:
 
@@ -115,6 +119,14 @@ The saved avatar document under `users/{uid}/avatars/default` stores:
 imageBase64
 mimeType
 notes
+updatedAt
+```
+
+The context styles document under `users/{uid}/contextStyles/default` stores:
+
+```text
+definitions
+extraNotes
 updatedAt
 ```
 

@@ -4,7 +4,7 @@ The native iOS app remains the reference implementation. The PWA lives in `web/`
 
 ## Current Phase
 
-### `pwa-02-auth-firestore`
+### `pwa-03-closet`
 
 Status: complete.
 
@@ -20,16 +20,14 @@ Included:
 - Firestore read/write helpers
 - Protected app shell for signed-in users
 - GitHub Pages workflow updated to Node 24-compatible Actions majors
-
-## Next Phases
-
-### `pwa-03-closet`
-
 - Closet list
 - Search/filter by category
 - Add/edit clothing item
 - Quantity, brand, notes, status
 - Firestore sync
+- GitHub Pages artifact upload updated to `actions/upload-pages-artifact@v5`
+
+## Next Phases
 
 ### `pwa-04-today-build-ai`
 

@@ -24,6 +24,7 @@ import {
   Wand2,
 } from 'lucide-react'
 import './App.css'
+import { ClosetPanel } from './components/ClosetPanel'
 import { useAuthProfile } from './hooks/useAuthProfile'
 import { auth, firebaseStatus } from './lib/firebase'
 import {
@@ -52,24 +53,23 @@ const wearerOptions: Array<{ value: WearerProfile; label: string }> = [
 
 const phaseCards = [
   {
-    title: 'Signed-in profile',
-    detail: 'Firebase Auth now gates the PWA and keeps each user on their own account.',
-    icon: UserRound,
+    title: 'Firestore closet',
+    detail: 'Clothing items now sync under users/{uid}/clothingItems for the signed-in user.',
+    icon: Shirt,
   },
   {
-    title: 'Firestore user document',
-    detail: 'Name, gender, and style notes are saved under users/{uid} for the logged-in user.',
+    title: 'Search and filter',
+    detail: 'The closet can be browsed by category, status, and free-text search.',
     icon: Database,
   },
   {
-    title: 'AI path preserved',
-    detail: 'OpenAI calls still belong behind the existing backend proxy, not in the browser.',
+    title: 'Ready for outfits',
+    detail: 'Quantity, brand, notes, and status are captured for the next outfit-generation phase.',
     icon: Sparkles,
   },
 ]
 
 const nextPhases = [
-  'pwa-03-closet: closet list, search, add/edit item, quantity',
   'pwa-04-today-build-ai: Ask AI First and local fit display',
   'pwa-05-plans: daily plan, itinerary, packing list, exports',
 ]
@@ -193,7 +193,7 @@ function AuthGate() {
         <div className="panel-heading">
           <UserRound size={28} aria-hidden="true" />
           <div>
-            <p className="eyebrow">PWA phase 02</p>
+            <p className="eyebrow">PWA phase 03</p>
             <h1 id="auth-title">FitCheck</h1>
           </div>
         </div>
@@ -285,7 +285,7 @@ function AuthenticatedShell({
     <main className="app-shell">
       <section className="top-bar" aria-label="FitCheck PWA status">
         <div>
-          <p className="eyebrow">PWA phase 02</p>
+          <p className="eyebrow">PWA phase 03</p>
           <h1>FitCheck</h1>
         </div>
         <div className="status-pill ready">
@@ -361,13 +361,7 @@ function renderTabPanel(
         />
       )
     case 'closet':
-      return (
-        <PlaceholderPanel
-          icon={Shirt}
-          title="Closet sync comes next"
-          detail="Phase 03 will add searchable clothing items and save them under this user's Firestore data."
-        />
-      )
+      return <ClosetPanel userId={user.uid} wearerProfile={profile?.gender ?? 'unspecified'} />
     case 'build':
       return (
         <PlaceholderPanel

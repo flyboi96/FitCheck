@@ -12,6 +12,8 @@ This is the Progressive Web App version of FitCheck. It lives beside the native 
 - FitCheck app shell with the same primary sections as the iOS app
 - Firebase Auth sign in, registration, password visibility toggle, and sign out
 - Firestore user profile sync under `users/{uid}`
+- Firestore closet sync under `users/{uid}/clothingItems`
+- Closet search, category/status filters, add/edit, archive, delete, quantity, brand, notes
 
 The profile document currently stores:
 
@@ -19,6 +21,24 @@ The profile document currently stores:
 displayName
 gender
 styleDescription
+```
+
+Each clothing item document currently stores:
+
+```text
+name
+brand
+category
+categoryRawValue
+quantity
+color
+pattern
+notes
+status
+statusRawValue
+wearCount
+createdAt
+updatedAt
 ```
 
 ## Local Setup

@@ -30,6 +30,27 @@ If the app says a route was not found, restart this backend from the latest code
 
 For a physical iPhone, set `HOST=0.0.0.0` before starting the proxy and use your Mac's LAN address instead of `127.0.0.1`.
 
+## Render deployment
+
+Use Render for the backend/API proxy only. GitHub Pages hosts the PWA frontend.
+
+On Render, configure environment variables:
+
+```text
+OPENAI_API_KEY=...
+FITCHECK_PROXY_TOKEN=...
+HOST=0.0.0.0
+PORT=8787
+```
+
+Use the Render service URL as `VITE_FITCHECK_PROXY_URL` in the GitHub Pages build secrets. The value should be the base URL only, such as:
+
+```text
+https://your-fitcheck-api.onrender.com
+```
+
+Do not add `/outfit-recommendation` or any other route to that URL.
+
 ## Routes
 
 - `POST /outfit-recommendation` reviews a locally generated outfit or chooses an outfit from the closet when no candidate item IDs are supplied.

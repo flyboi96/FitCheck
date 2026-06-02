@@ -1,0 +1,218 @@
+.app-shell {
+  min-height: 100svh;
+  padding: 18px 16px 104px;
+}
+
+.top-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 12px 0 18px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1 {
+  color: var(--text);
+  font-size: 2.7rem;
+  line-height: 0.98;
+}
+
+h2 {
+  color: var(--text);
+  font-size: 1.35rem;
+  line-height: 1.15;
+}
+
+h3 {
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 0.86rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-pill.ready {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 26%, var(--border));
+}
+
+.status-pill.warning {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 28%, var(--border));
+}
+
+.active-panel,
+.roadmap {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.active-panel {
+  padding: 16px;
+}
+
+.panel-heading,
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.panel-heading svg,
+.section-title svg,
+.setup-card svg {
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.setup-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.setup-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.setup-card p {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 0.91rem;
+  line-height: 1.35;
+}
+
+.notice {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border));
+  border-radius: 8px;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface));
+  font-size: 0.9rem;
+}
+
+.roadmap {
+  margin-top: 14px;
+  padding: 16px;
+}
+
+.roadmap ol {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding-left: 22px;
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.35;
+}
+
+.tab-bar {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 8px;
+  border: 1px solid var(--tab-border);
+  border-radius: 999px;
+  background: var(--tab-bg);
+  box-shadow: var(--tab-shadow);
+  backdrop-filter: blur(18px);
+}
+
+.tab {
+  display: flex;
+  min-width: 0;
+  min-height: 58px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.tab svg {
+  flex: 0 0 auto;
+}
+
+.tab.active {
+  color: var(--accent-strong);
+  background: var(--tab-active);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (min-width: 720px) {
+  .app-shell {
+    max-width: 680px;
+    margin: 0 auto;
+    padding-top: 28px;
+  }
+
+  .setup-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .setup-card {
+    grid-template-columns: 1fr;
+  }
+
+  .setup-card p {
+    grid-column: auto;
+  }
+}

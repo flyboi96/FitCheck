@@ -1,6 +1,6 @@
 # FitCheck
 
-FitCheck is a personal iPhone wardrobe and outfit planning app built with SwiftUI and SwiftData.
+FitCheck is a personal wardrobe and outfit planning app. The repository contains the original SwiftUI iPhone app plus a Progressive Web App in `web/`.
 
 ## MVP Scope
 
@@ -36,6 +36,18 @@ Settings includes a backup section. Export writes closet items, outfit history, 
 
 Firebase is used for optional login and profile sync. SwiftData remains the local closet database for this version. Firestore stores one document per signed-in user at `users/{uid}` with account email, display name, gender, and style preferences. The Account screen can also upload/download closet metadata in `users/{uid}/clothingItems/{itemId}`. Photos are intentionally not synced yet; Firebase Storage is a better fit for that later.
 
+## Progressive Web App
+
+The PWA lives in `web/` and is intended to avoid the seven-day iOS free provisioning limit.
+
+Deployment split:
+
+- GitHub Pages hosts the PWA frontend at `https://flyboi96.github.io/FitCheck/`.
+- Render hosts the backend proxy so the OpenAI API key stays off the phone and out of browser code.
+- Firebase is used for Auth, Firestore, and security rules only.
+
+See `PWA_MIGRATION.md` and `web/README.md`.
+
 ## Firebase Setup
 
 1. Create a Firebase project.
@@ -45,6 +57,7 @@ Firebase is used for optional login and profile sync. SwiftData remains the loca
 5. Enable Email/Password under Firebase Authentication.
 6. Create a Cloud Firestore database.
 7. Publish rules equivalent to `firestore.rules` so users can only read and write their own `users/{uid}` document and nested user data. From this folder, `firebase deploy --only firestore:rules` will use `firebase.json`.
+8. For the PWA, add `flyboi96.github.io` under Firebase Authentication authorized domains.
 
 After setup, open More > Account in FitCheck to register or sign in. Saving the account profile writes to Firestore and also applies the same gender/style preferences locally for outfit recommendations. Use the Cloud Personalization section to upload or download closet metadata for that signed-in user.
 

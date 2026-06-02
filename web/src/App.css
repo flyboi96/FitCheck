@@ -380,6 +380,7 @@ h3 {
 .style-coach-card,
 .weather-source-card,
 .plan-flow-card,
+.plan-warning-card,
 .wear-log-panel {
   display: grid;
   gap: 12px;
@@ -391,20 +392,23 @@ h3 {
 
 .weather-source-card,
 .plan-summary-card,
-.plan-flow-card {
+.plan-flow-card,
+.plan-warning-card {
   gap: 5px;
 }
 
 .weather-source-card strong,
 .plan-summary-card strong,
-.plan-flow-card strong {
+.plan-flow-card strong,
+.plan-warning-card strong {
   color: var(--text);
   font-size: 1rem;
 }
 
 .weather-source-card span,
 .plan-summary-card span,
-.plan-flow-card span {
+.plan-flow-card span,
+.plan-warning-card span {
   color: var(--muted);
   font-size: 0.92rem;
   line-height: 1.35;
@@ -416,6 +420,10 @@ h3 {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+}
+
+.plan-warning-card {
+  background: color-mix(in srgb, var(--warning) 10%, var(--panel));
 }
 
 .collapsible-card,

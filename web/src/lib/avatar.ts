@@ -9,7 +9,7 @@ import {
 } from 'firebase/firestore'
 import { type ClothingItem } from './closet'
 import { db } from './firebase'
-import { imageFileToBase64 } from './images'
+import { compactEncodedImageForFirestore, imageFileToBase64 } from './images'
 import { weatherSummary, type OutfitRecommendation, type WeatherInput } from './outfits'
 import { profileStyleSummary, type UserProfile } from './profile'
 import { getAIProxySettings } from './settings'
@@ -145,11 +145,16 @@ export async function saveGeneratedAvatar({
   notes: string
   userId: string
 }) {
+  const compactAvatar = await compactEncodedImageForFirestore({
+    base64: avatar.imageBase64,
+    mimeType: avatar.mimeType,
+  })
+
   await setDoc(
     savedAvatarDoc(userId),
     {
-      imageBase64: avatar.imageBase64,
-      mimeType: avatar.mimeType,
+      imageBase64: compactAvatar.base64,
+      mimeType: compactAvatar.mimeType,
       notes: notes.trim(),
       updatedAt: serverTimestamp(),
     },
@@ -166,7 +171,7 @@ export async function saveReferenceAvatar({
   notes: string
   userId: string
 }) {
-  const image = await imageFileToBase64(file, 1600, 0.88)
+  const image = await imageFileToBase64(file, 1200, 0.82)
   await saveGeneratedAvatar({
     avatar: {
       imageBase64: image.base64,

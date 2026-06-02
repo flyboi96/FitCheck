@@ -20,11 +20,14 @@ import {
   addDaysISO,
   buildPackingList,
   createDaysFromRange,
+  createPlanDay,
   createOutfitRequest,
   createPlan,
+  dateRangeDayCount,
   defaultNewPlanDraft,
   deletePlan,
   itineraryShareText,
+  MAX_EXPANDED_PLAN_DAYS,
   packingListShareText,
   recommendationToItineraryOutfit,
   saveGeneratedPlan,
@@ -88,9 +91,11 @@ export function PlansPanel({
     setErrorMessage(null)
 
     try {
-      await createPlan(userId, newPlanDraft)
+      const planId = await createPlan(userId, newPlanDraft)
+      setSelectedPlanId(planId)
+      setPlanDraft(null)
       setNewPlanDraft(defaultNewPlanDraft())
-      setStatusMessage('Plan created.')
+      setStatusMessage('Plan created. Edit the first day below, then add more days if needed.')
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not create plan.')
     } finally {
@@ -590,6 +595,9 @@ function PlanEditor({
   onLookupDayWeather: (dayId: string) => void
   onSave: () => void
 }) {
+  const rangeDayCount = dateRangeDayCount(draft.startDate, draft.endDate)
+  const cappedRangeCount = Math.min(rangeDayCount, MAX_EXPANDED_PLAN_DAYS)
+
   function updateDay(dayId: string, updater: (day: PlanDay) => PlanDay) {
     onChange({
       ...draft,
@@ -643,10 +651,20 @@ function PlanEditor({
   }
 
   function expandDateRange() {
+    if (rangeDayCount > MAX_EXPANDED_PLAN_DAYS) {
+      const confirmedLargeRange = window.confirm(
+        `This date range has ${rangeDayCount} dates. FitCheck will create the first ${MAX_EXPANDED_PLAN_DAYS} day cards so the editor stays usable. Continue?`,
+      )
+
+      if (!confirmedLargeRange) {
+        return
+      }
+    }
+
     const confirmed =
       draft.days.length <= 1 ||
       window.confirm(
-        `Replace the current ${draft.days.length} day card${draft.days.length === 1 ? '' : 's'} with one card for every date from ${draft.startDate} to ${draft.endDate}?`,
+        `Replace the current ${draft.days.length} day card${draft.days.length === 1 ? '' : 's'} with ${cappedRangeCount} card${cappedRangeCount === 1 ? '' : 's'} from ${draft.startDate} to ${draft.endDate}?`,
       )
 
     if (!confirmed) {
@@ -660,6 +678,17 @@ function PlanEditor({
         endDate: draft.endDate,
         location: draft.days[0]?.location ?? '',
       }),
+    })
+  }
+
+  function collapseToFirstDay() {
+    const firstDay = draft.days[0] ?? createPlanDay(draft.startDate, '')
+
+    onChange({
+      ...draft,
+      startDate: firstDay.date,
+      endDate: firstDay.date,
+      days: [firstDay],
     })
   }
 
@@ -715,10 +744,23 @@ function PlanEditor({
       <div className="plan-summary-card">
         <strong>{draft.days.length}</strong>
         <span>
-          editable day card{draft.days.length === 1 ? '' : 's'} for {draft.startDate} to{' '}
-          {draft.endDate}
+          editable day card{draft.days.length === 1 ? '' : 's'}. The selected date range is{' '}
+          {rangeDayCount} day{rangeDayCount === 1 ? '' : 's'}.
         </span>
       </div>
+
+      {draft.days.length > MAX_EXPANDED_PLAN_DAYS ? (
+        <div className="plan-warning-card">
+          <strong>This plan has {draft.days.length} day cards.</strong>
+          <span>
+            That is probably from an older range-expansion bug. Collapse it to one day and rebuild
+            only the days you actually need.
+          </span>
+          <button type="button" className="secondary-button" onClick={collapseToFirstDay}>
+            Keep First Day Only
+          </button>
+        </div>
+      ) : null}
 
       <div className="weather-source-card">
         <strong>Plan Weather</strong>
@@ -730,7 +772,7 @@ function PlanEditor({
 
       <div className="plan-flow-card">
         <strong>Flow</strong>
-        <span>1. Set days and outfit requests.</span>
+        <span>1. Create or add only the day cards you need.</span>
         <span>2. Look up weather.</span>
         <span>3. Generate itinerary.</span>
         <span>4. Packing list is derived from the itinerary, then you can edit it.</span>
@@ -779,6 +821,21 @@ function PlanEditor({
         </button>
       </div>
 
+      <div className="generation-actions">
+        <button type="button" className="secondary-button" onClick={addDay}>
+          <Plus size={20} aria-hidden="true" />
+          Add One Day
+        </button>
+        <button type="button" className="secondary-button" onClick={expandDateRange}>
+          <CalendarDays size={20} aria-hidden="true" />
+          Create Date Cards
+        </button>
+      </div>
+      <p className="helper-text">
+        Date cards control the actual itinerary. The top date range is just a label until you
+        create cards from it.
+      </p>
+
       <details className="collapsible-card" open={draft.days.length <= 10}>
         <summary>Daily Details ({draft.days.length})</summary>
         <div className="day-list">
@@ -797,17 +854,6 @@ function PlanEditor({
           ))}
         </div>
       </details>
-
-      <div className="generation-actions">
-        <button type="button" className="secondary-button" onClick={addDay}>
-          <Plus size={20} aria-hidden="true" />
-          Add One Day
-        </button>
-        <button type="button" className="secondary-button" onClick={expandDateRange}>
-          <CalendarDays size={20} aria-hidden="true" />
-          Expand Date Range
-        </button>
-      </div>
 
       <div className="generation-actions">
         <button

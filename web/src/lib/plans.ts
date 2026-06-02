@@ -85,6 +85,8 @@ export type NewPlanDraft = {
 }
 
 const defaultContext: OutfitContext = 'casual'
+export const MAX_EXPANDED_PLAN_DAYS = 21
+const millisecondsPerDay = 24 * 60 * 60 * 1000
 
 function requireFirestore() {
   if (!db) {
@@ -103,13 +105,32 @@ function planDoc(userId: string, planId: string) {
 }
 
 export function todayISO() {
-  return new Date().toISOString().slice(0, 10)
+  const now = new Date()
+  const month = `${now.getMonth() + 1}`.padStart(2, '0')
+  const day = `${now.getDate()}`.padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
 }
 
 export function addDaysISO(date: string, daysToAdd: number) {
-  const parsedDate = new Date(`${date}T00:00:00`)
-  parsedDate.setDate(parsedDate.getDate() + daysToAdd)
-  return parsedDate.toISOString().slice(0, 10)
+  const parsedDate = parseISODateUTC(date)
+
+  if (!parsedDate) {
+    return todayISO()
+  }
+
+  parsedDate.setUTCDate(parsedDate.getUTCDate() + daysToAdd)
+  return formatISODateUTC(parsedDate)
+}
+
+export function dateRangeDayCount(startDate: string, endDate: string) {
+  const parsedStartDate = parseISODateUTC(startDate)
+  const parsedEndDate = parseISODateUTC(endDate)
+
+  if (!parsedStartDate || !parsedEndDate || parsedEndDate < parsedStartDate) {
+    return 1
+  }
+
+  return Math.floor((parsedEndDate.getTime() - parsedStartDate.getTime()) / millisecondsPerDay) + 1
 }
 
 export function defaultNewPlanDraft(): NewPlanDraft {
@@ -117,7 +138,7 @@ export function defaultNewPlanDraft(): NewPlanDraft {
   return {
     name: 'Upcoming Plan',
     startDate,
-    endDate: addDaysISO(startDate, 6),
+    endDate: startDate,
     location: '',
     notes: '',
   }
@@ -129,16 +150,20 @@ export function createDaysFromRange({
   startDate,
 }: Pick<NewPlanDraft, 'endDate' | 'location' | 'startDate'>): PlanDay[] {
   const days: PlanDay[] = []
-  let currentDate = startDate
-  let guard = 0
+  const normalizedStartDate = normalizePlanDate(startDate)
+  const normalizedEndDate = normalizePlanDate(endDate, normalizedStartDate)
+  const dayCount = Math.min(
+    dateRangeDayCount(normalizedStartDate, normalizedEndDate),
+    MAX_EXPANDED_PLAN_DAYS,
+  )
+  let currentDate = normalizedStartDate
 
-  while (currentDate <= endDate && guard < 45) {
+  for (let index = 0; index < dayCount; index += 1) {
     days.push(createPlanDay(currentDate, location))
     currentDate = addDaysISO(currentDate, 1)
-    guard += 1
   }
 
-  return days.length > 0 ? days : [createPlanDay(startDate, location)]
+  return days.length > 0 ? days : [createPlanDay(normalizedStartDate, location)]
 }
 
 export function createStarterDays({
@@ -189,7 +214,7 @@ export function subscribeToPlans(
 
 export async function createPlan(userId: string, draft: NewPlanDraft) {
   const normalizedDraft = normalizeNewPlanDraft(draft)
-  await addDoc(plansCollection(userId), {
+  const planRef = await addDoc(plansCollection(userId), {
     ...normalizedDraft,
     days: createStarterDays(normalizedDraft).map(serializePlanDay),
     itinerary: [],
@@ -197,6 +222,7 @@ export async function createPlan(userId: string, draft: NewPlanDraft) {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
+  return planRef.id
 }
 
 export async function savePlan(userId: string, planId: string, draft: PlanDraft) {
@@ -330,8 +356,9 @@ export function packingListShareText(plan: Plan) {
 }
 
 function normalizeNewPlanDraft(draft: NewPlanDraft): NewPlanDraft {
-  const startDate = draft.startDate || todayISO()
-  const endDate = draft.endDate && draft.endDate >= startDate ? draft.endDate : startDate
+  const startDate = normalizePlanDate(draft.startDate)
+  const requestedEndDate = normalizePlanDate(draft.endDate, startDate)
+  const endDate = dateRangeDayCount(startDate, requestedEndDate) > 1 ? requestedEndDate : startDate
 
   return {
     name: draft.name.trim() || 'Upcoming Plan',
@@ -360,8 +387,9 @@ function serializePlanDay(day: PlanDay) {
 }
 
 function normalizePlan(id: string, data: Record<string, unknown>): Plan {
-  const startDate = stringValue(data.startDate, todayISO())
-  const endDate = stringValue(data.endDate, startDate)
+  const startDate = normalizePlanDate(stringValue(data.startDate, todayISO()))
+  const requestedEndDate = normalizePlanDate(stringValue(data.endDate, startDate), startDate)
+  const endDate = dateRangeDayCount(startDate, requestedEndDate) > 1 ? requestedEndDate : startDate
 
   return {
     id,
@@ -369,19 +397,21 @@ function normalizePlan(id: string, data: Record<string, unknown>): Plan {
     startDate,
     endDate,
     notes: stringValue(data.notes),
-    days: normalizePlanDays(data.days, startDate, endDate),
+    days: normalizePlanDays(data.days, startDate),
     itinerary: normalizeItinerary(data.itinerary),
     packingList: normalizePackingList(data.packingList),
   }
 }
 
-function normalizePlanDays(value: unknown, startDate: string, endDate: string) {
+function normalizePlanDays(value: unknown, startDate: string) {
   if (!Array.isArray(value)) {
-    return createDaysFromRange({ startDate, endDate, location: '' })
+    return [createPlanDay(startDate, '')]
   }
 
   const days = value.map((day) => normalizePlanDay(day)).filter((day): day is PlanDay => Boolean(day))
-  return days.length > 0 ? days.sort((first, second) => first.date.localeCompare(second.date)) : []
+  return days.length > 0
+    ? days.sort((first, second) => first.date.localeCompare(second.date))
+    : [createPlanDay(startDate, '')]
 }
 
 function normalizePlanDay(value: unknown): PlanDay | null {
@@ -390,7 +420,7 @@ function normalizePlanDay(value: unknown): PlanDay | null {
   }
 
   const data = value as Record<string, unknown>
-  const date = stringValue(data.date, todayISO())
+  const date = normalizePlanDate(stringValue(data.date, todayISO()))
   const location = stringValue(data.location)
 
   return {
@@ -423,7 +453,11 @@ function normalizeRequests(value: unknown): PlanOutfitRequest[] {
     return [createOutfitRequest(defaultContext)]
   }
 
-  return value.map(normalizeRequest).filter((request): request is PlanOutfitRequest => Boolean(request))
+  const requests = value
+    .map(normalizeRequest)
+    .filter((request): request is PlanOutfitRequest => Boolean(request))
+
+  return requests.length > 0 ? requests : [createOutfitRequest(defaultContext)]
 }
 
 function normalizeRequest(value: unknown): PlanOutfitRequest | null {
@@ -543,6 +577,37 @@ function stringValue(value: unknown, fallback = '') {
 
 function numberValue(value: unknown, fallback: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function normalizePlanDate(date: string, fallback = todayISO()) {
+  return parseISODateUTC(date) ? date : fallback
+}
+
+function parseISODateUTC(date: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+
+  if (!match) {
+    return null
+  }
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const parsedDate = new Date(Date.UTC(year, month - 1, day))
+
+  if (
+    parsedDate.getUTCFullYear() !== year ||
+    parsedDate.getUTCMonth() !== month - 1 ||
+    parsedDate.getUTCDate() !== day
+  ) {
+    return null
+  }
+
+  return parsedDate
+}
+
+function formatISODateUTC(date: Date) {
+  return date.toISOString().slice(0, 10)
 }
 
 function stringArray(value: unknown) {

@@ -16,15 +16,15 @@ import {
   LogOut,
   Mail,
   MoreHorizontal,
-  PackageCheck,
   Save,
   Shirt,
-  Sparkles,
   UserRound,
   Wand2,
 } from 'lucide-react'
 import './App.css'
+import { AIProxySettingsPanel } from './components/AIProxySettingsPanel'
 import { ClosetPanel } from './components/ClosetPanel'
+import { OutfitExperiencePanel } from './components/OutfitExperiencePanel'
 import { useAuthProfile } from './hooks/useAuthProfile'
 import { auth, firebaseStatus } from './lib/firebase'
 import {
@@ -49,29 +49,6 @@ const wearerOptions: Array<{ value: WearerProfile; label: string }> = [
   { value: 'unspecified', label: 'Unspecified' },
   { value: 'male', label: 'Male' },
   { value: 'female', label: 'Female' },
-]
-
-const phaseCards = [
-  {
-    title: 'Firestore closet',
-    detail: 'Clothing items now sync under users/{uid}/clothingItems for the signed-in user.',
-    icon: Shirt,
-  },
-  {
-    title: 'Search and filter',
-    detail: 'The closet can be browsed by category, status, and free-text search.',
-    icon: Database,
-  },
-  {
-    title: 'Ready for outfits',
-    detail: 'Quantity, brand, notes, and status are captured for the next outfit-generation phase.',
-    icon: Sparkles,
-  },
-]
-
-const nextPhases = [
-  'pwa-04-today-build-ai: Ask AI First and local fit display',
-  'pwa-05-plans: daily plan, itinerary, packing list, exports',
 ]
 
 const defaultProfileDraft: UserProfileDraft = {
@@ -193,7 +170,7 @@ function AuthGate() {
         <div className="panel-heading">
           <UserRound size={28} aria-hidden="true" />
           <div>
-            <p className="eyebrow">PWA phase 03</p>
+            <p className="eyebrow">PWA phase 04</p>
             <h1 id="auth-title">FitCheck</h1>
           </div>
         </div>
@@ -285,7 +262,7 @@ function AuthenticatedShell({
     <main className="app-shell">
       <section className="top-bar" aria-label="FitCheck PWA status">
         <div>
-          <p className="eyebrow">PWA phase 03</p>
+          <p className="eyebrow">PWA phase 04</p>
           <h1>FitCheck</h1>
         </div>
         <div className="status-pill ready">
@@ -351,7 +328,7 @@ function renderTabPanel(
 ) {
   switch (activeTab) {
     case 'today':
-      return <TodayPanel />
+      return <OutfitExperiencePanel mode="today" profile={profile} userId={user.uid} />
     case 'plans':
       return (
         <PlaceholderPanel
@@ -363,47 +340,10 @@ function renderTabPanel(
     case 'closet':
       return <ClosetPanel userId={user.uid} wearerProfile={profile?.gender ?? 'unspecified'} />
     case 'build':
-      return (
-        <PlaceholderPanel
-          icon={Wand2}
-          title="Outfit generation comes after closet"
-          detail="Phase 04 will connect the local closet, weather context, and backend AI proxy."
-        />
-      )
+      return <OutfitExperiencePanel mode="build" profile={profile} userId={user.uid} />
     case 'more':
       return <MorePanel profile={profile} refreshProfile={refreshProfile} user={user} />
   }
-}
-
-function TodayPanel() {
-  return (
-    <>
-      <div className="setup-grid" aria-label="Phase 02 readiness">
-        {phaseCards.map((card) => {
-          const Icon = card.icon
-          return (
-            <article className="setup-card" key={card.title}>
-              <Icon size={22} aria-hidden="true" />
-              <h3>{card.title}</h3>
-              <p>{card.detail}</p>
-            </article>
-          )
-        })}
-      </div>
-
-      <section className="roadmap inline-roadmap" aria-labelledby="roadmap-title">
-        <div className="section-title">
-          <PackageCheck size={20} aria-hidden="true" />
-          <h2 id="roadmap-title">Next build phases</h2>
-        </div>
-        <ol>
-          {nextPhases.map((phase) => (
-            <li key={phase}>{phase}</li>
-          ))}
-        </ol>
-      </section>
-    </>
-  )
 }
 
 function MorePanel({
@@ -418,6 +358,7 @@ function MorePanel({
   return (
     <div className="tab-content">
       <ProfileEditor profile={profile} refreshProfile={refreshProfile} user={user} />
+      <AIProxySettingsPanel />
       <button
         type="button"
         className="secondary-button"

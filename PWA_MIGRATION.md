@@ -4,7 +4,7 @@ The native iOS app remains the reference implementation. The PWA lives in `web/`
 
 ## Current Phase
 
-### `pwa-03-closet`
+### `pwa-04-today-build-ai`
 
 Status: complete.
 
@@ -26,15 +26,13 @@ Included:
 - Quantity, brand, notes, status
 - Firestore sync
 - GitHub Pages artifact upload updated to `actions/upload-pages-artifact@v5`
+- Today context/weather panel
+- Build page for optional required item selection
+- Local outfit scoring with 0-100 fit-quality display
+- Ask AI First through the existing backend proxy
+- Outfit feedback saved under `users/{uid}/outfitFeedback`
 
 ## Next Phases
-
-### `pwa-04-today-build-ai`
-
-- Today context/weather panel
-- Ask AI First outfit generation through the existing backend proxy
-- Local fit-quality display
-- Outfit feedback
 
 ### `pwa-05-plans`
 
@@ -96,6 +94,14 @@ Set `VITE_FITCHECK_PROXY_URL` to the Render backend base URL, for example:
 https://your-fitcheck-api.onrender.com
 ```
 
+Optional secret:
+
+```text
+VITE_FITCHECK_PROXY_TOKEN
+```
+
+Prefer entering the token in the PWA under `More -> Proxy Settings` if you do not want it baked into the GitHub Pages build.
+
 5. Push to `main`, or run:
 
 ```text
@@ -135,3 +141,4 @@ This avoids the seven-day free iOS provisioning limit because the app is install
 ## Important Security Rule
 
 The PWA can use Firebase Web config because those values are not OpenAI secrets. Do not put `OPENAI_API_KEY` in `web/`. AI requests must continue to go through `backend/`.
+The optional proxy token is not an OpenAI key, but it is visible to browser code if included in the PWA build.

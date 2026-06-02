@@ -51,6 +51,10 @@ https://your-fitcheck-api.onrender.com
 
 Do not add `/outfit-recommendation` or any other route to that URL.
 
+For the PWA, the proxy token can be entered locally under `More -> Proxy Settings`.
+You can also set `VITE_FITCHECK_PROXY_TOKEN` for GitHub Pages builds, but that value is visible
+to browser code. Never put `OPENAI_API_KEY` in `web/`.
+
 ## Routes
 
 - `POST /outfit-recommendation` reviews a locally generated outfit or chooses an outfit from the closet when no candidate item IDs are supplied.

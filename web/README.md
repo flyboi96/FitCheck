@@ -14,6 +14,10 @@ This is the Progressive Web App version of FitCheck. It lives beside the native 
 - Firestore user profile sync under `users/{uid}`
 - Firestore closet sync under `users/{uid}/clothingItems`
 - Closet search, category/status filters, add/edit, archive, delete, quantity, brand, notes
+- Today and Build outfit generation from the active closet
+- Manual weather/context inputs for outfit scoring
+- Ask AI First through the Render backend proxy
+- Outfit feedback saved under `users/{uid}/outfitFeedback`
 
 The profile document currently stores:
 
@@ -39,6 +43,21 @@ statusRawValue
 wearCount
 createdAt
 updatedAt
+```
+
+Each outfit feedback document currently stores:
+
+```text
+type
+note
+context
+weatherSummary
+itemIDs
+itemNames
+score
+source
+rationale
+createdAt
 ```
 
 ## Local Setup
@@ -112,6 +131,14 @@ VITE_FITCHECK_PROXY_URL
 
 Set `VITE_FITCHECK_PROXY_URL` to the Render backend base URL. Do not include a route path.
 
+Optional secret:
+
+```text
+VITE_FITCHECK_PROXY_TOKEN
+```
+
+For better flexibility, you can leave it blank in GitHub and enter the token on your device under `More -> Proxy Settings`.
+
 The workflow runs automatically on pushes to `main`, or manually from:
 
 ```text
@@ -144,3 +171,5 @@ Authentication -> Settings -> Authorized domains -> flyboi96.github.io
 ## Backend Proxy
 
 Do not put an OpenAI API key in this PWA. Keep using the existing `backend/` proxy for AI calls, deployed on Render.
+The optional proxy token can gate your backend, but it is not a substitute for keeping the
+OpenAI key server-side.

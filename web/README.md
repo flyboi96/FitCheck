@@ -2,7 +2,7 @@
 
 This is the Progressive Web App version of FitCheck. It lives beside the native iOS app and will be ported in phases.
 
-## Phase 01 Scope
+## Current Scope
 
 - React + TypeScript + Vite scaffold
 - PWA manifest and service worker setup
@@ -10,6 +10,16 @@ This is the Progressive Web App version of FitCheck. It lives beside the native 
 - Firebase Web SDK configuration
 - GitHub Pages deployment workflow
 - FitCheck app shell with the same primary sections as the iOS app
+- Firebase Auth sign in, registration, password visibility toggle, and sign out
+- Firestore user profile sync under `users/{uid}`
+
+The profile document currently stores:
+
+```text
+displayName
+gender
+styleDescription
+```
 
 ## Local Setup
 
@@ -53,6 +63,12 @@ The deploy workflow is:
 
 ```text
 .github/workflows/deploy-web.yml
+```
+
+The workflow uses Node 24-compatible GitHub Actions majors and sets:
+
+```text
+FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true
 ```
 
 Before the first deploy, enable Pages in GitHub:

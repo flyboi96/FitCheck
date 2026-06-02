@@ -4,7 +4,7 @@ The native iOS app remains the reference implementation. The PWA lives in `web/`
 
 ## Current Phase
 
-### `pwa-01-scaffold`
+### `pwa-02-auth-firestore`
 
 Status: complete.
 
@@ -15,15 +15,13 @@ Included:
 - Firebase Web SDK setup through `web/.env.local`
 - GitHub Pages deployment workflow for `web/dist`
 - FitCheck app shell with Today, Plans, Closet, Build, and More
-
-## Next Phases
-
-### `pwa-02-auth-firestore`
-
 - Firebase Auth login/register/logout
-- User profile document under `users/{uid}`
+- User profile document under `users/{uid}` with `displayName`, `gender`, and `styleDescription`
 - Firestore read/write helpers
 - Protected app shell for signed-in users
+- GitHub Pages workflow updated to Node 24-compatible Actions majors
+
+## Next Phases
 
 ### `pwa-03-closet`
 

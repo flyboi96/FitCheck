@@ -36,12 +36,15 @@ Included:
 - AI itinerary generation
 - Packing list derived from itinerary
 - Share/export text
+- Weather lookup for Today and plan days using Open-Meteo
+- Closet photo import in the PWA through the backend proxy
+- Avatar outfit previews in the PWA through the backend proxy
 
-## Next Phases
+## Next Ideas
 
-- Weather lookup for plan days
-- Closet photo import in the PWA
-- Avatar outfit previews in the PWA
+- Saved avatar reference image
+- Calendar import
+- Weather fallback for dates outside forecast range
 
 ## Hosting Setup
 
@@ -54,6 +57,7 @@ https://flyboi96.github.io/FitCheck/
 The backend proxy remains on Render and is the only place that should hold `OPENAI_API_KEY`.
 
 Firebase is used for Auth, Firestore, and rules only. It does not host the PWA page.
+Open-Meteo is used directly from the PWA for city/current-location weather lookup and does not require an API key.
 
 ## GitHub Pages Setup
 

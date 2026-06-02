@@ -61,3 +61,5 @@ to browser code. Never put `OPENAI_API_KEY` in `web/`.
 - `POST /clothing-item-description` accepts a compressed base64 image plus optional user notes and returns an editable clothing-item draft.
 - `POST /style-profile-draft` turns guided style answers into editable style-preference fields.
 - `POST /avatar-outfit-preview` accepts a compressed user reference photo plus outfit, weather, location, and style context, then returns a base64 PNG preview.
+
+The PWA now uses `clothing-item-description` for closet photo import and `avatar-outfit-preview` for generated outfit previews.

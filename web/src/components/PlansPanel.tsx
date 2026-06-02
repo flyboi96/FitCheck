@@ -4,6 +4,7 @@ import {
   Clipboard,
   Copy,
   Download,
+  MapPin,
   Plus,
   Save,
   Sparkles,
@@ -39,6 +40,7 @@ import {
   type WeatherInput,
 } from '../lib/outfits'
 import type { UserProfile } from '../lib/profile'
+import { lookupWeatherByLocation } from '../lib/weather'
 
 export function PlansPanel({
   profile,
@@ -58,6 +60,7 @@ export function PlansPanel({
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [bulkContext, setBulkContext] = useState<OutfitContext>('casual')
   const [bulkLocation, setBulkLocation] = useState('')
+  const [isLookingUpWeather, setIsLookingUpWeather] = useState(false)
 
   const effectiveSelectedPlanId = selectedPlanId || plans[0]?.id || ''
   const selectedPlan = plans.find((plan) => plan.id === effectiveSelectedPlanId) ?? null
@@ -194,6 +197,75 @@ export function PlansPanel({
 
   function updateDraft(updater: (draft: PlanDraft) => PlanDraft) {
     setPlanDraft((currentDraft) => (currentDraft ? updater(currentDraft) : currentDraft))
+  }
+
+  async function lookupWeatherForDay(dayId: string) {
+    if (!effectivePlanDraft) {
+      return
+    }
+
+    const day = effectivePlanDraft.days.find((planDay) => planDay.id === dayId)
+    if (!day) {
+      return
+    }
+
+    setIsLookingUpWeather(true)
+    setStatusMessage(null)
+    setErrorMessage(null)
+
+    try {
+      const nextWeather = await lookupWeatherByLocation(day.location || day.weather.location, day.date)
+      updateDraft((draft) => ({
+        ...draft,
+        days: draft.days.map((planDay) =>
+          planDay.id === dayId
+            ? {
+                ...planDay,
+                location: nextWeather.location,
+                weather: nextWeather,
+              }
+            : planDay,
+        ),
+      }))
+      setStatusMessage(`Weather updated for ${day.date}.`)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Weather lookup failed.')
+    } finally {
+      setIsLookingUpWeather(false)
+    }
+  }
+
+  async function lookupWeatherForAllDays() {
+    if (!effectivePlanDraft) {
+      return
+    }
+
+    setIsLookingUpWeather(true)
+    setStatusMessage(null)
+    setErrorMessage(null)
+
+    try {
+      const nextDays = []
+
+      for (const day of effectivePlanDraft.days) {
+        const nextWeather = await lookupWeatherByLocation(day.location || day.weather.location, day.date)
+        nextDays.push({
+          ...day,
+          location: nextWeather.location,
+          weather: nextWeather,
+        })
+      }
+
+      setPlanDraft({
+        ...effectivePlanDraft,
+        days: nextDays,
+      })
+      setStatusMessage('Weather updated for all plan days.')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not update all weather.')
+    } finally {
+      setIsLookingUpWeather(false)
+    }
   }
 
   function applyBulkContext() {
@@ -361,6 +433,7 @@ export function PlansPanel({
               bulkLocation={bulkLocation}
               draft={effectivePlanDraft}
               isGenerating={isGenerating}
+              isLookingUpWeather={isLookingUpWeather}
               isSavingPlan={isSavingPlan}
               onAddBulkContext={applyBulkContext}
               onApplyBulkLocation={applyBulkLocation}
@@ -372,6 +445,12 @@ export function PlansPanel({
               }}
               onGenerateLocal={() => {
                 void handleGenerateItinerary(false)
+              }}
+              onLookupAllWeather={() => {
+                void lookupWeatherForAllDays()
+              }}
+              onLookupDayWeather={(dayId) => {
+                void lookupWeatherForDay(dayId)
               }}
               onSave={() => {
                 void handleSavePlan()
@@ -422,6 +501,7 @@ function PlanEditor({
   bulkLocation,
   draft,
   isGenerating,
+  isLookingUpWeather,
   isSavingPlan,
   onAddBulkContext,
   onApplyBulkLocation,
@@ -430,6 +510,8 @@ function PlanEditor({
   onChange,
   onGenerateAI,
   onGenerateLocal,
+  onLookupAllWeather,
+  onLookupDayWeather,
   onSave,
 }: {
   activeClosetCount: number
@@ -437,6 +519,7 @@ function PlanEditor({
   bulkLocation: string
   draft: PlanDraft
   isGenerating: boolean
+  isLookingUpWeather: boolean
   isSavingPlan: boolean
   onAddBulkContext: () => void
   onApplyBulkLocation: () => void
@@ -445,6 +528,8 @@ function PlanEditor({
   onChange: (draft: PlanDraft) => void
   onGenerateAI: () => void
   onGenerateLocal: () => void
+  onLookupAllWeather: () => void
+  onLookupDayWeather: (dayId: string) => void
   onSave: () => void
 }) {
   function updateDay(dayId: string, updater: (day: PlanDay) => PlanDay) {
@@ -560,6 +645,7 @@ function PlanEditor({
             day={day}
             key={day.id}
             onChange={(nextDay) => updateDay(day.id, () => nextDay)}
+            onLookupWeather={() => onLookupDayWeather(day.id)}
             onRemove={() => removeDay(day.id)}
           />
         ))}
@@ -571,6 +657,15 @@ function PlanEditor({
       </button>
 
       <div className="generation-actions">
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={isLookingUpWeather}
+          onClick={onLookupAllWeather}
+        >
+          {isLookingUpWeather ? <span className="spinner small" aria-hidden="true" /> : <MapPin size={20} />}
+          Look Up All Weather
+        </button>
         <button type="button" className="secondary-button" disabled={isSavingPlan} onClick={onSave}>
           {isSavingPlan ? <span className="spinner small" aria-hidden="true" /> : <Save size={20} />}
           Save Plan
@@ -611,10 +706,12 @@ function planToDraft(plan: Plan): PlanDraft {
 function PlanDayEditor({
   day,
   onChange,
+  onLookupWeather,
   onRemove,
 }: {
   day: PlanDay
   onChange: (day: PlanDay) => void
+  onLookupWeather: () => void
   onRemove: () => void
 }) {
   function updateWeather(weather: WeatherInput) {
@@ -752,6 +849,11 @@ function PlanDayEditor({
         />
         <span>Rain or storm risk</span>
       </label>
+
+      <button type="button" className="secondary-button" onClick={onLookupWeather}>
+        <MapPin size={20} aria-hidden="true" />
+        Look Up Weather
+      </button>
 
       <div className="request-list">
         {day.requests.map((request) => (

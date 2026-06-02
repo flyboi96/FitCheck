@@ -458,6 +458,15 @@ h3 {
   background: color-mix(in srgb, var(--accent) 6%, var(--surface));
 }
 
+.photo-import-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
 .form-title-row,
 .category-heading,
 .item-title-row,
@@ -671,7 +680,8 @@ h3 {
 }
 
 .generation-actions,
-.feedback-actions {
+.feedback-actions,
+.weather-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
@@ -784,6 +794,31 @@ h3 {
 
 .feedback-actions {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.avatar-panel,
+.avatar-preview-result {
+  display: grid;
+  gap: 10px;
+}
+
+.avatar-panel {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.avatar-preview-result img {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.avatar-preview-result a {
+  text-decoration: none;
 }
 
 .helper-text svg {
@@ -1039,6 +1074,7 @@ h3 {
   .weather-grid,
   .generation-actions,
   .feedback-actions,
+  .weather-actions,
   .bulk-tools,
   .plan-selector-row,
   .share-actions {

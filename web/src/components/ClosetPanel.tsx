@@ -1,6 +1,7 @@
 import { type FormEvent, useMemo, useState } from 'react'
 import {
   Archive,
+  Camera,
   CheckCircle2,
   Edit3,
   Package,
@@ -26,6 +27,7 @@ import {
   type ClothingItemDraft,
   type ClothingStatus,
 } from '../lib/closet'
+import { describeClothingPhoto } from '../lib/photoImport'
 import type { WearerProfile } from '../lib/profile'
 
 type StatusFilter = 'all' | ClothingStatus
@@ -47,6 +49,9 @@ export function ClosetPanel({
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [draft, setDraft] = useState<ClothingItemDraft>(defaultClothingItemDraft)
   const [isSaving, setIsSaving] = useState(false)
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [photoDescription, setPhotoDescription] = useState('')
+  const [isImportingPhoto, setIsImportingPhoto] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -185,6 +190,33 @@ export function ClosetPanel({
     }
   }
 
+  async function handlePhotoImport() {
+    if (!photoFile) {
+      setActionError('Choose or take a clothing photo first.')
+      return
+    }
+
+    setIsImportingPhoto(true)
+    setActionMessage(null)
+    setActionError(null)
+
+    try {
+      const importedDraft = await describeClothingPhoto({
+        file: photoFile,
+        userDescription: photoDescription,
+        wearerProfile,
+      })
+      setDraft(importedDraft)
+      setEditingItemId(null)
+      setIsFormOpen(true)
+      setActionMessage('AI filled the item draft. Review it before saving.')
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Photo import failed.')
+    } finally {
+      setIsImportingPhoto(false)
+    }
+  }
+
   return (
     <div className="closet-panel">
       <div className="summary-grid" aria-label="Closet summary">
@@ -240,6 +272,48 @@ export function ClosetPanel({
             ))}
           </select>
         </label>
+      </div>
+
+      <div className="photo-import-card">
+        <div className="section-title">
+          <Camera size={20} aria-hidden="true" />
+          <div>
+            <p className="eyebrow">AI import</p>
+            <h2>Photo Import</h2>
+          </div>
+        </div>
+
+        <label className="form-field">
+          <span>Photo</span>
+          <input
+            accept="image/*"
+            capture="environment"
+            onChange={(event) => setPhotoFile(event.target.files?.[0] ?? null)}
+            type="file"
+          />
+        </label>
+
+        <label className="form-field">
+          <span>Optional Description</span>
+          <input
+            onChange={(event) => setPhotoDescription(event.target.value)}
+            placeholder="Brown Thursday Captain boots"
+            type="text"
+            value={photoDescription}
+          />
+        </label>
+
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={isImportingPhoto}
+          onClick={() => {
+            void handlePhotoImport()
+          }}
+        >
+          {isImportingPhoto ? <span className="spinner small" aria-hidden="true" /> : <Camera size={20} />}
+          Describe Photo
+        </button>
       </div>
 
       {actionMessage ? <p className="success-message">{actionMessage}</p> : null}

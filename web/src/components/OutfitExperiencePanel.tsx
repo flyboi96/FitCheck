@@ -4,6 +4,10 @@ import {
   Bot,
   CheckCircle2,
   CloudSun,
+  Download,
+  Image as ImageIcon,
+  LocateFixed,
+  MapPin,
   MessageSquare,
   RefreshCw,
   Sparkles,
@@ -12,6 +16,7 @@ import {
   Wand2,
 } from 'lucide-react'
 import { useClosetItems } from '../hooks/useClosetItems'
+import { generateAvatarPreview, type AvatarPreview } from '../lib/avatar'
 import { categoryName } from '../lib/outfits'
 import {
   defaultWeatherInput,
@@ -25,6 +30,7 @@ import {
   type WeatherInput,
 } from '../lib/outfits'
 import type { UserProfile } from '../lib/profile'
+import { lookupWeatherAtCurrentLocation, lookupWeatherByLocation } from '../lib/weather'
 
 export function OutfitExperiencePanel({
   mode,
@@ -46,6 +52,9 @@ export function OutfitExperiencePanel({
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null)
   const [feedbackError, setFeedbackError] = useState<string | null>(null)
   const [isSavingFeedback, setIsSavingFeedback] = useState(false)
+  const [isLookingUpWeather, setIsLookingUpWeather] = useState(false)
+  const [weatherStatus, setWeatherStatus] = useState<string | null>(null)
+  const [weatherError, setWeatherError] = useState<string | null>(null)
 
   const activeItems = useMemo(() => items.filter((item) => item.status === 'active'), [items])
   const selectedItem = activeItems.find((item) => item.id === selectedItemId)
@@ -82,6 +91,24 @@ export function OutfitExperiencePanel({
       setGenerationError(error instanceof Error ? error.message : 'Could not generate an outfit.')
     } finally {
       setIsGenerating(false)
+    }
+  }
+
+  async function handleWeatherLookup(useCurrentLocation: boolean) {
+    setIsLookingUpWeather(true)
+    setWeatherStatus(null)
+    setWeatherError(null)
+
+    try {
+      const nextWeather = useCurrentLocation
+        ? await lookupWeatherAtCurrentLocation()
+        : await lookupWeatherByLocation(weather.location)
+      setWeather(nextWeather)
+      setWeatherStatus(`Weather updated: ${weatherSummary(nextWeather)}`)
+    } catch (error) {
+      setWeatherError(error instanceof Error ? error.message : 'Weather lookup failed.')
+    } finally {
+      setIsLookingUpWeather(false)
     }
   }
 
@@ -152,6 +179,34 @@ export function OutfitExperiencePanel({
         <p className="helper-text">
           {outfitContexts.find((option) => option.value === context)?.description}
         </p>
+
+        <div className="weather-actions">
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={isLookingUpWeather}
+            onClick={() => {
+              void handleWeatherLookup(false)
+            }}
+          >
+            {isLookingUpWeather ? <span className="spinner small" aria-hidden="true" /> : <MapPin size={20} />}
+            Look Up Weather
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={isLookingUpWeather}
+            onClick={() => {
+              void handleWeatherLookup(true)
+            }}
+          >
+            <LocateFixed size={20} aria-hidden="true" />
+            Use Current
+          </button>
+        </div>
+
+        {weatherStatus ? <p className="success-message">{weatherStatus}</p> : null}
+        {weatherError ? <p className="error-message">{weatherError}</p> : null}
 
         <div className="weather-grid">
           <label className="form-field">
@@ -292,6 +347,7 @@ export function OutfitExperiencePanel({
             void handleFeedback(type)
           }}
           onNoteChange={setFeedbackNote}
+          profile={profile}
           recommendation={recommendation}
           weather={weather}
         />
@@ -307,6 +363,7 @@ function OutfitResultCard({
   isSavingFeedback,
   onFeedback,
   onNoteChange,
+  profile,
   recommendation,
   weather,
 }: {
@@ -316,9 +373,40 @@ function OutfitResultCard({
   isSavingFeedback: boolean
   onFeedback: (type: OutfitFeedbackType) => void
   onNoteChange: (note: string) => void
+  profile: UserProfile | null
   recommendation: OutfitRecommendation
   weather: WeatherInput
 }) {
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [avatarPreview, setAvatarPreview] = useState<AvatarPreview | null>(null)
+  const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false)
+  const [avatarError, setAvatarError] = useState<string | null>(null)
+
+  async function handleAvatarPreview() {
+    if (!avatarFile) {
+      setAvatarError('Choose a full-body reference photo first.')
+      return
+    }
+
+    setIsGeneratingAvatar(true)
+    setAvatarError(null)
+
+    try {
+      setAvatarPreview(
+        await generateAvatarPreview({
+          file: avatarFile,
+          profile,
+          recommendation,
+          weather,
+        }),
+      )
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : 'Avatar preview failed.')
+    } finally {
+      setIsGeneratingAvatar(false)
+    }
+  }
+
   return (
     <article className="recommendation-card">
       <div className="recommendation-header">
@@ -374,6 +462,47 @@ function OutfitResultCard({
           </ul>
         </div>
       ) : null}
+
+      <div className="avatar-panel">
+        <div className="section-title">
+          <ImageIcon size={20} aria-hidden="true" />
+          <h3>Avatar Preview</h3>
+        </div>
+        <p className="helper-text">
+          Use a full-body reference photo with head, hair, and shoes visible.
+        </p>
+        <label className="form-field">
+          <span>Reference Photo</span>
+          <input
+            accept="image/*"
+            capture="user"
+            onChange={(event) => setAvatarFile(event.target.files?.[0] ?? null)}
+            type="file"
+          />
+        </label>
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={isGeneratingAvatar}
+          onClick={() => {
+            void handleAvatarPreview()
+          }}
+        >
+          {isGeneratingAvatar ? <span className="spinner small" aria-hidden="true" /> : <ImageIcon size={20} />}
+          Generate Avatar
+        </button>
+        {avatarError ? <p className="error-message">{avatarError}</p> : null}
+        {avatarPreview ? (
+          <div className="avatar-preview-result">
+            <img alt="Generated avatar wearing selected outfit" src={avatarPreview.imageURL} />
+            <p className="helper-text">{avatarPreview.promptSummary}</p>
+            <a className="secondary-button" download="fitcheck-avatar.png" href={avatarPreview.imageURL}>
+              <Download size={20} aria-hidden="true" />
+              Save Image
+            </a>
+          </div>
+        ) : null}
+      </div>
 
       <div className="feedback-panel">
         <label className="form-field">

@@ -20,6 +20,9 @@ This is the Progressive Web App version of FitCheck. It lives beside the native 
 - Outfit feedback saved under `users/{uid}/outfitFeedback`
 - Plans saved under `users/{uid}/plans`
 - Daily outfit requests, AI/local itinerary generation, derived packing list, and share text
+- Weather lookup by city/current location through Open-Meteo
+- Closet photo import through the backend proxy
+- Avatar outfit previews through the backend proxy
 
 The profile document currently stores:
 
@@ -189,3 +192,12 @@ Authentication -> Settings -> Authorized domains -> flyboi96.github.io
 Do not put an OpenAI API key in this PWA. Keep using the existing `backend/` proxy for AI calls, deployed on Render.
 The optional proxy token can gate your backend, but it is not a substitute for keeping the
 OpenAI key server-side.
+
+## Weather
+
+The PWA uses Open-Meteo directly for weather lookup:
+
+- City lookup uses `https://geocoding-api.open-meteo.com/v1/search`
+- Forecast lookup uses `https://api.open-meteo.com/v1/forecast`
+
+Open-Meteo does not require an API key for this use.

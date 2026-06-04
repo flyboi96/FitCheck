@@ -139,7 +139,7 @@ export function PlansPanel({
       setPlanDraft(null)
       setNewPlanDraft(defaultNewPlanDraft())
       setPlanView('setup')
-      setStatusMessage('Plan created. Edit the first day below, then add more days if needed.')
+      setStatusMessage('Plan created with one editable card per day. Adjust locations, weather, and outfit requests below.')
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not create plan.')
     } finally {
@@ -422,7 +422,7 @@ export function PlansPanel({
             </div>
           </div>
           <p className="helper-text">
-            This creates one editable day first. Add more days inside the plan.
+            This creates one editable card per day in the selected range, up to 21 days.
           </p>
 
           <label className="form-field">

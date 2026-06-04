@@ -168,13 +168,6 @@ export function createDaysFromRange({
   return days.length > 0 ? days : [createPlanDay(normalizedStartDate, location)]
 }
 
-export function createStarterDays({
-  location,
-  startDate,
-}: Pick<NewPlanDraft, 'location' | 'startDate'>): PlanDay[] {
-  return [createPlanDay(startDate, location)]
-}
-
 export function createPlanDay(date: string, location: string): PlanDay {
   return {
     id: crypto.randomUUID(),
@@ -218,7 +211,7 @@ export async function createPlan(userId: string, draft: NewPlanDraft) {
   const normalizedDraft = normalizeNewPlanDraft(draft)
   const planRef = await addDoc(plansCollection(userId), {
     ...normalizedDraft,
-    days: createStarterDays(normalizedDraft).map(serializePlanDay),
+    days: createDaysFromRange(normalizedDraft).map(serializePlanDay),
     itinerary: [],
     packingList: [],
     createdAt: serverTimestamp(),

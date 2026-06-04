@@ -21,6 +21,7 @@ import {
   defaultClothingItemDraft,
   deleteClothingItem,
   saveClothingItem,
+  saveClothingItems,
   statusLabel,
   updateClothingItemStatus,
   type ClothingCategory,
@@ -33,7 +34,7 @@ import type { WearerProfile } from '../lib/profile'
 
 type StatusFilter = 'all' | ClothingStatus
 type CategoryFilter = 'all' | ClothingCategory
-type ClosetView = 'list' | 'form' | 'import'
+type ClosetView = 'list' | 'form' | 'import' | 'bulk'
 
 export function ClosetPanel({
   userId,
@@ -54,6 +55,8 @@ export function ClosetPanel({
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoDescription, setPhotoDescription] = useState('')
   const [isImportingPhoto, setIsImportingPhoto] = useState(false)
+  const [bulkImportText, setBulkImportText] = useState('')
+  const [isBulkImporting, setIsBulkImporting] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -153,6 +156,13 @@ export function ClosetPanel({
     setActionError(null)
   }
 
+  function openBulkImport() {
+    setClosetView('bulk')
+    setBulkImportText('')
+    setActionMessage(null)
+    setActionError(null)
+  }
+
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setIsSaving(true)
@@ -224,6 +234,24 @@ export function ClosetPanel({
       setActionError(error instanceof Error ? error.message : 'Photo import failed.')
     } finally {
       setIsImportingPhoto(false)
+    }
+  }
+
+  async function handleBulkImport() {
+    setIsBulkImporting(true)
+    setActionMessage(null)
+    setActionError(null)
+
+    try {
+      const importedDrafts = parseBulkClosetImport(bulkImportText, categoryOptions[0]?.value ?? 'other')
+      await saveClothingItems(userId, importedDrafts)
+      setActionMessage(`${importedDrafts.length} clothing item${importedDrafts.length === 1 ? '' : 's'} imported.`)
+      setBulkImportText('')
+      setClosetView('list')
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Bulk import failed.')
+    } finally {
+      setIsBulkImporting(false)
     }
   }
 
@@ -306,6 +334,56 @@ export function ClosetPanel({
     )
   }
 
+  if (closetView === 'bulk') {
+    return (
+      <div className="closet-panel">
+        <ClosetSubpageHeader onBack={() => setClosetView('list')} subtitle="Closet" title="Bulk Import" />
+        {statusBlock}
+        <div className="photo-import-card">
+          <div className="section-title">
+            <Package size={20} aria-hidden="true" />
+            <div>
+              <p className="eyebrow">First-time setup</p>
+              <h2>Paste wardrobe list</h2>
+            </div>
+          </div>
+
+          <p className="helper-text">
+            Add one item per line. Use `name | category | brand | notes`. Quantity works at the
+            front, like `10x black underwear`.
+          </p>
+
+          <label className="form-field">
+            <span>Wardrobe Items</span>
+            <textarea
+              onChange={(event) => setBulkImportText(event.target.value)}
+              placeholder={[
+                '10x black compression underwear | underwear | Under Armour',
+                'light blue dri-fit short sleeve button-down | shirt | Lululemon',
+                'beige khaki merino wool chino pants | pants',
+                'brown leather Thursday Captain boots | shoes | Thursday',
+              ].join('\n')}
+              rows={10}
+              value={bulkImportText}
+            />
+          </label>
+
+          <button
+            type="button"
+            className="primary-button"
+            disabled={isBulkImporting || !bulkImportText.trim()}
+            onClick={() => {
+              void handleBulkImport()
+            }}
+          >
+            {isBulkImporting ? <span className="spinner small" aria-hidden="true" /> : <Package size={20} />}
+            Import Items
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="closet-panel">
       <div className="summary-grid" aria-label="Closet summary">
@@ -328,6 +406,10 @@ export function ClosetPanel({
           <button type="button" className="primary-button" onClick={openNewItemForm}>
             <Plus size={20} aria-hidden="true" />
             Add Item
+          </button>
+          <button type="button" className="secondary-button" onClick={openBulkImport}>
+            <Package size={20} aria-hidden="true" />
+            Bulk Import
           </button>
           <button type="button" className="secondary-button" onClick={openPhotoImport}>
             <Camera size={20} aria-hidden="true" />
@@ -454,6 +536,104 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
     </article>
   )
+}
+
+function parseBulkClosetImport(input: string, fallbackCategory: ClothingCategory): ClothingItemDraft[] {
+  const drafts = input
+    .split(/\r?\n/)
+    .map((line) => parseBulkImportLine(line, fallbackCategory))
+    .filter((draft): draft is ClothingItemDraft => Boolean(draft))
+
+  if (drafts.length === 0) {
+    throw new Error('Paste at least one item line first.')
+  }
+
+  return drafts
+}
+
+function parseBulkImportLine(line: string, fallbackCategory: ClothingCategory): ClothingItemDraft | null {
+  const trimmedLine = line.trim()
+
+  if (!trimmedLine) {
+    return null
+  }
+
+  const segments = trimmedLine.split('|').map((segment) => segment.trim())
+  const parsedName = parseQuantityPrefix(segments[0])
+  const categoryFromSegment = categoryFromText(segments[1])
+  const category = categoryFromSegment ?? inferCategoryFromName(parsedName.name) ?? fallbackCategory
+  const brand = categoryFromSegment ? segments[2] ?? '' : segments[1] ?? ''
+  const notes = categoryFromSegment ? segments.slice(3).join(' | ') : segments.slice(2).join(' | ')
+
+  return {
+    ...defaultClothingItemDraft,
+    name: parsedName.name,
+    brand,
+    category,
+    quantity: parsedName.quantity,
+    notes,
+  }
+}
+
+function parseQuantityPrefix(value: string) {
+  const trimmedValue = value.trim()
+  const quantityMatch = trimmedValue.match(/^(\d+)\s*(?:x|×)\s+(.+)$/i)
+
+  if (!quantityMatch) {
+    return {
+      name: trimmedValue,
+      quantity: 1,
+    }
+  }
+
+  return {
+    name: quantityMatch[2].trim(),
+    quantity: Math.max(1, Number.parseInt(quantityMatch[1], 10) || 1),
+  }
+}
+
+function categoryFromText(value?: string): ClothingCategory | null {
+  const normalizedValue = value?.trim().toLowerCase()
+
+  if (!normalizedValue) {
+    return null
+  }
+
+  return (
+    clothingCategories.find(
+      (category) =>
+        category.value.toLowerCase() === normalizedValue ||
+        category.label.toLowerCase() === normalizedValue,
+    )?.value ?? null
+  )
+}
+
+function inferCategoryFromName(name: string): ClothingCategory | null {
+  const text = name.toLowerCase()
+
+  if (/underwear|boxer|brief|compression short/.test(text)) return 'underwear'
+  if (/sock/.test(text)) return 'socks'
+  if (/belt/.test(text)) return 'belt'
+  if (/watch/.test(text)) return 'watch'
+  if (/ring|necklace|bracelet|earring|jewelry/.test(text)) return 'jewelry'
+  if (/purse/.test(text)) return 'purse'
+  if (/bag|backpack|duffel|tote/.test(text)) return 'bag'
+  if (/heel/.test(text)) return 'heels'
+  if (/flat/.test(text)) return 'flats'
+  if (/shoe|sneaker|boot|loafer|sandal|flip[- ]?flop|clog|crocs|trainer|runner/.test(text)) {
+    return 'shoes'
+  }
+  if (/jacket|coat|shell|rain shell|windbreaker|parka/.test(text)) return 'jacket'
+  if (/sweater|hoodie|sweatshirt|fleece/.test(text)) return 'sweater'
+  if (/dress/.test(text)) return 'dress'
+  if (/skirt/.test(text)) return 'skirt'
+  if (/blouse/.test(text)) return 'blouse'
+  if (/running|lifting|workout|gym|training/.test(text)) return 'activewear'
+  if (/shorts?/.test(text)) return 'shorts'
+  if (/pants?|chino|jeans?|trousers?|joggers?|sweatpants?/.test(text)) return 'pants'
+  if (/shirt|tee|t-shirt|button[- ]?down|polo|henley|tank|top/.test(text)) return 'shirt'
+
+  return null
 }
 
 function ClothingItemForm({

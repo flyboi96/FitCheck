@@ -133,11 +133,26 @@ async function lookupWeatherByCoordinatesDirect({
   url.searchParams.set('start_date', date)
   url.searchParams.set('end_date', date)
 
-  const response = await fetch(url)
-  const data = (await response.json().catch(() => ({}))) as OpenMeteoForecast & { reason?: string }
+  const data = await fetchWeatherJSON<OpenMeteoForecast & { reason?: string }>(
+    url,
+    'Weather lookup failed.',
+  )
 
-  if (!response.ok) {
-    throw new Error(data.reason || 'Weather lookup failed.')
+  const dayIndex = data.daily?.time?.findIndex((time) => time === date) ?? -1
+
+  if (dayIndex >= 0) {
+    const maxTemperature = data.daily?.temperature_2m_max?.[dayIndex] ?? defaultWeatherInput.temperatureF
+    const minTemperature = data.daily?.temperature_2m_min?.[dayIndex] ?? maxTemperature
+    const precipitation = data.daily?.precipitation_sum?.[dayIndex] ?? 0
+
+    return {
+      location: locationLabel,
+      temperatureF: Math.round((maxTemperature + minTemperature) / 2),
+      condition: weatherCodeLabel(data.daily?.weather_code?.[dayIndex]),
+      isRaining: precipitation > 0.02,
+      humidityPercent: averageHumidityForDate(data, date),
+      windMph: Math.round(data.daily?.wind_speed_10m_max?.[dayIndex] ?? defaultWeatherInput.windMph),
+    }
   }
 
   if (date === todayISO() && data.current?.temperature_2m != null) {
@@ -151,24 +166,7 @@ async function lookupWeatherByCoordinatesDirect({
     }
   }
 
-  const dayIndex = data.daily?.time?.findIndex((time) => time === date) ?? -1
-
-  if (dayIndex < 0) {
-    throw new Error('No forecast was available for that date.')
-  }
-
-  const maxTemperature = data.daily?.temperature_2m_max?.[dayIndex] ?? defaultWeatherInput.temperatureF
-  const minTemperature = data.daily?.temperature_2m_min?.[dayIndex] ?? maxTemperature
-  const precipitation = data.daily?.precipitation_sum?.[dayIndex] ?? 0
-
-  return {
-    location: locationLabel,
-    temperatureF: Math.round((maxTemperature + minTemperature) / 2),
-    condition: weatherCodeLabel(data.daily?.weather_code?.[dayIndex]),
-    isRaining: precipitation > 0.02,
-    humidityPercent: averageHumidityForDate(data, date),
-    windMph: Math.round(data.daily?.wind_speed_10m_max?.[dayIndex] ?? defaultWeatherInput.windMph),
-  }
+  throw new Error('No forecast was available for that date.')
 }
 
 async function lookupWeatherViaProxy(
@@ -283,12 +281,10 @@ async function geocodeLocation(location: string): Promise<GeocodingResult> {
   url.searchParams.set('language', 'en')
   url.searchParams.set('format', 'json')
 
-  const response = await fetch(url)
-  const data = (await response.json().catch(() => ({}))) as { results?: GeocodingResult[]; reason?: string }
-
-  if (!response.ok) {
-    throw new Error(data.reason || 'Location lookup failed.')
-  }
+  const data = await fetchWeatherJSON<{ results?: GeocodingResult[]; reason?: string }>(
+    url,
+    'Location lookup failed.',
+  )
 
   const result = data.results?.[0]
 
@@ -311,6 +307,28 @@ function currentPosition() {
       timeout: 12_000,
     })
   })
+}
+
+async function fetchWeatherJSON<T>(url: URL, fallbackMessage: string): Promise<T> {
+  let response: Response
+
+  try {
+    response = await fetch(url, {
+      signal: AbortSignal.timeout(12_000),
+    })
+  } catch (error) {
+    throw new Error(`${fallbackMessage} ${weatherErrorMessage(error, 'fetch failed')}`, {
+      cause: error,
+    })
+  }
+
+  const data = (await response.json().catch(() => ({}))) as T & { reason?: string }
+
+  if (!response.ok) {
+    throw new Error(data.reason || fallbackMessage)
+  }
+
+  return data
 }
 
 function averageHumidityForDate(data: OpenMeteoForecast, date: string) {

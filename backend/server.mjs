@@ -323,7 +323,7 @@ async function lookupWeather(requestBody) {
   const longitude = Number(requestBody.longitude);
 
   if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-    return lookupOpenMeteoForecast({
+    return lookupForecastWithFallback({
       date,
       latitude,
       locationLabel: String(requestBody.locationLabel ?? location ?? "Current Location").trim() || "Current Location",
@@ -336,7 +336,7 @@ async function lookupWeather(requestBody) {
   }
 
   const place = await geocodeWeatherLocation(location);
-  return lookupOpenMeteoForecast({
+  return lookupForecastWithFallback({
     date,
     latitude: place.latitude,
     locationLabel: weatherLocationLabel(place),
@@ -345,6 +345,21 @@ async function lookupWeather(requestBody) {
 }
 
 async function geocodeWeatherLocation(location) {
+  try {
+    return await geocodeOpenMeteoLocation(location);
+  } catch (openMeteoError) {
+    try {
+      return await geocodeNominatimLocation(location);
+    } catch (nominatimError) {
+      throw httpError(
+        nominatimError.statusCode ?? openMeteoError.statusCode ?? 502,
+        `Location lookup failed. Open-Meteo: ${openMeteoError.message}. Nominatim: ${nominatimError.message}`
+      );
+    }
+  }
+}
+
+async function geocodeOpenMeteoLocation(location) {
   const url = new URL("https://geocoding-api.open-meteo.com/v1/search");
   url.searchParams.set("name", location);
   url.searchParams.set("count", "1");
@@ -365,6 +380,56 @@ async function geocodeWeatherLocation(location) {
     admin1: result.admin1 ? String(result.admin1) : "",
     country: result.country ? String(result.country) : ""
   };
+}
+
+async function geocodeNominatimLocation(location) {
+  const url = new URL("https://nominatim.openstreetmap.org/search");
+  url.searchParams.set("q", location);
+  url.searchParams.set("format", "jsonv2");
+  url.searchParams.set("limit", "1");
+  url.searchParams.set("addressdetails", "1");
+
+  const data = await fetchWeatherJSON(url, "Nominatim location lookup failed", {
+    "User-Agent": "FitCheck/1.0 https://github.com/flyboi96/FitCheck"
+  });
+  const result = Array.isArray(data) ? data[0] : null;
+
+  if (!result || !Number.isFinite(Number(result.lat)) || !Number.isFinite(Number(result.lon))) {
+    throw httpError(404, "No matching location was found.");
+  }
+
+  const address = result.address && typeof result.address === "object" ? result.address : {};
+  const name = String(
+    result.name ??
+      address.city ??
+      address.town ??
+      address.village ??
+      address.county ??
+      location
+  );
+
+  return {
+    latitude: Number(result.lat),
+    longitude: Number(result.lon),
+    name,
+    admin1: address.state ? String(address.state) : "",
+    country: address.country ? String(address.country) : ""
+  };
+}
+
+async function lookupForecastWithFallback({ date, latitude, locationLabel, longitude }) {
+  try {
+    return await lookupOpenMeteoForecast({ date, latitude, locationLabel, longitude });
+  } catch (openMeteoError) {
+    try {
+      return await lookupMetNorwayForecast({ date, latitude, locationLabel, longitude });
+    } catch (metNorwayError) {
+      throw httpError(
+        metNorwayError.statusCode ?? openMeteoError.statusCode ?? 502,
+        `Weather lookup failed. Open-Meteo: ${openMeteoError.message}. MET Norway: ${metNorwayError.message}`
+      );
+    }
+  }
 }
 
 async function lookupOpenMeteoForecast({ date, latitude, locationLabel, longitude }) {
@@ -389,6 +454,25 @@ async function lookupOpenMeteoForecast({ date, latitude, locationLabel, longitud
 
   const data = await fetchWeatherJSON(url, "Weather lookup failed");
 
+  const dailyTimes = Array.isArray(data.daily?.time) ? data.daily.time : [];
+  const dayIndex = dailyTimes.findIndex((time) => time === date);
+
+  if (dayIndex >= 0) {
+    const maxTemperature = Number(data.daily?.temperature_2m_max?.[dayIndex] ?? 75);
+    const minTemperature = Number(data.daily?.temperature_2m_min?.[dayIndex] ?? maxTemperature);
+    const precipitation = Number(data.daily?.precipitation_sum?.[dayIndex] ?? 0);
+
+    return {
+      location: locationLabel,
+      temperatureF: Math.round((maxTemperature + minTemperature) / 2),
+      condition: weatherLookupCodeLabel(data.daily?.weather_code?.[dayIndex]),
+      isRaining: precipitation > 0.02,
+      humidityPercent: averageWeatherHumidityForDate(data, date),
+      windMph: Math.round(Number(data.daily?.wind_speed_10m_max?.[dayIndex] ?? 5)),
+      source: "Open-Meteo forecast"
+    };
+  }
+
   if (date === weatherTodayISO() && data.current?.temperature_2m != null) {
     return {
       location: locationLabel,
@@ -397,40 +481,68 @@ async function lookupOpenMeteoForecast({ date, latitude, locationLabel, longitud
       isRaining: Number(data.current.precipitation ?? data.current.rain ?? 0) > 0,
       humidityPercent: Math.round(Number(data.current.relative_humidity_2m ?? 45)),
       windMph: Math.round(Number(data.current.wind_speed_10m ?? 5)),
-      source: "Open-Meteo proxy"
+      source: "Open-Meteo current fallback"
     };
   }
 
-  const dailyTimes = Array.isArray(data.daily?.time) ? data.daily.time : [];
-  const dayIndex = dailyTimes.findIndex((time) => time === date);
+  throw httpError(404, "No forecast was available for that date.");
+}
 
-  if (dayIndex < 0) {
-    throw httpError(404, "No forecast was available for that date.");
+async function lookupMetNorwayForecast({ date, latitude, locationLabel, longitude }) {
+  const url = new URL("https://api.met.no/weatherapi/locationforecast/2.0/complete");
+  url.searchParams.set("lat", latitude.toFixed(4));
+  url.searchParams.set("lon", longitude.toFixed(4));
+
+  const data = await fetchWeatherJSON(url, "MET Norway weather lookup failed", {
+    "User-Agent": "FitCheck/1.0 https://github.com/flyboi96/FitCheck"
+  });
+  const timeseries = Array.isArray(data.properties?.timeseries) ? data.properties.timeseries : [];
+  const dayEntries = timeseries.filter((entry) => String(entry.time ?? "").startsWith(date));
+
+  if (dayEntries.length === 0) {
+    throw httpError(404, "No MET Norway forecast was available for that date.");
   }
 
-  const maxTemperature = Number(data.daily?.temperature_2m_max?.[dayIndex] ?? 75);
-  const minTemperature = Number(data.daily?.temperature_2m_min?.[dayIndex] ?? maxTemperature);
-  const precipitation = Number(data.daily?.precipitation_sum?.[dayIndex] ?? 0);
+  const temperaturesF = dayEntries
+    .map((entry) => celsiusToFahrenheit(entry.data?.instant?.details?.air_temperature))
+    .filter((value) => Number.isFinite(value));
+  const humidityValues = dayEntries
+    .map((entry) => Number(entry.data?.instant?.details?.relative_humidity))
+    .filter((value) => Number.isFinite(value));
+  const windValuesMph = dayEntries
+    .map((entry) => metersPerSecondToMph(entry.data?.instant?.details?.wind_speed))
+    .filter((value) => Number.isFinite(value));
+  const precipitationMm = dayEntries.reduce(
+    (total, entry) => total + metNorwayPrecipitationAmount(entry),
+    0
+  );
+  const symbol = metNorwayRepresentativeSymbol(dayEntries);
+
+  if (temperaturesF.length === 0) {
+    throw httpError(404, "MET Norway did not return usable temperature data for that date.");
+  }
 
   return {
     location: locationLabel,
-    temperatureF: Math.round((maxTemperature + minTemperature) / 2),
-    condition: weatherLookupCodeLabel(data.daily?.weather_code?.[dayIndex]),
-    isRaining: precipitation > 0.02,
-    humidityPercent: averageWeatherHumidityForDate(data, date),
-    windMph: Math.round(Number(data.daily?.wind_speed_10m_max?.[dayIndex] ?? 5)),
-    source: "Open-Meteo proxy"
+    temperatureF: Math.round(averageNumber(temperaturesF, 75)),
+    condition: metNorwayConditionLabel(symbol, precipitationMm),
+    isRaining: precipitationMm > 0.5,
+    humidityPercent: Math.round(averageNumber(humidityValues, 45)),
+    windMph: Math.round(Math.max(...windValuesMph, 5)),
+    source: "MET Norway forecast"
   };
 }
 
-async function fetchWeatherJSON(url, fallbackMessage) {
+async function fetchWeatherJSON(url, fallbackMessage, headers = {}) {
   let upstreamResponse;
 
   try {
     upstreamResponse = await fetch(url, {
       headers: {
-        Accept: "application/json"
-      }
+        Accept: "application/json",
+        ...headers
+      },
+      signal: AbortSignal.timeout(12_000)
     });
   } catch (error) {
     throw httpError(502, `${fallbackMessage}: ${error.message ?? "upstream network request failed"}`);
@@ -443,6 +555,76 @@ async function fetchWeatherJSON(url, fallbackMessage) {
   }
 
   return data;
+}
+
+function averageNumber(values, fallback) {
+  if (values.length === 0) {
+    return fallback;
+  }
+
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function celsiusToFahrenheit(value) {
+  const celsius = Number(value);
+  return Number.isFinite(celsius) ? (celsius * 9) / 5 + 32 : NaN;
+}
+
+function metersPerSecondToMph(value) {
+  const metersPerSecond = Number(value);
+  return Number.isFinite(metersPerSecond) ? metersPerSecond * 2.23694 : NaN;
+}
+
+function metNorwayPrecipitationAmount(entry) {
+  const details =
+    entry.data?.next_1_hours?.details ??
+    entry.data?.next_6_hours?.details ??
+    entry.data?.next_12_hours?.details ??
+    {};
+  return Number(details.precipitation_amount ?? 0) || 0;
+}
+
+function metNorwayRepresentativeSymbol(entries) {
+  const noonEntry =
+    entries.find((entry) => String(entry.time ?? "").includes("T12:")) ??
+    entries[Math.floor(entries.length / 2)] ??
+    entries[0];
+  return String(
+    noonEntry?.data?.next_1_hours?.summary?.symbol_code ??
+      noonEntry?.data?.next_6_hours?.summary?.symbol_code ??
+      noonEntry?.data?.next_12_hours?.summary?.symbol_code ??
+      ""
+  );
+}
+
+function metNorwayConditionLabel(symbol, precipitationMm) {
+  const normalized = symbol.toLowerCase();
+
+  if (normalized.includes("thunder")) {
+    return "Storm";
+  }
+
+  if (normalized.includes("snow") || normalized.includes("sleet")) {
+    return "Snow";
+  }
+
+  if (normalized.includes("rain") || precipitationMm > 0.5) {
+    return "Rain";
+  }
+
+  if (normalized.includes("fog")) {
+    return "Fog";
+  }
+
+  if (normalized.includes("cloudy")) {
+    return "Partly Cloudy";
+  }
+
+  if (normalized.includes("fair") || normalized.includes("clearsky")) {
+    return "Clear";
+  }
+
+  return "Weather";
 }
 
 function averageWeatherHumidityForDate(data, date) {

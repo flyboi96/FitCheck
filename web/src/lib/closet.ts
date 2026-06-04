@@ -6,6 +6,7 @@ import {
   onSnapshot,
   serverTimestamp,
   updateDoc,
+  writeBatch,
   type FirestoreError,
   type Unsubscribe,
 } from 'firebase/firestore'
@@ -236,6 +237,35 @@ export async function saveClothingItem(
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
+}
+
+export async function saveClothingItems(userId: string, drafts: ClothingItemDraft[]) {
+  const normalizedDrafts = drafts.map(normalizeDraft)
+
+  if (normalizedDrafts.length === 0) {
+    throw new Error('Add at least one clothing item first.')
+  }
+
+  const missingName = normalizedDrafts.find((draft) => !draft.name)
+
+  if (missingName) {
+    throw new Error('Every imported item needs a name.')
+  }
+
+  const batch = writeBatch(requireFirestore())
+  const itemsCollection = clothingItemsCollection(userId)
+
+  normalizedDrafts.forEach((payload) => {
+    const itemRef = doc(itemsCollection)
+    batch.set(itemRef, {
+      ...payload,
+      wearCount: 0,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  })
+
+  await batch.commit()
 }
 
 export async function updateClothingItemStatus(

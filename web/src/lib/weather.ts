@@ -185,6 +185,11 @@ async function lookupWeatherViaProxy(
     )
   }
 
+  const configurationProblem = proxyURLConfigurationProblem(baseURL)
+  if (configurationProblem) {
+    throw new Error(`${directMessage} ${configurationProblem}`)
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   }
@@ -243,6 +248,26 @@ function numberValue(value: unknown, fallback: number) {
 
 function weatherErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message.trim() ? error.message : fallback
+}
+
+function proxyURLConfigurationProblem(baseURL: string) {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+
+  const pageHostname = window.location.hostname
+  const pageIsLocal = ['localhost', '127.0.0.1', '::1'].includes(pageHostname)
+  const proxyIsLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(baseURL)
+
+  if (!pageIsLocal && proxyIsLocal) {
+    return 'Your saved proxy URL points to localhost, but this PWA is running from the web. Set More > AI Proxy to your Render HTTPS URL, then save and retry.'
+  }
+
+  if (window.location.protocol === 'https:' && baseURL.startsWith('http://') && !proxyIsLocal) {
+    return 'This PWA is loaded over HTTPS, so the proxy URL also needs to use HTTPS.'
+  }
+
+  return ''
 }
 
 async function geocodeLocation(location: string): Promise<GeocodingResult> {

@@ -255,7 +255,8 @@ const server = http.createServer(async (request, response) => {
     "/outfit-recommendation",
     "/clothing-item-description",
     "/style-profile-draft",
-    "/avatar-outfit-preview"
+    "/avatar-outfit-preview",
+    "/weather-lookup"
   ]);
 
   if (request.method !== "POST" || !supportedPostRoutes.has(pathname)) {
@@ -268,13 +269,21 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (!openAIKey) {
+  const isWeatherRoute = pathname === "/weather-lookup";
+
+  if (!isWeatherRoute && !openAIKey) {
     sendJSON(response, 500, { error: "OPENAI_API_KEY is not configured" });
     return;
   }
 
   try {
     const body = await readJSONBody(request);
+
+    if (isWeatherRoute) {
+      const weather = await lookupWeather(body);
+      sendJSON(response, 200, weather);
+      return;
+    }
 
     if (pathname === "/clothing-item-description") {
       const description = await describeClothingItem(body);
@@ -306,6 +315,207 @@ const server = http.createServer(async (request, response) => {
 server.listen(port, host, () => {
   console.log(`FitCheck AI proxy listening on http://${host}:${port}`);
 });
+
+async function lookupWeather(requestBody) {
+  const date = normalizeWeatherDate(requestBody.date);
+  const location = String(requestBody.location ?? "").trim();
+  const latitude = Number(requestBody.latitude);
+  const longitude = Number(requestBody.longitude);
+
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    return lookupOpenMeteoForecast({
+      date,
+      latitude,
+      locationLabel: String(requestBody.locationLabel ?? location ?? "Current Location").trim() || "Current Location",
+      longitude
+    });
+  }
+
+  if (!location) {
+    throw httpError(400, "Enter a city or location first.");
+  }
+
+  const place = await geocodeWeatherLocation(location);
+  return lookupOpenMeteoForecast({
+    date,
+    latitude: place.latitude,
+    locationLabel: weatherLocationLabel(place),
+    longitude: place.longitude
+  });
+}
+
+async function geocodeWeatherLocation(location) {
+  const url = new URL("https://geocoding-api.open-meteo.com/v1/search");
+  url.searchParams.set("name", location);
+  url.searchParams.set("count", "1");
+  url.searchParams.set("language", "en");
+  url.searchParams.set("format", "json");
+
+  const data = await fetchWeatherJSON(url, "Location lookup failed");
+  const result = Array.isArray(data.results) ? data.results[0] : null;
+
+  if (!result || !Number.isFinite(Number(result.latitude)) || !Number.isFinite(Number(result.longitude))) {
+    throw httpError(404, "No matching location was found.");
+  }
+
+  return {
+    latitude: Number(result.latitude),
+    longitude: Number(result.longitude),
+    name: String(result.name ?? location),
+    admin1: result.admin1 ? String(result.admin1) : "",
+    country: result.country ? String(result.country) : ""
+  };
+}
+
+async function lookupOpenMeteoForecast({ date, latitude, locationLabel, longitude }) {
+  const url = new URL("https://api.open-meteo.com/v1/forecast");
+  url.searchParams.set("latitude", latitude.toString());
+  url.searchParams.set("longitude", longitude.toString());
+  url.searchParams.set(
+    "current",
+    "temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m"
+  );
+  url.searchParams.set(
+    "daily",
+    "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max"
+  );
+  url.searchParams.set("hourly", "relative_humidity_2m");
+  url.searchParams.set("temperature_unit", "fahrenheit");
+  url.searchParams.set("wind_speed_unit", "mph");
+  url.searchParams.set("precipitation_unit", "inch");
+  url.searchParams.set("timezone", "auto");
+  url.searchParams.set("start_date", date);
+  url.searchParams.set("end_date", date);
+
+  const data = await fetchWeatherJSON(url, "Weather lookup failed");
+
+  if (date === weatherTodayISO() && data.current?.temperature_2m != null) {
+    return {
+      location: locationLabel,
+      temperatureF: Math.round(Number(data.current.temperature_2m)),
+      condition: weatherLookupCodeLabel(data.current.weather_code),
+      isRaining: Number(data.current.precipitation ?? data.current.rain ?? 0) > 0,
+      humidityPercent: Math.round(Number(data.current.relative_humidity_2m ?? 45)),
+      windMph: Math.round(Number(data.current.wind_speed_10m ?? 5)),
+      source: "Open-Meteo proxy"
+    };
+  }
+
+  const dailyTimes = Array.isArray(data.daily?.time) ? data.daily.time : [];
+  const dayIndex = dailyTimes.findIndex((time) => time === date);
+
+  if (dayIndex < 0) {
+    throw httpError(404, "No forecast was available for that date.");
+  }
+
+  const maxTemperature = Number(data.daily?.temperature_2m_max?.[dayIndex] ?? 75);
+  const minTemperature = Number(data.daily?.temperature_2m_min?.[dayIndex] ?? maxTemperature);
+  const precipitation = Number(data.daily?.precipitation_sum?.[dayIndex] ?? 0);
+
+  return {
+    location: locationLabel,
+    temperatureF: Math.round((maxTemperature + minTemperature) / 2),
+    condition: weatherLookupCodeLabel(data.daily?.weather_code?.[dayIndex]),
+    isRaining: precipitation > 0.02,
+    humidityPercent: averageWeatherHumidityForDate(data, date),
+    windMph: Math.round(Number(data.daily?.wind_speed_10m_max?.[dayIndex] ?? 5)),
+    source: "Open-Meteo proxy"
+  };
+}
+
+async function fetchWeatherJSON(url, fallbackMessage) {
+  let upstreamResponse;
+
+  try {
+    upstreamResponse = await fetch(url, {
+      headers: {
+        Accept: "application/json"
+      }
+    });
+  } catch (error) {
+    throw httpError(502, `${fallbackMessage}: ${error.message ?? "upstream network request failed"}`);
+  }
+
+  const data = await upstreamResponse.json().catch(() => ({}));
+
+  if (!upstreamResponse.ok) {
+    throw httpError(502, data.reason || fallbackMessage);
+  }
+
+  return data;
+}
+
+function averageWeatherHumidityForDate(data, date) {
+  const hourlyTimes = Array.isArray(data.hourly?.time) ? data.hourly.time : [];
+  const humidityValues = hourlyTimes
+    .map((time, index) =>
+      String(time).startsWith(date) ? Number(data.hourly?.relative_humidity_2m?.[index]) : NaN
+    )
+    .filter((value) => Number.isFinite(value));
+
+  if (humidityValues.length === 0) {
+    return 45;
+  }
+
+  return Math.round(humidityValues.reduce((total, value) => total + value, 0) / humidityValues.length);
+}
+
+function weatherLocationLabel(place) {
+  return [place.name, place.admin1, place.country].filter(Boolean).join(", ");
+}
+
+function normalizeWeatherDate(value) {
+  const date = String(value ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : weatherTodayISO();
+}
+
+function weatherTodayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function weatherLookupCodeLabel(code) {
+  switch (Number(code)) {
+    case 0:
+      return "Clear";
+    case 1:
+    case 2:
+    case 3:
+      return "Partly Cloudy";
+    case 45:
+    case 48:
+      return "Fog";
+    case 51:
+    case 53:
+    case 55:
+    case 56:
+    case 57:
+      return "Drizzle";
+    case 61:
+    case 63:
+    case 65:
+    case 66:
+    case 67:
+      return "Rain";
+    case 71:
+    case 73:
+    case 75:
+    case 77:
+      return "Snow";
+    case 80:
+    case 81:
+    case 82:
+      return "Rain Showers";
+    case 85:
+    case 86:
+      return "Snow Showers";
+    case 95:
+    case 96:
+    case 99:
+      return "Storm";
+    default:
+      return "Weather";
+  }
+}
 
 async function reviewOutfit(requestBody) {
   const closet = Array.isArray(requestBody.closet) ? requestBody.closet : [];

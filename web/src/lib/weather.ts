@@ -1,4 +1,5 @@
 import { defaultWeatherInput, type WeatherInput } from './outfits'
+import { getAIProxySettings } from './settings'
 
 type GeocodingResult = {
   latitude: number
@@ -31,14 +32,34 @@ type OpenMeteoForecast = {
   }
 }
 
+type WeatherLookupPayload = {
+  date: string
+  latitude?: number
+  location?: string
+  locationLabel?: string
+  longitude?: number
+}
+
 export async function lookupWeatherByLocation(location: string, date = todayISO()) {
-  const place = await geocodeLocation(location)
-  return lookupWeatherByCoordinates({
-    date,
-    latitude: place.latitude,
-    locationLabel: locationLabel(place),
-    longitude: place.longitude,
-  })
+  const trimmedLocation = location.trim()
+
+  try {
+    const place = await geocodeLocation(trimmedLocation)
+    return lookupWeatherByCoordinatesDirect({
+      date,
+      latitude: place.latitude,
+      locationLabel: locationLabel(place),
+      longitude: place.longitude,
+    })
+  } catch (error) {
+    return lookupWeatherViaProxy(
+      {
+        date,
+        location: trimmedLocation,
+      },
+      error,
+    )
+  }
 }
 
 export async function lookupWeatherAtCurrentLocation(date = todayISO()) {
@@ -52,6 +73,37 @@ export async function lookupWeatherAtCurrentLocation(date = todayISO()) {
 }
 
 export async function lookupWeatherByCoordinates({
+  date,
+  latitude,
+  locationLabel,
+  longitude,
+}: {
+  date: string
+  latitude: number
+  locationLabel: string
+  longitude: number
+}): Promise<WeatherInput> {
+  try {
+    return await lookupWeatherByCoordinatesDirect({
+      date,
+      latitude,
+      locationLabel,
+      longitude,
+    })
+  } catch (error) {
+    return lookupWeatherViaProxy(
+      {
+        date,
+        latitude,
+        locationLabel,
+        longitude,
+      },
+      error,
+    )
+  }
+}
+
+async function lookupWeatherByCoordinatesDirect({
   date,
   latitude,
   locationLabel,
@@ -117,6 +169,80 @@ export async function lookupWeatherByCoordinates({
     humidityPercent: averageHumidityForDate(data, date),
     windMph: Math.round(data.daily?.wind_speed_10m_max?.[dayIndex] ?? defaultWeatherInput.windMph),
   }
+}
+
+async function lookupWeatherViaProxy(
+  payload: WeatherLookupPayload,
+  directError: unknown,
+): Promise<WeatherInput> {
+  const directMessage = weatherErrorMessage(directError, 'Direct weather lookup failed.')
+  const { proxyToken, proxyUrl } = getAIProxySettings()
+  const baseURL = proxyUrl.trim().replace(/\/+$/, '')
+
+  if (!baseURL) {
+    throw new Error(
+      `${directMessage} Manual weather still works. Add your Render proxy URL in More > AI Proxy to enable fallback weather lookup.`,
+    )
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+
+  if (proxyToken.trim()) {
+    headers['X-FitCheck-Token'] = proxyToken.trim()
+  }
+
+  let response: Response
+
+  try {
+    response = await fetch(`${baseURL}/weather-lookup`, {
+      body: JSON.stringify(payload),
+      headers,
+      method: 'POST',
+    })
+  } catch (error) {
+    throw new Error(
+      `Weather lookup failed in Safari and through the proxy. Browser: ${directMessage}. Proxy: ${weatherErrorMessage(error, 'Failed to fetch')}. You can still enter temp, condition, humidity, wind, and rain manually.`,
+      { cause: error },
+    )
+  }
+
+  const data = (await response.json().catch(() => ({}))) as Partial<WeatherInput> & {
+    error?: string
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Weather lookup failed. Browser: ${directMessage}. Proxy: ${data.error || 'Weather proxy failed.'} You can still enter weather manually.`,
+    )
+  }
+
+  return normalizeWeatherInput(data)
+}
+
+function normalizeWeatherInput(data: Partial<WeatherInput>): WeatherInput {
+  return {
+    location: typeof data.location === 'string' && data.location.trim()
+      ? data.location
+      : defaultWeatherInput.location,
+    temperatureF: numberValue(data.temperatureF, defaultWeatherInput.temperatureF),
+    condition: typeof data.condition === 'string' && data.condition.trim()
+      ? data.condition
+      : defaultWeatherInput.condition,
+    isRaining: Boolean(data.isRaining),
+    humidityPercent: numberValue(data.humidityPercent, defaultWeatherInput.humidityPercent),
+    windMph: numberValue(data.windMph, defaultWeatherInput.windMph),
+  }
+}
+
+function numberValue(value: unknown, fallback: number) {
+  const number = Number(value)
+  return Number.isFinite(number) ? Math.round(number) : fallback
+}
+
+function weatherErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message.trim() ? error.message : fallback
 }
 
 async function geocodeLocation(location: string): Promise<GeocodingResult> {

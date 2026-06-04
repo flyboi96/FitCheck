@@ -7,8 +7,10 @@ import {
   type User,
 } from 'firebase/auth'
 import {
+  ArrowLeft,
   CalendarDays,
   CheckCircle2,
+  ChevronRight,
   CloudSun,
   Database,
   Eye,
@@ -89,6 +91,16 @@ const tabs = [
 
 type TabID = (typeof tabs)[number]['id']
 type AuthMode = 'signIn' | 'register'
+type MoreRoute =
+  | 'menu'
+  | 'profile'
+  | 'avatar'
+  | 'history'
+  | 'backup'
+  | 'scoring'
+  | 'contexts'
+  | 'ai'
+  | 'offline'
 
 const wearerOptions: Array<{ value: WearerProfile; label: string }> = [
   { value: 'unspecified', label: 'Unspecified' },
@@ -403,39 +415,101 @@ function MorePanel({
   refreshProfile: () => Promise<void>
   user: User
 }) {
+  const [route, setRoute] = useState<MoreRoute>('menu')
+
+  if (route !== 'menu') {
+    return (
+      <div className="tab-content">
+        <SubpageHeader onBack={() => setRoute('menu')} title={moreRouteTitle(route)} />
+        {route === 'profile' ? (
+          <ProfileEditor profile={profile} refreshProfile={refreshProfile} user={user} />
+        ) : null}
+        {route === 'avatar' ? (
+          <LazyMoreSection>
+            <LazyAvatarStudioPanel profile={profile} userId={user.uid} />
+          </LazyMoreSection>
+        ) : null}
+        {route === 'history' ? (
+          <LazyMoreSection>
+            <LazyHistoryPanel userId={user.uid} />
+          </LazyMoreSection>
+        ) : null}
+        {route === 'backup' ? (
+          <LazyMoreSection>
+            <LazyDataPortabilityPanel userId={user.uid} />
+          </LazyMoreSection>
+        ) : null}
+        {route === 'scoring' ? (
+          <LazyMoreSection>
+            <LazyScoringGuidePanel />
+          </LazyMoreSection>
+        ) : null}
+        {route === 'contexts' ? (
+          <LazyMoreSection>
+            <LazyContextStyleEditorPanel userId={user.uid} />
+          </LazyMoreSection>
+        ) : null}
+        {route === 'ai' ? (
+          <LazyMoreSection>
+            <LazyAIProxySettingsPanel />
+          </LazyMoreSection>
+        ) : null}
+        {route === 'offline' ? <OfflineCachePanel /> : null}
+      </div>
+    )
+  }
+
   return (
     <div className="tab-content">
-      <ProfileEditor profile={profile} refreshProfile={refreshProfile} user={user} />
-      <LazyMoreSection>
-        <LazyAvatarStudioPanel profile={profile} userId={user.uid} />
-      </LazyMoreSection>
-      <LazyMoreSection>
-        <LazyHistoryPanel userId={user.uid} />
-      </LazyMoreSection>
-      <LazyMoreSection>
-        <LazyDataPortabilityPanel userId={user.uid} />
-      </LazyMoreSection>
-      <LazyMoreSection>
-        <LazyScoringGuidePanel />
-      </LazyMoreSection>
-      <LazyMoreSection>
-        <LazyContextStyleEditorPanel userId={user.uid} />
-      </LazyMoreSection>
-      <LazyMoreSection>
-        <LazyAIProxySettingsPanel />
-      </LazyMoreSection>
-      <section className="profile-form">
-        <div className="section-title">
-          <Database size={20} aria-hidden="true" />
-          <div>
-            <p className="eyebrow">Offline</p>
-            <h2>Offline Cache</h2>
-          </div>
-        </div>
-        <p className="helper-text">
-          Firestore local persistence is enabled. Recently opened closet, profile, plans, history,
-          avatar, and context data can continue loading when the connection is weak.
-        </p>
+      <section className="subpage-list" aria-label="More tools">
+        <MenuRow
+          description="Name, gender, style profile, comfort, and rules."
+          icon={<UserRound size={20} aria-hidden="true" />}
+          onClick={() => setRoute('profile')}
+          title="Profile"
+        />
+        <MenuRow
+          description="Save one full-body avatar for faster outfit previews."
+          icon={<Wand2 size={20} aria-hidden="true" />}
+          onClick={() => setRoute('avatar')}
+          title="Avatar Studio"
+        />
+        <MenuRow
+          description="Logged outfits, item wear counts, and cleanup."
+          icon={<CalendarDays size={20} aria-hidden="true" />}
+          onClick={() => setRoute('history')}
+          title="Outfit History"
+        />
+        <MenuRow
+          description="Export or restore closet, profile, plans, history, and avatar metadata."
+          icon={<Database size={20} aria-hidden="true" />}
+          onClick={() => setRoute('backup')}
+          title="Backup / Import"
+        />
+        <MenuRow
+          description="How FitCheck scores weather, fashion, rotation, and preferences."
+          icon={<CheckCircle2 size={20} aria-hidden="true" />}
+          onClick={() => setRoute('scoring')}
+          title="Scoring Guide"
+        />
+        <MenuRow
+          description="Edit business casual, gym, travel day, and other outfit definitions."
+          icon={<Shirt size={20} aria-hidden="true" />}
+          onClick={() => setRoute('contexts')}
+          title="Context Styles"
+        />
+        <MenuRow
+          description="OpenAI proxy URL and token settings."
+          icon={<Wand2 size={20} aria-hidden="true" />}
+          onClick={() => setRoute('ai')}
+          title="AI Proxy"
+        />
+        <MenuRow
+          description="Firestore cache status and weak-connection behavior."
+          icon={<Database size={20} aria-hidden="true" />}
+          onClick={() => setRoute('offline')}
+          title="Offline Cache"
+        />
       </section>
       <button
         type="button"
@@ -451,6 +525,90 @@ function MorePanel({
       </button>
     </div>
   )
+}
+
+function SubpageHeader({
+  onBack,
+  subtitle,
+  title,
+}: {
+  onBack: () => void
+  subtitle?: string
+  title: string
+}) {
+  return (
+    <div className="subpage-header">
+      <button type="button" className="icon-button" onClick={onBack} aria-label="Back">
+        <ArrowLeft size={22} />
+      </button>
+      <div>
+        <p className="eyebrow">{subtitle ?? 'Back'}</p>
+        <h2>{title}</h2>
+      </div>
+    </div>
+  )
+}
+
+function MenuRow({
+  description,
+  icon,
+  onClick,
+  title,
+}: {
+  description: string
+  icon: ReactNode
+  onClick: () => void
+  title: string
+}) {
+  return (
+    <button type="button" className="menu-row" onClick={onClick}>
+      <span className="menu-row-icon">{icon}</span>
+      <span className="menu-row-content">
+        <strong>{title}</strong>
+        <span>{description}</span>
+      </span>
+      <ChevronRight className="menu-row-chevron" size={20} aria-hidden="true" />
+    </button>
+  )
+}
+
+function OfflineCachePanel() {
+  return (
+    <section className="profile-form">
+      <div className="section-title">
+        <Database size={20} aria-hidden="true" />
+        <div>
+          <p className="eyebrow">Offline</p>
+          <h2>Offline Cache</h2>
+        </div>
+      </div>
+      <p className="helper-text">
+        Firestore local persistence is enabled. Recently opened closet, profile, plans, history,
+        avatar, and context data can continue loading when the connection is weak.
+      </p>
+    </section>
+  )
+}
+
+function moreRouteTitle(route: Exclude<MoreRoute, 'menu'>) {
+  switch (route) {
+    case 'profile':
+      return 'Profile'
+    case 'avatar':
+      return 'Avatar Studio'
+    case 'history':
+      return 'Outfit History'
+    case 'backup':
+      return 'Backup / Import'
+    case 'scoring':
+      return 'Scoring Guide'
+    case 'contexts':
+      return 'Context Styles'
+    case 'ai':
+      return 'AI Proxy'
+    case 'offline':
+      return 'Offline Cache'
+  }
 }
 
 function LazyMoreSection({ children }: { children: ReactNode }) {

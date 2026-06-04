@@ -1,6 +1,7 @@
 import { type FormEvent, useMemo, useState } from 'react'
 import {
   Archive,
+  ArrowLeft,
   Camera,
   CheckCircle2,
   Edit3,
@@ -32,6 +33,7 @@ import type { WearerProfile } from '../lib/profile'
 
 type StatusFilter = 'all' | ClothingStatus
 type CategoryFilter = 'all' | ClothingCategory
+type ClosetView = 'list' | 'form' | 'import'
 
 export function ClosetPanel({
   userId,
@@ -45,7 +47,7 @@ export function ClosetPanel({
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
-  const [isFormOpen, setIsFormOpen] = useState(false)
+  const [closetView, setClosetView] = useState<ClosetView>('list')
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [draft, setDraft] = useState<ClothingItemDraft>(defaultClothingItemDraft)
   const [isSaving, setIsSaving] = useState(false)
@@ -115,7 +117,7 @@ export function ClosetPanel({
       category: categoryOptions[0]?.value ?? 'shirt',
     })
     setEditingItemId(null)
-    setIsFormOpen(true)
+    setClosetView('form')
     setActionMessage(null)
     setActionError(null)
   }
@@ -132,15 +134,23 @@ export function ClosetPanel({
       status: item.status,
     })
     setEditingItemId(item.id)
-    setIsFormOpen(true)
+    setClosetView('form')
     setActionMessage(null)
     setActionError(null)
   }
 
   function closeForm() {
-    setIsFormOpen(false)
+    setClosetView('list')
     setEditingItemId(null)
     setDraft(defaultClothingItemDraft)
+  }
+
+  function openPhotoImport() {
+    setClosetView('import')
+    setPhotoFile(null)
+    setPhotoDescription('')
+    setActionMessage(null)
+    setActionError(null)
   }
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -208,13 +218,92 @@ export function ClosetPanel({
       })
       setDraft(importedDraft)
       setEditingItemId(null)
-      setIsFormOpen(true)
+      setClosetView('form')
       setActionMessage('AI filled the item draft. Review it before saving.')
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Photo import failed.')
     } finally {
       setIsImportingPhoto(false)
     }
+  }
+
+  const statusBlock = (
+    <>
+      {actionMessage ? <p className="success-message">{actionMessage}</p> : null}
+      {actionError || error ? <p className="error-message">{actionError ?? error}</p> : null}
+    </>
+  )
+
+  if (closetView === 'form') {
+    return (
+      <div className="closet-panel">
+        <ClosetSubpageHeader
+          onBack={closeForm}
+          subtitle="Closet"
+          title={editingItemId ? 'Edit Item' : 'Add Item'}
+        />
+        {statusBlock}
+        <ClothingItemForm
+          categoryOptions={categoryOptions}
+          draft={draft}
+          isEditing={Boolean(editingItemId)}
+          isSaving={isSaving}
+          onCancel={closeForm}
+          onChange={setDraft}
+          onSubmit={handleSave}
+        />
+      </div>
+    )
+  }
+
+  if (closetView === 'import') {
+    return (
+      <div className="closet-panel">
+        <ClosetSubpageHeader onBack={() => setClosetView('list')} subtitle="Closet" title="Photo Import" />
+        {statusBlock}
+        <div className="photo-import-card">
+          <div className="section-title">
+            <Camera size={20} aria-hidden="true" />
+            <div>
+              <p className="eyebrow">AI import</p>
+              <h2>Describe clothing photo</h2>
+            </div>
+          </div>
+
+          <label className="form-field">
+            <span>Photo</span>
+            <input
+              accept="image/*"
+              capture="environment"
+              onChange={(event) => setPhotoFile(event.target.files?.[0] ?? null)}
+              type="file"
+            />
+          </label>
+
+          <label className="form-field">
+            <span>Optional Description</span>
+            <input
+              onChange={(event) => setPhotoDescription(event.target.value)}
+              placeholder="Brown Thursday Captain boots"
+              type="text"
+              value={photoDescription}
+            />
+          </label>
+
+          <button
+            type="button"
+            className="primary-button"
+            disabled={isImportingPhoto}
+            onClick={() => {
+              void handlePhotoImport()
+            }}
+          >
+            {isImportingPhoto ? <span className="spinner small" aria-hidden="true" /> : <Camera size={20} />}
+            Describe Photo
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -235,11 +324,16 @@ export function ClosetPanel({
             value={searchTerm}
           />
         </label>
-
-        <button type="button" className="primary-button" onClick={openNewItemForm}>
-          <Plus size={20} aria-hidden="true" />
-          Add Item
-        </button>
+        <div className="split-action-row">
+          <button type="button" className="primary-button" onClick={openNewItemForm}>
+            <Plus size={20} aria-hidden="true" />
+            Add Item
+          </button>
+          <button type="button" className="secondary-button" onClick={openPhotoImport}>
+            <Camera size={20} aria-hidden="true" />
+            Photo Import
+          </button>
+        </div>
       </div>
 
       <div className="filter-row">
@@ -274,62 +368,7 @@ export function ClosetPanel({
         </label>
       </div>
 
-      <div className="photo-import-card">
-        <div className="section-title">
-          <Camera size={20} aria-hidden="true" />
-          <div>
-            <p className="eyebrow">AI import</p>
-            <h2>Photo Import</h2>
-          </div>
-        </div>
-
-        <label className="form-field">
-          <span>Photo</span>
-          <input
-            accept="image/*"
-            capture="environment"
-            onChange={(event) => setPhotoFile(event.target.files?.[0] ?? null)}
-            type="file"
-          />
-        </label>
-
-        <label className="form-field">
-          <span>Optional Description</span>
-          <input
-            onChange={(event) => setPhotoDescription(event.target.value)}
-            placeholder="Brown Thursday Captain boots"
-            type="text"
-            value={photoDescription}
-          />
-        </label>
-
-        <button
-          type="button"
-          className="secondary-button"
-          disabled={isImportingPhoto}
-          onClick={() => {
-            void handlePhotoImport()
-          }}
-        >
-          {isImportingPhoto ? <span className="spinner small" aria-hidden="true" /> : <Camera size={20} />}
-          Describe Photo
-        </button>
-      </div>
-
-      {actionMessage ? <p className="success-message">{actionMessage}</p> : null}
-      {actionError || error ? <p className="error-message">{actionError ?? error}</p> : null}
-
-      {isFormOpen || items.length === 0 ? (
-        <ClothingItemForm
-          categoryOptions={categoryOptions}
-          draft={draft}
-          isEditing={Boolean(editingItemId)}
-          isSaving={isSaving}
-          onCancel={items.length === 0 ? undefined : closeForm}
-          onChange={setDraft}
-          onSubmit={handleSave}
-        />
-      ) : null}
+      {statusBlock}
 
       {isLoading ? (
         <div className="placeholder-panel">
@@ -381,6 +420,28 @@ export function ClosetPanel({
             </div>
           </section>
         ))}
+      </div>
+    </div>
+  )
+}
+
+function ClosetSubpageHeader({
+  onBack,
+  subtitle,
+  title,
+}: {
+  onBack: () => void
+  subtitle: string
+  title: string
+}) {
+  return (
+    <div className="subpage-header">
+      <button type="button" className="icon-button" onClick={onBack} aria-label="Back">
+        <ArrowLeft size={22} />
+      </button>
+      <div>
+        <p className="eyebrow">{subtitle}</p>
+        <h2>{title}</h2>
       </div>
     </div>
   )

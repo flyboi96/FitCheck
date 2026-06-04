@@ -1,8 +1,10 @@
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, type ReactNode, useMemo, useState } from 'react'
 import {
+  ArrowLeft,
   ArrowDown,
   ArrowUp,
   CalendarDays,
+  ChevronRight,
   Clipboard,
   Copy,
   Download,
@@ -48,6 +50,8 @@ import {
 import type { UserProfile } from '../lib/profile'
 import { lookupWeatherByLocation } from '../lib/weather'
 
+type PlanView = 'home' | 'new' | 'setup' | 'itinerary' | 'packing'
+
 export function PlansPanel({
   profile,
   userId,
@@ -60,6 +64,7 @@ export function PlansPanel({
   const [selectedPlanId, setSelectedPlanId] = useState('')
   const [newPlanDraft, setNewPlanDraft] = useState<NewPlanDraft>(() => defaultNewPlanDraft())
   const [planDraft, setPlanDraft] = useState<PlanDraft | null>(null)
+  const [planView, setPlanView] = useState<PlanView>('home')
   const [isSavingPlan, setIsSavingPlan] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
@@ -84,6 +89,22 @@ export function PlansPanel({
     return [...groups.entries()]
   }, [selectedPlan])
 
+  function openPlan(plan: Plan, view: PlanView = 'setup') {
+    setSelectedPlanId(plan.id)
+    setPlanDraft(planToDraft(plan))
+    setPlanView(view)
+    setStatusMessage(null)
+    setErrorMessage(null)
+  }
+
+  function openNewPlan() {
+    setNewPlanDraft(defaultNewPlanDraft())
+    setPlanDraft(null)
+    setPlanView('new')
+    setStatusMessage(null)
+    setErrorMessage(null)
+  }
+
   async function handleCreatePlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setIsSavingPlan(true)
@@ -95,6 +116,7 @@ export function PlansPanel({
       setSelectedPlanId(planId)
       setPlanDraft(null)
       setNewPlanDraft(defaultNewPlanDraft())
+      setPlanView('setup')
       setStatusMessage('Plan created. Edit the first day below, then add more days if needed.')
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not create plan.')
@@ -138,6 +160,8 @@ export function PlansPanel({
     try {
       await deletePlan(userId, selectedPlan.id)
       setSelectedPlanId('')
+      setPlanDraft(null)
+      setPlanView('home')
       setStatusMessage('Plan deleted.')
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not delete plan.')
@@ -177,6 +201,7 @@ export function PlansPanel({
 
       const packingList = buildPackingList(itinerary, items)
       await saveGeneratedPlan(userId, selectedPlan.id, itinerary, packingList)
+      setPlanView('itinerary')
       setStatusMessage('Itinerary and packing list generated.')
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not generate itinerary.')
@@ -339,136 +364,277 @@ export function PlansPanel({
     }
   }
 
-  return (
-    <div className="plans-panel">
-      <form className="plan-create-card" onSubmit={handleCreatePlan}>
-        <div className="section-title">
-          <CalendarDays size={20} aria-hidden="true" />
+  const statusBlock = (
+    <>
+      {isLoadingPlans || isLoadingCloset ? (
+        <div className="placeholder-panel">
+          <span className="spinner small" aria-hidden="true" />
           <div>
-            <p className="eyebrow">New plan</p>
-            <h2>Start Plan</h2>
+            <h3>Loading plans</h3>
+            <p>Reading plans and closet items from Firestore.</p>
           </div>
         </div>
-        <p className="helper-text">
-          This creates one editable day first. Add more days only when you need them, or expand
-          the full date range inside the plan editor.
-        </p>
+      ) : null}
+      {plansError || closetError || errorMessage ? (
+        <p className="error-message">{plansError ?? closetError ?? errorMessage}</p>
+      ) : null}
+      {statusMessage ? <p className="success-message">{statusMessage}</p> : null}
+    </>
+  )
 
-        <label className="form-field">
-          <span>Plan Name</span>
-          <input
-            onChange={(event) => setNewPlanDraft({ ...newPlanDraft, name: event.target.value })}
-            placeholder="West Africa Week"
-            type="text"
-            value={newPlanDraft.name}
-          />
-        </label>
-
-        <div className="two-column-fields">
-          <label className="form-field">
-            <span>Start</span>
-            <input
-              onChange={(event) =>
-                setNewPlanDraft({ ...newPlanDraft, startDate: event.target.value })
-              }
-              type="date"
-              value={newPlanDraft.startDate}
-            />
-          </label>
-
-          <label className="form-field">
-            <span>End</span>
-            <input
-              min={newPlanDraft.startDate}
-              onChange={(event) => setNewPlanDraft({ ...newPlanDraft, endDate: event.target.value })}
-              type="date"
-              value={newPlanDraft.endDate}
-            />
-          </label>
-        </div>
-
-        <label className="form-field">
-          <span>First Location</span>
-          <input
-            onChange={(event) => setNewPlanDraft({ ...newPlanDraft, location: event.target.value })}
-            placeholder="Djibouti"
-            type="text"
-            value={newPlanDraft.location}
-          />
-        </label>
-        <p className="helper-text">
-          Use one city here, such as `Djibouti` or `Katy, TX`. Add other cities on individual
-          days after the plan is created.
-        </p>
-
-        <label className="form-field">
-          <span>Notes</span>
-          <textarea
-            onChange={(event) => setNewPlanDraft({ ...newPlanDraft, notes: event.target.value })}
-            placeholder="Work days, dinners, exercise goals, laundry, or packing constraints."
-            rows={3}
-            value={newPlanDraft.notes}
-          />
-        </label>
-        <p className="helper-text">
-          Notes are for constraints: work days, dinners, exercise goals, laundry, or packing
-          preferences. They are not parsed as stops.
-        </p>
-
-        <button type="submit" className="primary-button" disabled={isSavingPlan}>
-          {isSavingPlan ? <span className="spinner small" aria-hidden="true" /> : <Plus size={20} />}
-          Create Plan
-        </button>
-      </form>
-
-      <div className="plan-workspace">
-        <div className="plan-selector-row">
-          <label className="form-field compact">
-            <span>Current Plan</span>
-            <select
-              onChange={(event) => {
-                const nextPlanId = event.target.value
-                const nextPlan = plans.find((plan) => plan.id === nextPlanId)
-                setSelectedPlanId(nextPlanId)
-                setPlanDraft(nextPlan ? planToDraft(nextPlan) : null)
-              }}
-              value={selectedPlan?.id ?? ''}
-            >
-              {plans.map((plan) => (
-                <option key={plan.id} value={plan.id}>
-                  {plan.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className="danger-button"
-            disabled={!selectedPlan}
-            onClick={() => {
-              void handleDeletePlan()
-            }}
-          >
-            <Trash2 size={18} aria-hidden="true" />
-            Delete
-          </button>
-        </div>
-
-        {isLoadingPlans || isLoadingCloset ? (
-          <div className="placeholder-panel">
-            <span className="spinner small" aria-hidden="true" />
+  if (planView === 'new') {
+    return (
+      <div className="plans-panel">
+        <PlanSubpageHeader
+          onBack={() => setPlanView('home')}
+          subtitle="Plans"
+          title="Start Plan"
+        />
+        {statusBlock}
+        <form className="plan-create-card" onSubmit={handleCreatePlan}>
+          <div className="section-title">
+            <CalendarDays size={20} aria-hidden="true" />
             <div>
-              <h3>Loading plans</h3>
-              <p>Reading plans and closet items from Firestore.</p>
+              <p className="eyebrow">New plan</p>
+              <h2>Dates and first city</h2>
             </div>
           </div>
-        ) : null}
+          <p className="helper-text">
+            This creates one editable day first. Add more days inside the plan.
+          </p>
 
-        {plansError || closetError || errorMessage ? (
-          <p className="error-message">{plansError ?? closetError ?? errorMessage}</p>
-        ) : null}
-        {statusMessage ? <p className="success-message">{statusMessage}</p> : null}
+          <label className="form-field">
+            <span>Plan Name</span>
+            <input
+              onChange={(event) => setNewPlanDraft({ ...newPlanDraft, name: event.target.value })}
+              placeholder="West Africa Week"
+              type="text"
+              value={newPlanDraft.name}
+            />
+          </label>
 
+          <div className="two-column-fields">
+            <label className="form-field">
+              <span>Start</span>
+              <input
+                onChange={(event) =>
+                  setNewPlanDraft({ ...newPlanDraft, startDate: event.target.value })
+                }
+                type="date"
+                value={newPlanDraft.startDate}
+              />
+            </label>
+
+            <label className="form-field">
+              <span>End</span>
+              <input
+                min={newPlanDraft.startDate}
+                onChange={(event) =>
+                  setNewPlanDraft({ ...newPlanDraft, endDate: event.target.value })
+                }
+                type="date"
+                value={newPlanDraft.endDate}
+              />
+            </label>
+          </div>
+
+          <label className="form-field">
+            <span>First Location</span>
+            <input
+              onChange={(event) =>
+                setNewPlanDraft({ ...newPlanDraft, location: event.target.value })
+              }
+              placeholder="Djibouti"
+              type="text"
+              value={newPlanDraft.location}
+            />
+          </label>
+          <p className="helper-text">
+            Use one city here, such as `Djibouti` or `Katy, TX`. Add other cities on individual
+            days after the plan is created.
+          </p>
+
+          <label className="form-field">
+            <span>Notes</span>
+            <textarea
+              onChange={(event) => setNewPlanDraft({ ...newPlanDraft, notes: event.target.value })}
+              placeholder="Work days, dinners, exercise goals, laundry, or packing constraints."
+              rows={3}
+              value={newPlanDraft.notes}
+            />
+          </label>
+          <p className="helper-text">
+            Notes are for constraints. They are not parsed as stops.
+          </p>
+
+          <button type="submit" className="primary-button" disabled={isSavingPlan}>
+            {isSavingPlan ? <span className="spinner small" aria-hidden="true" /> : <Plus size={20} />}
+            Create Plan
+          </button>
+        </form>
+      </div>
+    )
+  }
+
+  if (planView !== 'home' && (!selectedPlan || !effectivePlanDraft)) {
+    return (
+      <div className="plans-panel">
+        <PlanSubpageHeader onBack={() => setPlanView('home')} subtitle="Plans" title="Plan" />
+        {statusBlock}
+        <div className="empty-state">
+          <Clipboard size={24} aria-hidden="true" />
+          <h3>Select a plan</h3>
+          <p>Choose a plan from the Plans list to edit it.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (planView === 'setup' && selectedPlan && effectivePlanDraft) {
+    return (
+      <div className="plans-panel">
+        <PlanSubpageHeader onBack={() => setPlanView('home')} subtitle="Plans" title={selectedPlan.name} />
+        {statusBlock}
+        <section className="subpage-list" aria-label="Plan sections">
+          <PlanMenuRow
+            badge={`${selectedPlan.itinerary.length}`}
+            description="Generated day-by-day outfits and outfit edit tools."
+            icon={<CalendarDays size={20} aria-hidden="true" />}
+            onClick={() => setPlanView('itinerary')}
+            title="Itinerary"
+          />
+          <PlanMenuRow
+            badge={`${selectedPlan.packingList.length}`}
+            description="Packing list derived from the generated itinerary."
+            icon={<Clipboard size={20} aria-hidden="true" />}
+            onClick={() => setPlanView('packing')}
+            title="Packing List"
+          />
+        </section>
+        <PlanEditor
+          activeClosetCount={activeClosetCount}
+          bulkContext={bulkContext}
+          bulkLocation={bulkLocation}
+          draft={effectivePlanDraft}
+          isGenerating={isGenerating}
+          isLookingUpWeather={isLookingUpWeather}
+          isSavingPlan={isSavingPlan}
+          onAddBulkContext={applyBulkContext}
+          onApplyBulkLocation={applyBulkLocation}
+          onBulkContextChange={setBulkContext}
+          onBulkLocationChange={setBulkLocation}
+          onChange={setPlanDraft}
+          onGenerateAI={() => {
+            void handleGenerateItinerary(true)
+          }}
+          onGenerateLocal={() => {
+            void handleGenerateItinerary(false)
+          }}
+          onLookupAllWeather={() => {
+            void lookupWeatherForAllDays()
+          }}
+          onLookupDayWeather={(dayId) => {
+            void lookupWeatherForDay(dayId)
+          }}
+          onSave={() => {
+            void handleSavePlan()
+          }}
+        />
+        <button
+          type="button"
+          className="danger-button full-width"
+          onClick={() => {
+            void handleDeletePlan()
+          }}
+        >
+          <Trash2 size={18} aria-hidden="true" />
+          Delete Plan
+        </button>
+      </div>
+    )
+  }
+
+  if (planView === 'itinerary' && selectedPlan) {
+    return (
+      <div className="plans-panel">
+        <PlanSubpageHeader
+          onBack={() => setPlanView('setup')}
+          subtitle={selectedPlan.name}
+          title="Itinerary"
+        />
+        {statusBlock}
+        <ItinerarySection
+          onChange={(nextItinerary) => {
+            void handleSaveItinerary(nextItinerary)
+          }}
+          plan={selectedPlan}
+        />
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => {
+            void shareText(`${selectedPlan.name} itinerary`, itineraryShareText(selectedPlan))
+          }}
+        >
+          <Download size={20} aria-hidden="true" />
+          Share Itinerary
+        </button>
+      </div>
+    )
+  }
+
+  if (planView === 'packing' && selectedPlan) {
+    return (
+      <div className="plans-panel">
+        <PlanSubpageHeader
+          onBack={() => setPlanView('setup')}
+          subtitle={selectedPlan.name}
+          title="Packing List"
+        />
+        {statusBlock}
+        <PackingSection
+          groupedPackingList={groupedPackingList}
+          onChange={(nextPackingList) => {
+            void handleSavePackingList(nextPackingList)
+          }}
+          plan={selectedPlan}
+        />
+        {groupedPackingList.length === 0 ? (
+          <div className="empty-state">
+            <Clipboard size={24} aria-hidden="true" />
+            <h3>No packing list yet</h3>
+            <p>Generate the itinerary first. The packing list follows from those outfits.</p>
+          </div>
+        ) : null}
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => {
+            void shareText(`${selectedPlan.name} packing list`, packingListShareText(selectedPlan))
+          }}
+        >
+          <Copy size={20} aria-hidden="true" />
+          Share Packing List
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="plans-panel">
+      <section className="plan-workspace">
+        <div className="section-title">
+          <Clipboard size={20} aria-hidden="true" />
+          <div>
+            <p className="eyebrow">Plans</p>
+            <h2>Trips and weekly outfits</h2>
+          </div>
+        </div>
+        <button type="button" className="primary-button" onClick={openNewPlan}>
+          <Plus size={20} aria-hidden="true" />
+          New Plan
+        </button>
+        {statusBlock}
         {!isLoadingPlans && plans.length === 0 ? (
           <div className="empty-state">
             <Clipboard size={24} aria-hidden="true" />
@@ -476,85 +642,70 @@ export function PlansPanel({
             <p>Create a trip or weekly plan, then edit the daily outfit requests.</p>
           </div>
         ) : null}
-
-        {selectedPlan && effectivePlanDraft ? (
-          <>
-            <PlanEditor
-              activeClosetCount={activeClosetCount}
-              bulkContext={bulkContext}
-              bulkLocation={bulkLocation}
-              draft={effectivePlanDraft}
-              isGenerating={isGenerating}
-              isLookingUpWeather={isLookingUpWeather}
-              isSavingPlan={isSavingPlan}
-              onAddBulkContext={applyBulkContext}
-              onApplyBulkLocation={applyBulkLocation}
-              onBulkContextChange={setBulkContext}
-              onBulkLocationChange={setBulkLocation}
-              onChange={setPlanDraft}
-              onGenerateAI={() => {
-                void handleGenerateItinerary(true)
-              }}
-              onGenerateLocal={() => {
-                void handleGenerateItinerary(false)
-              }}
-              onLookupAllWeather={() => {
-                void lookupWeatherForAllDays()
-              }}
-              onLookupDayWeather={(dayId) => {
-                void lookupWeatherForDay(dayId)
-              }}
-              onSave={() => {
-                void handleSavePlan()
-              }}
-            />
-
-            <ItinerarySection
-              onChange={(nextItinerary) => {
-                void handleSaveItinerary(nextItinerary)
-              }}
-              plan={selectedPlan}
-            />
-            <PackingSection
-              groupedPackingList={groupedPackingList}
-              onChange={(nextPackingList) => {
-                void handleSavePackingList(nextPackingList)
-              }}
-              plan={selectedPlan}
-            />
-
-            <div className="share-actions">
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => {
-                  void shareText(
-                    `${selectedPlan.name} itinerary`,
-                    itineraryShareText(selectedPlan),
-                  )
-                }}
-              >
-                <Download size={20} aria-hidden="true" />
-                Share Itinerary
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => {
-                  void shareText(
-                    `${selectedPlan.name} packing list`,
-                    packingListShareText(selectedPlan),
-                  )
-                }}
-              >
-                <Copy size={20} aria-hidden="true" />
-                Share Packing List
-              </button>
-            </div>
-          </>
+        {plans.length > 0 ? (
+          <section className="subpage-list" aria-label="Saved plans">
+            {plans.map((plan) => (
+              <PlanMenuRow
+                badge={`${plan.days.length}d`}
+                description={`${plan.startDate} to ${plan.endDate} - ${plan.itinerary.length} outfits`}
+                icon={<CalendarDays size={20} aria-hidden="true" />}
+                key={plan.id}
+                onClick={() => openPlan(plan)}
+                title={plan.name}
+              />
+            ))}
+          </section>
         ) : null}
+      </section>
+    </div>
+  )
+}
+
+function PlanSubpageHeader({
+  onBack,
+  subtitle,
+  title,
+}: {
+  onBack: () => void
+  subtitle: string
+  title: string
+}) {
+  return (
+    <div className="subpage-header">
+      <button type="button" className="icon-button" onClick={onBack} aria-label="Back">
+        <ArrowLeft size={22} />
+      </button>
+      <div>
+        <p className="eyebrow">{subtitle}</p>
+        <h2>{title}</h2>
       </div>
     </div>
+  )
+}
+
+function PlanMenuRow({
+  badge,
+  description,
+  icon,
+  onClick,
+  title,
+}: {
+  badge?: string
+  description: string
+  icon: ReactNode
+  onClick: () => void
+  title: string
+}) {
+  return (
+    <button type="button" className="menu-row" onClick={onClick}>
+      <span className="menu-row-icon">{icon}</span>
+      <span className="menu-row-content">
+        <strong>{title}</strong>
+        <span>{description}</span>
+      </span>
+      {badge ? <span className="quantity-chip">{badge}</span> : null}
+      <ChevronRight className="menu-row-chevron" size={20} aria-hidden="true" />
+    </button>
   )
 }
 

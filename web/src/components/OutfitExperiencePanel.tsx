@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowLeft,
   Bot,
   CalendarCheck,
   CheckCircle2,
@@ -35,6 +36,8 @@ import {
 import type { UserProfile } from '../lib/profile'
 import { lookupWeatherAtCurrentLocation, lookupWeatherByLocation } from '../lib/weather'
 
+type OutfitExperienceView = 'setup' | 'result'
+
 export function OutfitExperiencePanel({
   mode,
   profile,
@@ -49,6 +52,7 @@ export function OutfitExperiencePanel({
   const [weather, setWeather] = useState<WeatherInput>(defaultWeatherInput)
   const [selectedItemId, setSelectedItemId] = useState('')
   const [recommendation, setRecommendation] = useState<OutfitRecommendation | null>(null)
+  const [view, setView] = useState<OutfitExperienceView>('setup')
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [feedbackNote, setFeedbackNote] = useState('')
@@ -129,6 +133,7 @@ export function OutfitExperiencePanel({
         weather,
       })
       setRecommendation(nextRecommendation)
+      setView('result')
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : 'Could not generate an outfit.')
     } finally {
@@ -205,6 +210,38 @@ export function OutfitExperiencePanel({
     } finally {
       setIsLoggingWear(false)
     }
+  }
+
+  if (view === 'result' && recommendation) {
+    return (
+      <div className="outfit-panel">
+        <OutfitSubpageHeader
+          onBack={() => setView('setup')}
+          subtitle={mode === 'today' ? 'Today' : 'Build'}
+          title={recommendation.source === 'ai' ? 'AI Outfit' : 'FitCheck Outfit'}
+        />
+        <OutfitResultCard
+          feedbackNote={feedbackNote}
+          feedbackError={feedbackError}
+          feedbackMessage={feedbackMessage}
+          isSavingFeedback={isSavingFeedback}
+          isLoggingWear={isLoggingWear}
+          onFeedback={(type) => {
+            void handleFeedback(type)
+          }}
+          onLogWear={(note) => {
+            void handleLogWear(note)
+          }}
+          onNoteChange={setFeedbackNote}
+          profile={profile}
+          recommendation={recommendation}
+          userId={userId}
+          weather={weather}
+          wearLogError={wearLogError}
+          wearLogMessage={wearLogMessage}
+        />
+      </div>
+    )
   }
 
   return (
@@ -406,6 +443,13 @@ export function OutfitExperiencePanel({
       {closetError ? <p className="error-message">{closetError}</p> : null}
       {generationError ? <p className="error-message">{generationError}</p> : null}
 
+      {recommendation ? (
+        <button type="button" className="secondary-button" onClick={() => setView('result')}>
+          <CheckCircle2 size={20} aria-hidden="true" />
+          View Current Outfit
+        </button>
+      ) : null}
+
       {!isLoading && activeItems.length === 0 ? (
         <div className="empty-state">
           <AlertTriangle size={24} aria-hidden="true" />
@@ -413,29 +457,28 @@ export function OutfitExperiencePanel({
           <p>Add active items in Closet before generating outfits.</p>
         </div>
       ) : null}
+    </div>
+  )
+}
 
-      {recommendation ? (
-        <OutfitResultCard
-          feedbackNote={feedbackNote}
-          feedbackError={feedbackError}
-          feedbackMessage={feedbackMessage}
-          isSavingFeedback={isSavingFeedback}
-          isLoggingWear={isLoggingWear}
-          onFeedback={(type) => {
-            void handleFeedback(type)
-          }}
-          onLogWear={(note) => {
-            void handleLogWear(note)
-          }}
-          onNoteChange={setFeedbackNote}
-          profile={profile}
-          recommendation={recommendation}
-          userId={userId}
-          weather={weather}
-          wearLogError={wearLogError}
-          wearLogMessage={wearLogMessage}
-        />
-      ) : null}
+function OutfitSubpageHeader({
+  onBack,
+  subtitle,
+  title,
+}: {
+  onBack: () => void
+  subtitle: string
+  title: string
+}) {
+  return (
+    <div className="subpage-header">
+      <button type="button" className="icon-button" onClick={onBack} aria-label="Back">
+        <ArrowLeft size={22} />
+      </button>
+      <div>
+        <p className="eyebrow">{subtitle}</p>
+        <h2>{title}</h2>
+      </div>
     </div>
   )
 }

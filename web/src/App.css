@@ -240,6 +240,80 @@ h3 {
   gap: 14px;
 }
 
+.subpage-header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.subpage-header h2 {
+  overflow-wrap: anywhere;
+}
+
+.subpage-list {
+  display: grid;
+  gap: 10px;
+}
+
+.menu-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: inherit;
+  background: var(--surface);
+  text-align: left;
+}
+
+.menu-row-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+
+.menu-row-content {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.menu-row-content strong,
+.menu-row-content span {
+  overflow-wrap: anywhere;
+}
+
+.menu-row-content strong {
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 850;
+}
+
+.menu-row-content span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.menu-row-chevron {
+  color: var(--muted);
+}
+
+.split-action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .form-field {
   display: grid;
   gap: 7px;
@@ -1258,8 +1332,18 @@ h3 {
   .weather-actions,
   .bulk-tools,
   .plan-selector-row,
-  .share-actions {
+  .share-actions,
+  .split-action-row {
     grid-template-columns: 1fr;
+  }
+
+  .menu-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .menu-row .quantity-chip {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .recommendation-header,

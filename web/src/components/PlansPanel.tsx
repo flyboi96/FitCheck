@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import { useClosetItems } from '../hooks/useClosetItems'
+import { useContextStyles } from '../hooks/useContextStyles'
 import { usePlans } from '../hooks/usePlans'
 import {
   addDaysISO,
@@ -43,10 +44,11 @@ import {
 } from '../lib/plans'
 import {
   generateOutfit,
-  outfitContexts,
   type OutfitContext,
+  type OutfitContextOption,
   type WeatherInput,
 } from '../lib/outfits'
+import { contextOptionsFromSettings } from '../lib/contextStyles'
 import type { UserProfile } from '../lib/profile'
 import { lookupWeatherByLocation } from '../lib/weather'
 
@@ -61,6 +63,11 @@ export function PlansPanel({
 }) {
   const { error: plansError, isLoading: isLoadingPlans, plans } = usePlans(userId)
   const { error: closetError, isLoading: isLoadingCloset, items } = useClosetItems(userId)
+  const { settings: contextSettings } = useContextStyles(userId)
+  const contextOptions = useMemo(
+    () => contextOptionsFromSettings(contextSettings),
+    [contextSettings],
+  )
   const [selectedPlanId, setSelectedPlanId] = useState('')
   const [newPlanDraft, setNewPlanDraft] = useState<NewPlanDraft>(() => defaultNewPlanDraft())
   const [planDraft, setPlanDraft] = useState<PlanDraft | null>(null)
@@ -70,6 +77,9 @@ export function PlansPanel({
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [bulkContext, setBulkContext] = useState<OutfitContext>('casual')
+  const effectiveBulkContext = contextOptions.some((option) => option.value === bulkContext)
+    ? bulkContext
+    : contextOptions[0]?.value ?? 'casual'
   const [bulkLocation, setBulkLocation] = useState('')
   const [isLookingUpWeather, setIsLookingUpWeather] = useState(false)
 
@@ -103,6 +113,18 @@ export function PlansPanel({
     setPlanView('new')
     setStatusMessage(null)
     setErrorMessage(null)
+  }
+
+  function contextLabel(context: OutfitContext) {
+    return contextOptions.find((option) => option.value === context)?.label ?? context
+  }
+
+  function newOutfitRequest(context: OutfitContext) {
+    const request = createOutfitRequest(context)
+    return {
+      ...request,
+      label: contextLabel(context),
+    }
   }
 
   async function handleCreatePlan(event: FormEvent<HTMLFormElement>) {
@@ -306,9 +328,9 @@ export function PlansPanel({
       ...draft,
       days: draft.days.map((day) => ({
         ...day,
-        requests: day.requests.some((request) => request.context === bulkContext)
+        requests: day.requests.some((request) => request.context === effectiveBulkContext)
           ? day.requests
-          : [...day.requests, createOutfitRequest(bulkContext)],
+          : [...day.requests, newOutfitRequest(effectiveBulkContext)],
       })),
     }))
   }
@@ -513,8 +535,10 @@ export function PlansPanel({
         </section>
         <PlanEditor
           activeClosetCount={activeClosetCount}
-          bulkContext={bulkContext}
+          bulkContext={effectiveBulkContext}
           bulkLocation={bulkLocation}
+          contextOptions={contextOptions}
+          createRequest={newOutfitRequest}
           draft={effectivePlanDraft}
           isGenerating={isGenerating}
           isLookingUpWeather={isLookingUpWeather}
@@ -713,6 +737,8 @@ function PlanEditor({
   activeClosetCount,
   bulkContext,
   bulkLocation,
+  contextOptions,
+  createRequest,
   draft,
   isGenerating,
   isLookingUpWeather,
@@ -731,6 +757,8 @@ function PlanEditor({
   activeClosetCount: number
   bulkContext: OutfitContext
   bulkLocation: string
+  contextOptions: OutfitContextOption[]
+  createRequest: (context: OutfitContext) => ReturnType<typeof createOutfitRequest>
   draft: PlanDraft
   isGenerating: boolean
   isLookingUpWeather: boolean
@@ -791,7 +819,7 @@ function PlanEditor({
         }),
         location: lastDay?.location ?? '',
       },
-      requests: [createOutfitRequest('casual')],
+      requests: [createRequest(contextOptions[0]?.value ?? 'casual')],
     }
 
     onChange({
@@ -945,7 +973,7 @@ function PlanEditor({
             onChange={(event) => onBulkContextChange(event.target.value as OutfitContext)}
             value={bulkContext}
           >
-            {outfitContexts.map((context) => (
+            {contextOptions.map((context) => (
               <option key={context.value} value={context.value}>
                 {context.label}
               </option>
@@ -994,6 +1022,8 @@ function PlanEditor({
             <PlanDayEditor
               canMoveDown={index < draft.days.length - 1}
               canMoveUp={index > 0}
+              contextOptions={contextOptions}
+              createRequest={createRequest}
               day={day}
               key={day.id}
               onChange={(nextDay) => updateDay(day.id, () => nextDay)}
@@ -1056,6 +1086,8 @@ function planToDraft(plan: Plan): PlanDraft {
 function PlanDayEditor({
   canMoveDown,
   canMoveUp,
+  contextOptions,
+  createRequest,
   day,
   onChange,
   onLookupWeather,
@@ -1065,6 +1097,8 @@ function PlanDayEditor({
 }: {
   canMoveDown: boolean
   canMoveUp: boolean
+  contextOptions: OutfitContextOption[]
+  createRequest: (context: OutfitContext) => ReturnType<typeof createOutfitRequest>
   day: PlanDay
   onChange: (day: PlanDay) => void
   onLookupWeather: () => void
@@ -1077,6 +1111,8 @@ function PlanDayEditor({
   }
 
   function updateRequest(requestId: string, context: OutfitContext) {
+    const contextLabel = contextOptions.find((option) => option.value === context)?.label ?? context
+
     onChange({
       ...day,
       requests: day.requests.map((request) =>
@@ -1084,7 +1120,7 @@ function PlanDayEditor({
           ? {
               ...request,
               context,
-              label: outfitContexts.find((option) => option.value === context)?.label ?? context,
+              label: contextLabel,
             }
           : request,
       ),
@@ -1095,8 +1131,26 @@ function PlanDayEditor({
     const nextRequests = day.requests.filter((request) => request.id !== requestId)
     onChange({
       ...day,
-      requests: nextRequests.length > 0 ? nextRequests : [createOutfitRequest('casual')],
+      requests:
+        nextRequests.length > 0
+          ? nextRequests
+          : [createRequest(contextOptions[0]?.value ?? 'casual')],
     })
+  }
+
+  function optionsForRequest(request: PlanDay['requests'][number]) {
+    if (contextOptions.some((context) => context.value === request.context)) {
+      return contextOptions
+    }
+
+    return [
+      {
+        value: request.context,
+        label: `${request.label || request.context} (removed)`,
+        description: 'This context was removed from your current context list.',
+      },
+      ...contextOptions,
+    ]
   }
 
   return (
@@ -1240,7 +1294,7 @@ function PlanDayEditor({
               onChange={(event) => updateRequest(request.id, event.target.value as OutfitContext)}
               value={request.context}
             >
-              {outfitContexts.map((context) => (
+              {optionsForRequest(request).map((context) => (
                 <option key={context.value} value={context.value}>
                   {context.label}
                 </option>
@@ -1264,7 +1318,7 @@ function PlanDayEditor({
         onClick={() =>
           onChange({
             ...day,
-            requests: [...day.requests, createOutfitRequest('casual')],
+            requests: [...day.requests, createRequest(contextOptions[0]?.value ?? 'casual')],
           })
         }
       >

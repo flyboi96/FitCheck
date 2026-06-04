@@ -493,7 +493,7 @@ function MorePanel({
           title="Scoring Guide"
         />
         <MenuRow
-          description="Edit business casual, gym, travel day, and other outfit definitions."
+          description="Add, remove, rename, and define the outfit contexts you want."
           icon={<Shirt size={20} aria-hidden="true" />}
           onClick={() => setRoute('contexts')}
           title="Context Styles"
@@ -833,20 +833,20 @@ function ProfileFields({
           <div className="two-column-fields">
             <label className="form-field">
               <span>Preferred Colors</span>
-              <input
+              <textarea
                 onChange={(event) => setDraft({ ...draft, preferredColors: event.target.value })}
                 placeholder="Navy, white, khaki, olive"
-                type="text"
+                rows={3}
                 value={draft.preferredColors}
               />
             </label>
 
             <label className="form-field">
               <span>Preferred Fit</span>
-              <input
+              <textarea
                 onChange={(event) => setDraft({ ...draft, preferredFit: event.target.value })}
                 placeholder="Trim but not tight"
-                type="text"
+                rows={3}
                 value={draft.preferredFit}
               />
             </label>

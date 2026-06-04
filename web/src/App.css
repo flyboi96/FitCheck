@@ -345,8 +345,10 @@ h3 {
 .form-field textarea {
   min-height: 124px;
   padding: 12px;
+  overflow: auto;
   resize: vertical;
   line-height: 1.35;
+  -webkit-overflow-scrolling: touch;
 }
 
 .form-field input:focus,

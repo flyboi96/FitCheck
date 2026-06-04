@@ -18,14 +18,15 @@ import {
   Wand2,
 } from 'lucide-react'
 import { useClosetItems } from '../hooks/useClosetItems'
+import { useContextStyles } from '../hooks/useContextStyles'
 import { useSavedAvatar } from '../hooks/useSavedAvatar'
 import { generateAvatarPreview, type AvatarPreview } from '../lib/avatar'
+import { contextOptionsFromSettings } from '../lib/contextStyles'
 import { logOutfitWear } from '../lib/history'
 import { categoryName } from '../lib/outfits'
 import {
   defaultWeatherInput,
   generateOutfit,
-  outfitContexts,
   saveOutfitFeedback,
   weatherSummary,
   type OutfitContext,
@@ -48,7 +49,15 @@ export function OutfitExperiencePanel({
   userId: string
 }) {
   const { error: closetError, isLoading, items } = useClosetItems(userId)
+  const { settings: contextSettings } = useContextStyles(userId)
+  const contextOptions = useMemo(
+    () => contextOptionsFromSettings(contextSettings),
+    [contextSettings],
+  )
   const [context, setContext] = useState<OutfitContext>('work')
+  const effectiveContext = contextOptions.some((option) => option.value === context)
+    ? context
+    : contextOptions[0]?.value ?? 'casual'
   const [weather, setWeather] = useState<WeatherInput>(defaultWeatherInput)
   const [selectedItemId, setSelectedItemId] = useState('')
   const [recommendation, setRecommendation] = useState<OutfitRecommendation | null>(null)
@@ -126,7 +135,7 @@ export function OutfitExperiencePanel({
       const nextRecommendation = await generateOutfit({
         askAIFirst,
         closet: items,
-        context,
+        context: effectiveContext,
         profile,
         selectedItemId: mode === 'build' ? selectedItemId || undefined : undefined,
         userId,
@@ -170,7 +179,7 @@ export function OutfitExperiencePanel({
 
     try {
       await saveOutfitFeedback({
-        context,
+        context: effectiveContext,
         feedback: type,
         note: feedbackNote,
         recommendation,
@@ -197,8 +206,9 @@ export function OutfitExperiencePanel({
 
     try {
       await logOutfitWear({
-        context,
-        contextLabel: outfitContexts.find((option) => option.value === context)?.label ?? context,
+        context: effectiveContext,
+        contextLabel:
+          contextOptions.find((option) => option.value === effectiveContext)?.label ?? effectiveContext,
         note,
         recommendation,
         userId,
@@ -260,9 +270,9 @@ export function OutfitExperiencePanel({
             <span>Context</span>
             <select
               onChange={(event) => setContext(event.target.value as OutfitContext)}
-              value={context}
+              value={effectiveContext}
             >
-              {outfitContexts.map((option) => (
+              {contextOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -282,7 +292,7 @@ export function OutfitExperiencePanel({
         </div>
 
         <p className="helper-text">
-          {outfitContexts.find((option) => option.value === context)?.description}
+          {contextOptions.find((option) => option.value === effectiveContext)?.description}
         </p>
 
         <div className="weather-source-card">

@@ -5,11 +5,24 @@ import {
   type ClothingCategory,
   type ClothingItem,
 } from './closet'
-import { contextStylesPrompt, loadContextStyles } from './contextStyles'
+import { contextOptionsFromSettings, contextStylesPrompt, loadContextStyles } from './contextStyles'
+import {
+  defaultContextDescription,
+  defaultContextLabel,
+  outfitContexts,
+  type OutfitContext,
+  type OutfitContextOption,
+} from './outfitContextCatalog'
 import { profileStyleSummary, type UserProfile } from './profile'
 import { getAIProxySettings } from './settings'
 
-export type OutfitContext = 'work' | 'casual' | 'travel' | 'dinner' | 'gym'
+export {
+  isDefaultOutfitContext,
+  normalizeOutfitContext,
+  outfitContexts,
+  type OutfitContext,
+  type OutfitContextOption,
+} from './outfitContextCatalog'
 export type OutfitSource = 'ai' | 'local'
 export type OutfitFeedbackType = 'liked' | 'rejected' | 'issue'
 
@@ -45,33 +58,36 @@ export type OutfitGenerationRequest = {
 
 type ItemRole = 'top' | 'bottom' | 'fullBody' | 'shoes' | 'outerwear' | 'belt' | 'socks' | 'accessory'
 
-export const outfitContexts: Array<{ value: OutfitContext; label: string; description: string }> = [
-  {
-    value: 'work',
-    label: 'Work / Office',
-    description: 'Business casual, polished travel-work days, and pilot-friendly workwear.',
-  },
-  {
-    value: 'casual',
-    label: 'Casual Day',
-    description: 'Everyday errands, walking around town, and relaxed non-work plans.',
-  },
-  {
-    value: 'travel',
-    label: 'Travel Day',
-    description: 'Comfortable, practical, repeatable outfits for transit days.',
-  },
-  {
-    value: 'dinner',
-    label: 'Dinner / Date',
-    description: 'A cleaner outfit with more polish than daily casual.',
-  },
-  {
-    value: 'gym',
-    label: 'Gym',
-    description: 'Exercise clothes only: running, lifting, or training.',
-  },
-]
+function contextDetails(context: OutfitContext, options: OutfitContextOption[] = outfitContexts) {
+  return (
+    options.find((option) => option.value === context) ?? {
+      value: context,
+      label: defaultContextLabel(context),
+      description: defaultContextDescription(context),
+    }
+  )
+}
+
+function isExerciseContext(context: OutfitContext) {
+  const contextText = normalizedContextText(context)
+  return /lifting|running|gym|training|workout|strength|run/.test(contextText)
+}
+
+function isRunningContext(context: OutfitContext) {
+  return /running|run|jog/.test(normalizedContextText(context))
+}
+
+function isLiftingContext(context: OutfitContext) {
+  return /lifting|lift|strength|gym|training/.test(normalizedContextText(context))
+}
+
+function isWorkContext(context: OutfitContext) {
+  return /work|office|business|pilot|meeting|briefing|tdy/.test(normalizedContextText(context))
+}
+
+function normalizedContextText(context: OutfitContext) {
+  return context.toLowerCase().replace(/[^a-z]/g, '')
+}
 
 export const defaultWeatherInput: WeatherInput = {
   location: '',
@@ -128,7 +144,7 @@ export function generateLocalOutfit({
     addItem(selectedItem)
   }
 
-  if (context === 'gym') {
+  if (isExerciseContext(context)) {
     addItem(
       selectedRole === 'top'
         ? selectedItem
@@ -149,9 +165,7 @@ export function generateLocalOutfit({
     const selectedIsFullBody = selectedRole === 'fullBody'
     const fullBody = selectedIsFullBody
       ? selectedItem
-      : context === 'dinner'
-        ? bestItem(availableItems, 'fullBody', context, weather, profile, selectedItemId)
-        : null
+      : bestItem(availableItems, 'fullBody', context, weather, profile, selectedItemId)
 
     if (fullBody && scoreItem(fullBody, context, weather, profile) >= 54) {
       addItem(fullBody)
@@ -181,7 +195,7 @@ export function generateLocalOutfit({
     }
 
     const needsBelt =
-      context === 'work' ||
+      isWorkContext(context) ||
       (hasCollaredTop(items) && items.some((item) => itemRole(item) === 'bottom' && hasBeltLoops(item)))
     if (needsBelt) {
       addItem(bestItem(availableItems, 'belt', context, weather, profile, selectedItemId))
@@ -257,6 +271,7 @@ async function requestAIOutfit(request: OutfitGenerationRequest): Promise<Outfit
   const recentFeedback = await loadRecentFeedback(request.userId)
   const contextStyles = await loadContextStyles(request.userId)
   const localCandidate = generateLocalOutfit({ ...request, askAIFirst: false })
+  const selectedContext = contextDetails(request.context, contextOptionsFromSettings(contextStyles))
 
   const response = await fetch(`${baseURL}/outfit-recommendation`, {
     method: 'POST',
@@ -282,10 +297,15 @@ async function requestAIOutfit(request: OutfitGenerationRequest): Promise<Outfit
           notes: item.notes,
         })),
       weatherSummary: weatherSummary(request.weather),
-      occasion: outfitContexts.find((context) => context.value === request.context)?.label,
-      activity: request.context,
+      context: selectedContext.value,
+      contextLabel: selectedContext.label,
+      contextDefinition: selectedContext.description,
+      occasion: selectedContext.label,
+      activity: selectedContext.value,
       styleDescription: [
         profileStyleSummary(request.profile),
+        `Selected context: ${selectedContext.label}`,
+        `Selected context definition: ${selectedContext.description}`,
         'Context style definitions:',
         contextStylesPrompt(contextStyles),
       ]
@@ -392,7 +412,7 @@ function scoreOutfit(
     score += (itemScore - 58) / 4
   }
 
-  if (context === 'work') {
+  if (isWorkContext(context)) {
     if (items.some(isShorts)) {
       score -= 30
       cautions.push('Shorts weaken a work outfit.')
@@ -404,6 +424,43 @@ function scoreOutfit(
     if (items.some(isCasualOnlyFootwear)) {
       score -= 34
       cautions.push('Casual clogs, slides, or slippers do not work for office wear.')
+    }
+  }
+
+  if (isExerciseContext(context)) {
+    if (items.some((item) => item.category === 'belt' || item.category === 'watch' || item.category === 'jewelry')) {
+      score -= 28
+      cautions.push('Workout outfits should not include belts, watches, jewelry, or dress accessories.')
+    }
+    if (items.some((item) => /button-down|button down|collar|chino|trouser|leather|dress/.test(itemText(item)))) {
+      score -= 30
+      cautions.push('Workout contexts need exercise clothing, not office or dress pieces.')
+    }
+    if (isRunningContext(context) && !items.some((item) => /running shoe|run shoe|runner/.test(itemText(item)))) {
+      score -= 12
+      cautions.push('Running works best with running-specific shoes.')
+    }
+    if (isRunningContext(context) && items.some((item) => item.category === 'socks' && /run|running/.test(itemText(item)))) {
+      score += 6
+      reasons.push('Running socks support the running context.')
+    }
+  }
+
+  if (context === 'goingOut') {
+    if (items.some(isSweatsOrJoggers)) {
+      score -= 24
+      cautions.push('Sweats or joggers weaken a going-out outfit.')
+    }
+    if (items.some(isCasualOnlyFootwear)) {
+      score -= 18
+      cautions.push('Very casual footwear is usually too relaxed for going out.')
+    }
+  }
+
+  if (context === 'coastalCasual') {
+    if (items.some((item) => /flip-flop|flip flop|sandal|shorts|tank|linen|cotton|tee|t-shirt/.test(itemText(item)))) {
+      score += 10
+      reasons.push('Relaxed beach-town pieces fit coastal casual.')
     }
   }
 
@@ -505,16 +562,22 @@ function scoreItem(
   const text = itemText(item)
   const role = itemRole(item)
 
-  if (context === 'gym') {
-    if (/run|running|lifting|training|gym|workout|dri|athletic|performance|compression/.test(text)) {
+  if (isExerciseContext(context)) {
+    if (/run|running|lifting|training|gym|workout|dri|athletic|performance|compression|sport/.test(text)) {
       score += 22
     }
-    if (role === 'belt' || /leather|dress|chino|button-down|button down|collar/.test(text)) {
+    if (isRunningContext(context) && /run|running|runner|running sock|running shoe|reflective/.test(text)) {
+      score += 14
+    }
+    if (isLiftingContext(context) && /lift|lifting|training|trainer|gym|mobility|workout/.test(text)) {
+      score += 12
+    }
+    if (role === 'belt' || /leather|dress|chino|trouser|button-down|button down|collar/.test(text)) {
       score -= 24
     }
   }
 
-  if (context === 'work') {
+  if (isWorkContext(context)) {
     if (/button|collar|polo|chino|trouser|oxford|loafer|boot|leather|belt|blazer/.test(text)) {
       score += 18
     }
@@ -523,18 +586,69 @@ function scoreItem(
     }
   }
 
-  if (context === 'casual' || context === 'travel') {
-    if (/sneaker|tee|t-shirt|shirt|short|chino|jean|comfortable|stretch/.test(text)) {
-      score += 12
+  if (context === 'travel') {
+    if (/sneaker|tee|t-shirt|shirt|chino|pant|jogger|comfortable|stretch|travel|wrinkle|soft|layer/.test(text)) {
+      score += 14
+    }
+    if (/stiff|formal|heel|heavy/.test(text)) {
+      score -= 8
     }
   }
 
-  if (context === 'dinner') {
+  if (context === 'casual') {
+    if (/sneaker|tee|t-shirt|shirt|short|chino|jean|comfortable|stretch/.test(text)) {
+      score += 12
+    }
+    if (/sweatpant|slipper|pajama/.test(text)) {
+      score -= 8
+    }
+  }
+
+  if (context === 'coastalCasual') {
+    if (/flip-flop|flip flop|sandal|short|tank|tee|t-shirt|linen|cotton|swim|beach/.test(text)) {
+      score += 18
+    }
+    if (/boot|blazer|wool|heavy|formal/.test(text)) {
+      score -= 12
+    }
+  }
+
+  if (context === 'lounge') {
+    if (/sweat|jogger|hoodie|legging|soft|lounge|pajama|slide|slipper|tee|t-shirt/.test(text)) {
+      score += 18
+    }
+    if (/dress shoe|loafer|blazer|stiff|formal/.test(text)) {
+      score -= 12
+    }
+  }
+
+  if (context === 'goingOut') {
     if (/button|collar|sweater|dress|skirt|chino|trouser|leather|loafer|boot/.test(text)) {
       score += 15
     }
-    if (/sweat|gym|running|compression/.test(text)) {
+    if (/jewelry|watch|polished|fitted|dark/.test(text)) {
+      score += 8
+    }
+    if (/sweat|gym|running|compression|flip-flop|flip flop|slipper/.test(text)) {
       score -= 18
+    }
+  }
+
+  if (context === 'exploring') {
+    if (/sneaker|walking|walkable|comfortable|breathable|short|chino|jean|hat|sunglass|layer/.test(text)) {
+      score += 14
+    }
+    if (/stiff|formal|heel|slipper/.test(text)) {
+      score -= 10
+    }
+  }
+
+  if (context === 'outdoorRecreation') {
+    if (/outdoor|hiking|trail|sturdy|sun|hat|breathable|performance|sandal|short|layer|dust|beach|lake/.test(text)) {
+      score += 16
+    }
+    if (/dress|loafer|heel|formal|silk/.test(text)) {
+      score -= 14
     }
   }
 
@@ -568,7 +682,7 @@ function scoreItem(
     if (styleText.includes('runs hot') && weather.temperatureF >= 74 && isHeatFriendly(item)) {
       score += 8
     }
-    if (styleText.includes('no shorts for work') && context === 'work' && isShorts(item)) {
+    if (styleText.includes('no shorts for work') && isWorkContext(context) && isShorts(item)) {
       score -= 28
     }
     if (styleText.includes('no shorts with boots') && (isShorts(item) || isBoots(item))) {
@@ -660,11 +774,11 @@ function itemRole(item: ClothingItem): ItemRole {
 }
 
 function relaxedRole(item: ClothingItem, targetRole: ItemRole, context: OutfitContext) {
-  if (targetRole === 'top' && context !== 'gym') {
+  if (targetRole === 'top' && !isExerciseContext(context)) {
     return item.category === 'activewear' && /shirt|top|tee|tank/.test(itemText(item))
   }
 
-  if (targetRole === 'bottom' && context !== 'work') {
+  if (targetRole === 'bottom' && !isWorkContext(context)) {
     return item.category === 'activewear' && /short|pant|jogger|tight|legging/.test(itemText(item))
   }
 
@@ -784,16 +898,20 @@ function inferredOccasionSuitability(item: ClothingItem) {
   const tags: string[] = []
   if (/button|collar|chino|trouser|leather|belt|loafer|boot/.test(text)) tags.push('work')
   if (/tee|sneaker|short|jean|casual/.test(text)) tags.push('casual')
-  if (/dress|dinner|date|sweater/.test(text)) tags.push('dinner')
+  if (/flip-flop|flip flop|sandal|linen|tank|beach/.test(text)) tags.push('coastal casual')
+  if (/sweat|jogger|hoodie|lounge|soft/.test(text)) tags.push('lounge')
+  if (/dress|dinner|date|sweater|jewelry|watch/.test(text)) tags.push('going out')
   return tags.join(', ')
 }
 
 function inferredActivitySuitability(item: ClothingItem) {
   const text = itemText(item)
   const tags: string[] = []
-  if (/gym|running|lifting|training|compression|dri/.test(text)) tags.push('gym')
+  if (/lifting|training|gym|compression|dri/.test(text)) tags.push('lifting')
+  if (/run|running|runner/.test(text)) tags.push('running')
   if (/travel|stretch|comfortable|sneaker/.test(text)) tags.push('travel')
-  if (/walking|sneaker|short|tee/.test(text)) tags.push('walking')
+  if (/walking|sneaker|short|tee/.test(text)) tags.push('exploring')
+  if (/hiking|trail|outdoor|beach|lake|sun/.test(text)) tags.push('outdoor recreation')
   return tags.join(', ')
 }
 

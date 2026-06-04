@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { ListChecks, Save, SlidersHorizontal } from 'lucide-react'
+import { ListChecks, Plus, Save, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useContextStyles } from '../hooks/useContextStyles'
 import {
+  createCustomContextDefinition,
   defaultContextStyleSettings,
   saveContextStyles,
   type ContextStyleSettings,
@@ -38,9 +39,10 @@ export function ScoringGuidePanel() {
       <details className="collapsible-card">
         <summary>Context</summary>
         <p className="helper-text">
-          Work outfits favor structured tops, tailored bottoms, and polished footwear. Gym outfits
-          favor activewear and avoid belts, dress accessories, leather boots, and office clothes.
-          Casual, travel, and dinner contexts use softer rules.
+          You choose one context for the outfit. The default set starts with Work, Travel, Casual,
+          Coastal Casual, Lounge, Going Out, Exploring, Outdoor Recreation, Lifting, and Running,
+          but you can rename, remove, or add contexts. FitCheck interprets the selected context
+          first, then uses weather separately to adjust fabrics, layers, footwear, and outerwear.
         </p>
       </details>
 
@@ -76,6 +78,7 @@ export function ScoringGuidePanel() {
 export function ContextStyleEditorPanel({ userId }: { userId: string }) {
   const { error, isLoading, settings } = useContextStyles(userId)
   const [draft, setDraft] = useState<ContextStyleSettings | null>(null)
+  const [newContextLabel, setNewContextLabel] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const effectiveDraft = draft ?? settings
@@ -104,6 +107,37 @@ export function ContextStyleEditorPanel({ userId }: { userId: string }) {
     })
   }
 
+  function updateLabel(context: string, label: string) {
+    setDraft({
+      ...effectiveDraft,
+      definitions: effectiveDraft.definitions.map((entry) =>
+        entry.context === context ? { ...entry, label } : entry,
+      ),
+    })
+  }
+
+  function addContext() {
+    const nextDefinition = createCustomContextDefinition(newContextLabel, effectiveDraft.definitions)
+
+    setDraft({
+      ...effectiveDraft,
+      definitions: [...effectiveDraft.definitions, nextDefinition],
+    })
+    setNewContextLabel('')
+  }
+
+  function removeContext(context: string) {
+    if (effectiveDraft.definitions.length <= 1) {
+      setStatus('Keep at least one context.')
+      return
+    }
+
+    setDraft({
+      ...effectiveDraft,
+      definitions: effectiveDraft.definitions.filter((entry) => entry.context !== context),
+    })
+  }
+
   return (
     <section className="profile-form">
       <div className="section-title">
@@ -115,8 +149,8 @@ export function ContextStyleEditorPanel({ userId }: { userId: string }) {
       </div>
 
       <p className="helper-text">
-        These definitions are sent to AI outfit generation so you can tune what each context means
-        without code changes.
+        Add, remove, rename, and define the contexts you want FitCheck to offer. These definitions
+        feed Today, Build, Plans, and AI outfit generation.
       </p>
 
       {isLoading ? <p className="helper-text">Loading context styles.</p> : null}
@@ -127,6 +161,14 @@ export function ContextStyleEditorPanel({ userId }: { userId: string }) {
           <details className="collapsible-card" key={definition.context}>
             <summary>{definition.label}</summary>
             <label className="form-field">
+              <span>Name</span>
+              <input
+                onChange={(event) => updateLabel(definition.context, event.target.value)}
+                type="text"
+                value={definition.label}
+              />
+            </label>
+            <label className="form-field">
               <span>Definition</span>
               <textarea
                 onChange={(event) => updateDefinition(definition.context, event.target.value)}
@@ -134,8 +176,44 @@ export function ContextStyleEditorPanel({ userId }: { userId: string }) {
                 value={definition.definition}
               />
             </label>
+            <button
+              type="button"
+              className="danger-button full-width"
+              onClick={() => removeContext(definition.context)}
+            >
+              <Trash2 size={18} aria-hidden="true" />
+              Remove Context
+            </button>
           </details>
         ))}
+      </div>
+
+      <div className="photo-import-card">
+        <div className="section-title">
+          <Plus size={20} aria-hidden="true" />
+          <div>
+            <p className="eyebrow">Custom</p>
+            <h3>Add Context</h3>
+          </div>
+        </div>
+        <label className="form-field">
+          <span>Context Name</span>
+          <input
+            onChange={(event) => setNewContextLabel(event.target.value)}
+            placeholder="Brunch, Wedding, Pilot Work, Resort Dinner"
+            type="text"
+            value={newContextLabel}
+          />
+        </label>
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={!newContextLabel.trim()}
+          onClick={addContext}
+        >
+          <Plus size={20} aria-hidden="true" />
+          Add Context
+        </button>
       </div>
 
       <label className="form-field">

@@ -8,7 +8,15 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import type { OutfitContext } from './outfits'
+import {
+  contextSlug,
+  defaultContextDescription,
+  defaultContextLabel,
+  normalizeOutfitContext,
+  outfitContexts,
+  type OutfitContext,
+  type OutfitContextOption,
+} from './outfitContextCatalog'
 
 export type ContextStyleDefinition = {
   context: OutfitContext
@@ -21,13 +29,10 @@ export type ContextStyleSettings = {
   extraNotes: string
 }
 
-const contextOptions: Array<{ value: OutfitContext; label: string }> = [
-  { value: 'work', label: 'Work / Office' },
-  { value: 'casual', label: 'Casual Day' },
-  { value: 'travel', label: 'Travel Day' },
-  { value: 'dinner', label: 'Dinner / Date' },
-  { value: 'gym', label: 'Gym' },
-]
+const contextOptions: Array<{ value: OutfitContext; label: string }> = outfitContexts.map((context) => ({
+  value: context.value,
+  label: context.label,
+}))
 
 export const defaultContextDefinitions: ContextStyleDefinition[] = contextOptions.map((context) => ({
   context: context.value,
@@ -77,10 +82,11 @@ export async function saveContextStyles(userId: string, settings: ContextStyleSe
     {
       definitions: settings.definitions.map((definition) => ({
         context: definition.context,
-        label: definition.label,
+        label: definition.label.trim() || defaultContextLabel(definition.context),
         definition: definition.definition.trim(),
       })),
       extraNotes: settings.extraNotes.trim(),
+      customizedContexts: true,
       updatedAt: serverTimestamp(),
     },
     { merge: true },
@@ -105,15 +111,28 @@ function normalizeContextStyles(data: Record<string, unknown>): ContextStyleSett
         .map((definition) => normalizeDefinition(definition))
         .filter((definition): definition is ContextStyleDefinition => Boolean(definition))
     : []
-  const mergedDefinitions = defaultContextDefinitions.map((defaultDefinition) => {
-    const savedDefinition = definitions.find(
-      (definition) => definition.context === defaultDefinition.context,
-    )
-    return savedDefinition ?? defaultDefinition
-  })
+  const shouldMergeDefaults = data.customizedContexts !== true
+  const mergedDefinitions = shouldMergeDefaults
+    ? [
+        ...defaultContextDefinitions.map((defaultDefinition) => {
+          const savedDefinition = definitions.find(
+            (definition) => definition.context === defaultDefinition.context,
+          )
+          return savedDefinition ?? defaultDefinition
+        }),
+        ...definitions.filter(
+          (definition) =>
+            !defaultContextDefinitions.some(
+              (defaultDefinition) => defaultDefinition.context === definition.context,
+            ),
+        ),
+      ]
+    : definitions
 
   return {
-    definitions: mergedDefinitions,
+    definitions: deduplicateDefinitions(
+      mergedDefinitions.length > 0 ? mergedDefinitions : defaultContextDefinitions,
+    ),
     extraNotes: typeof data.extraNotes === 'string' ? data.extraNotes : '',
   }
 }
@@ -124,32 +143,84 @@ function normalizeDefinition(value: unknown): ContextStyleDefinition | null {
   }
 
   const data = value as Record<string, unknown>
-  const context = contextOptions.find((option) => option.value === data.context)
+  const normalizedContext = normalizeOutfitContext(data.context)
+  const context = contextOptions.find((option) => option.value === normalizedContext)
+  const label =
+    typeof data.label === 'string' && data.label.trim()
+      ? data.label.trim()
+      : context?.label ?? defaultContextLabel(normalizedContext)
 
-  if (!context) {
-    return null
-  }
+  const definition =
+    typeof data.definition === 'string' && data.definition.trim()
+      ? data.definition
+      : context?.value
+        ? defaultDefinitionForContext(context.value)
+        : defaultContextDescription(normalizedContext)
 
   return {
-    context: context.value,
-    label: context.label,
-    definition: typeof data.definition === 'string'
-      ? data.definition
-      : defaultDefinitionForContext(context.value),
+    context: normalizedContext,
+    label,
+    definition,
   }
 }
 
 function defaultDefinitionForContext(context: OutfitContext) {
-  switch (context) {
-    case 'work':
-      return 'Business casual or office-ready. Use a structured work top, tailored pants or equivalent polished bottom, and polished shoes. Avoid shorts, sweatpants, Crocs, clogs, slides, slippers, and gym clothes unless explicitly allowed.'
-    case 'casual':
-      return 'Everyday casual for errands, city walking, and relaxed non-work days. Prioritize comfort, weather fit, and simple color harmony. Sneakers, tees, casual shirts, shorts, chinos, and jeans are valid when weather and style rules allow.'
-    case 'travel':
-      return 'Travel day outfit for transit and packing efficiency. Prioritize comfort, rewear potential, airport practicality, easy layers, and shoes that work with the rest of the trip.'
-    case 'dinner':
-      return 'Dinner/date outfit with more polish than daily casual. Prefer intentional color pairing, cleaner shoes, and a shirt, sweater, dress, skirt, or tailored pieces that feel deliberate.'
-    case 'gym':
-      return 'Exercise outfit only. Use activewear, exercise shoes, and appropriate exercise socks. Do not include belts, dress accessories, leather boots, chinos, button-downs, or other non-workout pieces.'
+  return defaultContextDescription(context)
+}
+
+export function contextOptionsFromSettings(settings: ContextStyleSettings): OutfitContextOption[] {
+  return settings.definitions
+    .map((definition) => ({
+      value: definition.context,
+      label: definition.label.trim() || defaultContextLabel(definition.context),
+      description: definition.definition.trim() || defaultContextDescription(definition.context),
+    }))
+    .filter((option) => option.label.trim())
+}
+
+export function createCustomContextDefinition(
+  label: string,
+  existingDefinitions: ContextStyleDefinition[] = [],
+): ContextStyleDefinition {
+  const trimmedLabel = label.trim() || 'Custom Context'
+
+  return {
+    context: uniqueContextSlug(trimmedLabel, existingDefinitions),
+    label: trimmedLabel,
+    definition: '',
   }
+}
+
+function deduplicateDefinitions(definitions: ContextStyleDefinition[]) {
+  const seenContexts = new Set<string>()
+
+  return definitions.filter((definition) => {
+    if (seenContexts.has(definition.context)) {
+      return false
+    }
+
+    seenContexts.add(definition.context)
+    return true
+  })
+}
+
+function uniqueContextSlug(label: string, existingDefinitions: ContextStyleDefinition[]) {
+  const baseSlug = contextSlug(label)
+  const existingContexts = new Set([
+    ...outfitContexts.map((context) => context.value),
+    ...existingDefinitions.map((definition) => definition.context),
+  ])
+
+  if (!existingContexts.has(baseSlug)) {
+    return baseSlug
+  }
+
+  for (let index = 2; index < 100; index += 1) {
+    const candidate = `${baseSlug}${index}`
+    if (!existingContexts.has(candidate)) {
+      return candidate
+    }
+  }
+
+  return `custom-${crypto.randomUUID()}`
 }

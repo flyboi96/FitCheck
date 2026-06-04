@@ -11,8 +11,10 @@ import {
 } from 'firebase/firestore'
 import { db } from './firebase'
 import {
+  isDefaultOutfitContext,
   categoryName,
   defaultWeatherInput,
+  normalizeOutfitContext,
   outfitContexts,
   weatherSummary,
   type OutfitContext,
@@ -467,11 +469,12 @@ function normalizeRequest(value: unknown): PlanOutfitRequest | null {
 
   const data = value as Record<string, unknown>
   const context = contextValue(data.context)
+  const savedLabel = stringValue(data.label).trim()
 
   return {
     id: stringValue(data.id, crypto.randomUUID()),
     context,
-    label: stringValue(data.label, contextLabel(context)),
+    label: isDefaultOutfitContext(context) ? contextLabel(context) : savedLabel || contextLabel(context),
   }
 }
 
@@ -490,13 +493,14 @@ function normalizeItineraryOutfit(value: unknown): ItineraryOutfit | null {
 
   const data = value as Record<string, unknown>
   const context = contextValue(data.context)
+  const savedLabel = stringValue(data.label).trim()
 
   return {
     id: stringValue(data.id, crypto.randomUUID()),
     date: stringValue(data.date, todayISO()),
     location: stringValue(data.location),
     context,
-    label: stringValue(data.label, contextLabel(context)),
+    label: isDefaultOutfitContext(context) ? contextLabel(context) : savedLabel || contextLabel(context),
     weatherSummary: stringValue(data.weatherSummary),
     itemIDs: stringArray(data.itemIDs),
     itemNames: stringArray(data.itemNames),
@@ -564,7 +568,7 @@ function packingQuantityFor(item: ClothingItem, useCount: number) {
 }
 
 function contextValue(value: unknown): OutfitContext {
-  return outfitContexts.some((option) => option.value === value) ? (value as OutfitContext) : defaultContext
+  return normalizeOutfitContext(value)
 }
 
 function contextLabel(context: OutfitContext) {

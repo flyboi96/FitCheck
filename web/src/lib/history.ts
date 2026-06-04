@@ -13,6 +13,9 @@ import {
 import { db } from './firebase'
 import type { ClothingItem } from './closet'
 import {
+  isDefaultOutfitContext,
+  normalizeOutfitContext,
+  outfitContexts,
   weatherSummary,
   type OutfitContext,
   type OutfitRecommendation,
@@ -222,11 +225,14 @@ async function recalculateWearStats(userId: string) {
 }
 
 function normalizeLoggedOutfit(id: string, data: Record<string, unknown>): LoggedOutfit {
+  const context = outfitContextValue(data.context)
+  const savedLabel = stringValue(data.contextLabel).trim()
+
   return {
     id,
     name: stringValue(data.name, 'Outfit'),
-    context: outfitContextValue(data.context),
-    contextLabel: stringValue(data.contextLabel, 'Outfit'),
+    context,
+    contextLabel: isDefaultOutfitContext(context) ? contextLabel(context) : savedLabel || contextLabel(context),
     wornAt: dateValue(data.wornAt),
     weatherSummary: stringValue(data.weatherSummary),
     itemIDs: stringArrayValue(data.itemIDs),
@@ -291,7 +297,9 @@ function dateValue(value: unknown) {
 }
 
 function outfitContextValue(value: unknown): OutfitContext {
-  return ['work', 'casual', 'travel', 'dinner', 'gym'].includes(String(value))
-    ? (String(value) as OutfitContext)
-    : 'casual'
+  return normalizeOutfitContext(value)
+}
+
+function contextLabel(context: OutfitContext) {
+  return outfitContexts.find((option) => option.value === context)?.label ?? 'Outfit'
 }

@@ -47,6 +47,7 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
           VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
           VITE_FITCHECK_PROXY_URL: ${{ secrets.VITE_FITCHECK_PROXY_URL }}
+          VITE_FITCHECK_BUILD_ID: ${{ github.sha }}
         run: npm run build
 
       - name: Upload Pages artifact

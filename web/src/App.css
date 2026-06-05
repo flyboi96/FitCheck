@@ -17,6 +17,12 @@
   margin: 12px 0 18px;
 }
 
+.top-status {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: var(--muted);
@@ -74,6 +80,19 @@ h3 {
 .status-pill.warning {
   color: var(--warning);
   border-color: color-mix(in srgb, var(--warning) 28%, var(--border));
+}
+
+.status-pill.version {
+  min-height: 30px;
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.version-text {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
 }
 
 .active-panel,

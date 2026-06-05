@@ -1,9 +1,10 @@
 import { type FormEvent, useState } from 'react'
-import { RefreshCw, Save, ShieldCheck } from 'lucide-react'
+import { Eye, EyeOff, RefreshCw, Save, ShieldCheck } from 'lucide-react'
 import { getAIProxySettings, saveAIProxySettings, type AIProxySettings } from '../lib/settings'
 
 export function AIProxySettingsPanel() {
   const [settings, setSettings] = useState<AIProxySettings>(() => getAIProxySettings())
+  const [showProxyToken, setShowProxyToken] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [testStatus, setTestStatus] = useState<string | null>(null)
   const [testError, setTestError] = useState<string | null>(null)
@@ -46,13 +47,19 @@ export function AIProxySettingsPanel() {
 
       const weather = await fetch(`${baseURL}/weather-lookup`, {
         body: JSON.stringify({
-          date: new Date().toISOString().slice(0, 10),
+          date: todayISO(),
           location: 'Djibouti',
         }),
         headers,
         method: 'POST',
       })
-      const payload = (await weather.json().catch(() => ({}))) as { error?: string; location?: string }
+      const payload = (await weather.json().catch(() => ({}))) as {
+        error?: string
+        highTemperatureF?: number
+        location?: string
+        lowTemperatureF?: number
+        source?: string
+      }
 
       if (!weather.ok) {
         if (weather.status === 404) {
@@ -66,7 +73,15 @@ export function AIProxySettingsPanel() {
         throw new Error(payload.error || `Weather proxy returned HTTP ${weather.status}.`)
       }
 
-      setTestStatus(`Proxy and weather lookup work. Test location: ${payload.location || 'Djibouti'}.`)
+      const temperatureRange =
+        typeof payload.lowTemperatureF === 'number' && typeof payload.highTemperatureF === 'number'
+          ? ` Day ${payload.lowTemperatureF}-${payload.highTemperatureF}F.`
+          : ''
+      setTestStatus(
+        `Proxy and full-day weather lookup work. Test location: ${payload.location || 'Djibouti'}.${
+          temperatureRange
+        }${payload.source ? ` Source: ${payload.source}.` : ''}`,
+      )
     } catch (error) {
       setTestError(error instanceof Error ? error.message : 'Proxy test failed.')
     } finally {
@@ -101,12 +116,22 @@ export function AIProxySettingsPanel() {
 
       <label className="form-field">
         <span>Proxy Token</span>
-        <input
-          onChange={(event) => setSettings({ ...settings, proxyToken: event.target.value })}
-          placeholder="Optional FITCHECK_PROXY_TOKEN"
-          type="password"
-          value={settings.proxyToken}
-        />
+        <div className="password-row">
+          <input
+            onChange={(event) => setSettings({ ...settings, proxyToken: event.target.value })}
+            placeholder="Optional FITCHECK_PROXY_TOKEN"
+            type={showProxyToken ? 'text' : 'password'}
+            value={settings.proxyToken}
+          />
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => setShowProxyToken((current) => !current)}
+            aria-label={showProxyToken ? 'Hide proxy token' : 'Show proxy token'}
+          >
+            {showProxyToken ? <EyeOff size={20} /> : <Eye size={20} />}
+          </button>
+        </div>
       </label>
 
       {status ? <p className="success-message">{status}</p> : null}
@@ -132,6 +157,13 @@ export function AIProxySettingsPanel() {
       </div>
     </form>
   )
+}
+
+function todayISO() {
+  const now = new Date()
+  const month = `${now.getMonth() + 1}`.padStart(2, '0')
+  const day = `${now.getDate()}`.padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
 }
 
 function normalizedProxyURL(value: string) {

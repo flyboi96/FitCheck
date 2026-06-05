@@ -291,7 +291,7 @@ export function PlansPanel({
             : planDay,
         ),
       }))
-      setStatusMessage(`Weather updated for ${day.date}.`)
+      setStatusMessage(`Full-day forecast updated for ${day.date}: ${weatherSummary(nextWeather)}.`)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Weather lookup failed.')
     } finally {
@@ -309,7 +309,7 @@ export function PlansPanel({
     setErrorMessage(null)
 
     try {
-      const nextDays = []
+      const nextDays: PlanDay[] = []
 
       for (const day of effectivePlanDraft.days) {
         const nextWeather = await lookupWeatherByLocation(day.location || day.weather.location, day.date)
@@ -324,7 +324,14 @@ export function PlansPanel({
         ...effectivePlanDraft,
         days: nextDays,
       })
-      setStatusMessage('Weather updated for all plan days.')
+      const sources = [
+        ...new Set(nextDays.map((day) => day.weather.source).filter((source): source is string => Boolean(source))),
+      ]
+      setStatusMessage(
+        `Full-day forecasts updated for ${nextDays.length} day${nextDays.length === 1 ? '' : 's'}${
+          sources.length > 0 ? ` via ${sources.join(', ')}` : ''
+        }.`,
+      )
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not update all weather.')
     } finally {

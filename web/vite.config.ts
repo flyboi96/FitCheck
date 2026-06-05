@@ -3,9 +3,15 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const githubPagesBase = '/FitCheck/'
+const appVersion = process.env.npm_package_version ?? '1.4.0'
+const buildId = process.env.VITE_FITCHECK_BUILD_ID ?? process.env.GITHUB_SHA ?? 'local'
 
 export default defineConfig({
   base: githubPagesBase,
+  define: {
+    'import.meta.env.VITE_FITCHECK_APP_VERSION': JSON.stringify(appVersion),
+    'import.meta.env.VITE_FITCHECK_BUILD_ID': JSON.stringify(buildId),
+  },
   build: {
     rollupOptions: {
       output: {

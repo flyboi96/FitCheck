@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import './App.css'
 import { useAuthProfile } from './hooks/useAuthProfile'
+import { appVersionLabel } from './lib/appVersion'
 import { auth, firebaseStatus } from './lib/firebase'
 import {
   emptyUserProfileDraft,
@@ -224,6 +225,7 @@ function AuthGate() {
           <div>
             <p className="eyebrow">Personal wardrobe</p>
             <h1 id="auth-title">FitCheck</h1>
+            <p className="version-text">{appVersionLabel}</p>
           </div>
         </div>
 
@@ -317,9 +319,14 @@ function AuthenticatedShell({
           <p className="eyebrow">Personal wardrobe</p>
           <h1>FitCheck</h1>
         </div>
-        <div className="status-pill ready">
-          <CheckCircle2 size={18} />
-          <span>Signed in</span>
+        <div className="top-status">
+          <div className="status-pill ready">
+            <CheckCircle2 size={18} />
+            <span>Signed in</span>
+          </div>
+          <div className="status-pill version">
+            <span>{appVersionLabel}</span>
+          </div>
         </div>
       </section>
 

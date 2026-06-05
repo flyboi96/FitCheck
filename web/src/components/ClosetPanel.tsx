@@ -66,6 +66,7 @@ export function ClosetPanel({
   const [bulkImportText, setBulkImportText] = useState('')
   const [isBulkImporting, setIsBulkImporting] = useState(false)
   const [isClearingWardrobe, setIsClearingWardrobe] = useState(false)
+  const [isCleaningLaundry, setIsCleaningLaundry] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -119,6 +120,7 @@ export function ClosetPanel({
   }, [categoryOptions, filteredItems])
 
   const activeCount = items.filter((item) => item.status === 'active').length
+  const laundryItems = items.filter((item) => item.status === 'laundry')
   const totalQuantity = items.reduce((total, item) => total + item.quantity, 0)
   const unavailableCount = items.filter(
     (item) => item.status === 'laundry' || item.status === 'unavailable',
@@ -236,6 +238,34 @@ export function ClosetPanel({
       const message = statusError instanceof Error ? statusError.message : 'Could not update item.'
       setActionError(message)
       showAppToast(message, 'error')
+    }
+  }
+
+  async function handleMarkLaundryClean() {
+    if (laundryItems.length === 0) {
+      return
+    }
+
+    setIsCleaningLaundry(true)
+    setActionMessage(null)
+    setActionError(null)
+
+    try {
+      await Promise.all(
+        laundryItems.map((item) => updateClothingItemStatus(userId, item.id, 'active')),
+      )
+      setStatusFilter('active')
+      const message = `${laundryItems.length} laundry item${
+        laundryItems.length === 1 ? '' : 's'
+      } marked clean.`
+      setActionMessage(message)
+      showAppToast(message, 'success')
+    } catch (cleanError) {
+      const message = cleanError instanceof Error ? cleanError.message : 'Could not mark laundry clean.'
+      setActionError(message)
+      showAppToast(message, 'error')
+    } finally {
+      setIsCleaningLaundry(false)
     }
   }
 
@@ -591,6 +621,29 @@ export function ClosetPanel({
           </button>
           <button
             type="button"
+            className="secondary-button"
+            onClick={() => {
+              setStatusFilter('laundry')
+              setCategoryFilter('all')
+              setSearchTerm('')
+            }}
+          >
+            <Package size={20} aria-hidden="true" />
+            Laundry View
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={laundryItems.length === 0 || isCleaningLaundry}
+            onClick={() => {
+              void handleMarkLaundryClean()
+            }}
+          >
+            {isCleaningLaundry ? <span className="spinner small" aria-hidden="true" /> : <CheckCircle2 size={20} />}
+            Mark Laundry Clean
+          </button>
+          <button
+            type="button"
             className="danger-button"
             disabled={items.length === 0 || isClearingWardrobe}
             onClick={() => {
@@ -690,6 +743,12 @@ export function ClosetPanel({
                     void handleDelete(item)
                   }}
                   onEdit={() => openEditForm(item)}
+                  onMarkClean={() => {
+                    void handleStatusChange(item, 'active')
+                  }}
+                  onMarkLaundry={() => {
+                    void handleStatusChange(item, 'laundry')
+                  }}
                 />
               ))}
             </div>
@@ -988,11 +1047,15 @@ function ClothingItemCard({
   onArchive,
   onDelete,
   onEdit,
+  onMarkClean,
+  onMarkLaundry,
 }: {
   item: ClothingItem
   onArchive: () => void
   onDelete: () => void
   onEdit: () => void
+  onMarkClean: () => void
+  onMarkLaundry: () => void
 }) {
   const insight = clothingItemInsight(item)
   const detailParts = [
@@ -1038,6 +1101,18 @@ function ClothingItemCard({
             <Edit3 size={18} aria-hidden="true" />
             Edit
           </button>
+          {item.status === 'active' ? (
+            <button type="button" className="ghost-button" onClick={onMarkLaundry}>
+              <Package size={18} aria-hidden="true" />
+              Laundry
+            </button>
+          ) : null}
+          {item.status === 'laundry' || item.status === 'unavailable' ? (
+            <button type="button" className="ghost-button" onClick={onMarkClean}>
+              <CheckCircle2 size={18} aria-hidden="true" />
+              Clean
+            </button>
+          ) : null}
           <button type="button" className="ghost-button" onClick={onArchive}>
             <Archive size={18} aria-hidden="true" />
             {item.status === 'archived' ? 'Restore' : 'Archive'}

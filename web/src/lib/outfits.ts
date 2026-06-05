@@ -180,87 +180,184 @@ export function generateLocalOutfit({
   const availableItems = closet.filter((item) => item.status === 'active')
   const selectedItem = availableItems.find((item) => item.id === selectedItemId)
   const selectedRole = selectedItem ? itemRole(selectedItem) : null
-  const items: ClothingItem[] = []
-
-  function addItem(item: ClothingItem | null | undefined) {
-    if (item && !items.some((existingItem) => existingItem.id === item.id)) {
-      items.push(item)
-    }
-  }
-
-  if (selectedItem && selectedRole !== 'accessory') {
-    addItem(selectedItem)
-  }
+  const candidates: ClothingItem[][] = []
 
   if (isExerciseContext(context)) {
-    addItem(
-      selectedRole === 'top'
-        ? selectedItem
-        : bestItem(availableItems, 'top', context, weather, profile, selectedItemId, feedbackSignals),
-    )
-    addItem(
-      selectedRole === 'bottom'
-        ? selectedItem
-        : bestItem(availableItems, 'bottom', context, weather, profile, selectedItemId, feedbackSignals),
-    )
-    addItem(
-      selectedRole === 'shoes'
-        ? selectedItem
-        : bestItem(availableItems, 'shoes', context, weather, profile, selectedItemId, feedbackSignals),
-    )
-    addItem(bestItem(availableItems, 'socks', context, weather, profile, selectedItemId, feedbackSignals))
+    const topOptions = roleOptions({
+      context,
+      feedbackSignals,
+      items: availableItems,
+      limit: 7,
+      profile,
+      role: 'top',
+      selectedItem,
+      selectedRole,
+      weather,
+    })
+    const bottomOptions = roleOptions({
+      context,
+      feedbackSignals,
+      items: availableItems,
+      limit: 7,
+      profile,
+      role: 'bottom',
+      selectedItem,
+      selectedRole,
+      weather,
+    })
+    const shoeOptions = roleOptions({
+      context,
+      feedbackSignals,
+      items: availableItems,
+      limit: 7,
+      profile,
+      role: 'shoes',
+      selectedItem,
+      selectedRole,
+      weather,
+    })
+    const sockOptions = optionalRoleOptions({
+      context,
+      feedbackSignals,
+      items: availableItems,
+      limit: 5,
+      profile,
+      role: 'socks',
+      selectedItem,
+      selectedRole,
+      weather,
+    })
+
+    for (const top of topOptions) {
+      for (const bottom of bottomOptions) {
+        for (const shoes of shoeOptions) {
+          for (const socks of sockOptions) {
+            candidates.push(
+              candidateItems([
+                top,
+                bottom,
+                shoes,
+                socks,
+                selectedRole === 'accessory' ? selectedItem : null,
+              ]),
+            )
+          }
+        }
+      }
+    }
   } else {
-    const selectedIsFullBody = selectedRole === 'fullBody'
-    const fullBody = selectedIsFullBody
-      ? selectedItem
-      : bestItem(availableItems, 'fullBody', context, weather, profile, selectedItemId)
+    const topOptions = roleOptions({
+      context,
+      feedbackSignals,
+      items: availableItems,
+      limit: 7,
+      profile,
+      role: 'top',
+      selectedItem,
+      selectedRole,
+      weather,
+    })
+    const bottomOptions = roleOptions({
+      context,
+      feedbackSignals,
+      items: availableItems,
+      limit: 7,
+      profile,
+      role: 'bottom',
+      selectedItem,
+      selectedRole,
+      weather,
+    })
+    const shoeOptions = roleOptions({
+      context,
+      feedbackSignals,
+      items: availableItems,
+      limit: 7,
+      profile,
+      role: 'shoes',
+      selectedItem,
+      selectedRole,
+      weather,
+    })
+    const fullBodyOptions = roleOptions({
+      context,
+      feedbackSignals,
+      items: availableItems,
+      limit: 5,
+      profile,
+      role: 'fullBody',
+      selectedItem,
+      selectedRole,
+      weather,
+    })
+    const outerwearOptions = optionalRoleOptions({
+      context,
+      feedbackSignals,
+      items: availableItems,
+      limit: 4,
+      profile,
+      role: 'outerwear',
+      selectedItem,
+      selectedRole,
+      weather,
+    })
+    const beltOptions = optionalRoleOptions({
+      context,
+      feedbackSignals,
+      items: availableItems,
+      limit: 4,
+      profile,
+      role: 'belt',
+      selectedItem,
+      selectedRole,
+      weather,
+    })
 
-    if (fullBody && scoreItem(fullBody, context, weather, profile) >= 54) {
-      addItem(fullBody)
-    } else {
-      addItem(
-        selectedRole === 'top'
-          ? selectedItem
-          : bestItem(availableItems, 'top', context, weather, profile, selectedItemId, feedbackSignals),
-      )
-      addItem(
-        selectedRole === 'bottom'
-          ? selectedItem
-          : bestItem(availableItems, 'bottom', context, weather, profile, selectedItemId, feedbackSignals),
-      )
+    for (const top of topOptions) {
+      for (const bottom of bottomOptions) {
+        for (const shoes of shoeOptions) {
+          for (const outerwear of outerwearOptions) {
+            for (const belt of beltOptions) {
+              const baseItems = candidateItems([
+                top,
+                bottom,
+                shoes,
+                outerwear,
+                belt,
+                selectedRole === 'accessory' || selectedRole === 'socks' ? selectedItem : null,
+              ])
+
+              if (shouldConsiderCandidate(baseItems, selectedItem)) {
+                candidates.push(baseItems)
+              }
+            }
+          }
+        }
+      }
     }
 
-    addItem(
-      selectedRole === 'shoes'
-        ? selectedItem
-        : bestItem(availableItems, 'shoes', context, weather, profile, selectedItemId, feedbackSignals),
-    )
+    for (const fullBody of fullBodyOptions) {
+      for (const shoes of shoeOptions) {
+        for (const outerwear of outerwearOptions) {
+          for (const belt of beltOptions) {
+            const baseItems = candidateItems([
+              fullBody,
+              shoes,
+              outerwear,
+              belt,
+              selectedRole === 'accessory' || selectedRole === 'socks' ? selectedItem : null,
+            ])
 
-    const shouldAddOuterwear =
-      dayLowTemperature(weather) < 64 || weather.isRaining || /rain|storm|wind/i.test(weather.condition)
-    if (shouldAddOuterwear) {
-      addItem(bestItem(availableItems, 'outerwear', context, weather, profile, selectedItemId, feedbackSignals))
-    }
-
-    const needsBelt =
-      isWorkContext(context) ||
-      (hasCollaredTop(items) && items.some((item) => itemRole(item) === 'bottom' && hasBeltLoops(item)))
-    if (needsBelt) {
-      addItem(bestItem(availableItems, 'belt', context, weather, profile, selectedItemId, feedbackSignals))
+            if (shouldConsiderCandidate(baseItems, selectedItem)) {
+              candidates.push(baseItems)
+            }
+          }
+        }
+      }
     }
   }
 
-  if (selectedItem && selectedRole === 'accessory') {
-    addItem(selectedItem)
-  }
-
-  return scoreOutfit(items, {
-    context,
-    feedbackSignals,
-    profile,
-    source: 'local',
-    weather,
-  })
+  return bestScoredOutfit(candidates, { context, feedbackSignals, profile, weather })
 }
 
 export function scoreCustomOutfit({
@@ -747,15 +844,46 @@ function scoreOutfit(
   }
 }
 
-function bestItem(
-  items: ClothingItem[],
-  role: ItemRole,
-  context: OutfitContext,
-  weather: WeatherInput,
-  profile: UserProfile | null,
-  selectedItemId?: string,
-  feedbackSignals: FeedbackLearningSignal[] = [],
-) {
+type RoleOptionsRequest = {
+  context: OutfitContext
+  feedbackSignals: FeedbackLearningSignal[]
+  items: ClothingItem[]
+  limit: number
+  profile: UserProfile | null
+  role: ItemRole
+  selectedItem?: ClothingItem
+  selectedRole: ItemRole | null
+  weather: WeatherInput
+}
+
+function roleOptions(request: RoleOptionsRequest): Array<ClothingItem | undefined> {
+  if (request.selectedItem && request.selectedRole === request.role) {
+    return [request.selectedItem]
+  }
+
+  const rankedItems = rankedRoleCandidates(request)
+  return rankedItems.length > 0 ? rankedItems : [undefined]
+}
+
+function optionalRoleOptions(request: RoleOptionsRequest): Array<ClothingItem | undefined> {
+  if (request.selectedItem && request.selectedRole === request.role) {
+    return [request.selectedItem]
+  }
+
+  return [undefined, ...rankedRoleCandidates(request)]
+}
+
+function rankedRoleCandidates({
+  context,
+  feedbackSignals,
+  items,
+  limit,
+  profile,
+  role,
+  selectedItem,
+  weather,
+}: RoleOptionsRequest) {
+  const selectedItemId = selectedItem?.id
   const candidates = items.filter((item) => item.id !== selectedItemId && itemRole(item) === role)
   const relaxedCandidates =
     candidates.length > 0
@@ -767,7 +895,91 @@ function bestItem(
       item,
       score: scoreItem(item, context, weather, profile) + itemFeedbackAdjustment(item, context, feedbackSignals),
     }))
-    .sort((first, second) => second.score - first.score)[0]?.item
+    .sort((first, second) => second.score - first.score)
+    .slice(0, limit)
+    .map((candidate) => candidate.item)
+}
+
+function candidateItems(items: Array<ClothingItem | null | undefined>) {
+  const seenItemIDs = new Set<string>()
+  const uniqueItems: ClothingItem[] = []
+
+  items.forEach((item) => {
+    if (!item || seenItemIDs.has(item.id)) {
+      return
+    }
+
+    seenItemIDs.add(item.id)
+    uniqueItems.push(item)
+  })
+
+  return uniqueItems
+}
+
+function shouldConsiderCandidate(items: ClothingItem[], selectedItem?: ClothingItem) {
+  return !selectedItem || items.some((item) => item.id === selectedItem.id)
+}
+
+function bestScoredOutfit(
+  candidates: ClothingItem[][],
+  {
+    context,
+    feedbackSignals,
+    profile,
+    weather,
+  }: {
+    context: OutfitContext
+    feedbackSignals: FeedbackLearningSignal[]
+    profile: UserProfile | null
+    weather: WeatherInput
+  },
+) {
+  const uniqueCandidateKeys = new Set<string>()
+  let bestRecommendation: OutfitRecommendation | null = null
+
+  for (const candidate of candidates) {
+    const candidateKey = candidate.map((item) => item.id).sort().join('::')
+
+    if (uniqueCandidateKeys.has(candidateKey)) {
+      continue
+    }
+
+    uniqueCandidateKeys.add(candidateKey)
+    const recommendation = scoreOutfit(candidate, {
+      context,
+      feedbackSignals,
+      profile,
+      source: 'local',
+      weather,
+    })
+
+    if (
+      !bestRecommendation ||
+      recommendation.score > bestRecommendation.score ||
+      (recommendation.score === bestRecommendation.score &&
+        recommendation.scoreBreakdown.rawScore > bestRecommendation.scoreBreakdown.rawScore)
+    ) {
+      bestRecommendation = recommendation
+    }
+  }
+
+  if (!bestRecommendation) {
+    return scoreOutfit([], {
+      context,
+      feedbackSignals,
+      profile,
+      source: 'local',
+      weather,
+    })
+  }
+
+  return {
+    ...bestRecommendation,
+    reasons: [
+      'Local scorer compared complete outfit combinations and chose the highest final score.',
+      ...bestRecommendation.reasons,
+    ].slice(0, 6),
+  }
 }
 
 function reviewOutfitQuality(

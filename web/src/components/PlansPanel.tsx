@@ -1446,6 +1446,68 @@ function ItinerarySection({
   profile: UserProfile | null
   userId: string
 }) {
+  const [regeneratingOutfitId, setRegeneratingOutfitId] = useState<string | null>(null)
+
+  async function regenerateOutfit(outfit: Plan['itinerary'][number], lockedItemId?: string) {
+    const request = {
+      id: outfit.id,
+      context: outfit.context,
+      label: outfit.label,
+    }
+    const matchingDay =
+      plan.days.find(
+        (day) =>
+          day.date === outfit.date &&
+          (!outfit.location || day.location === outfit.location || day.weather.location === outfit.location),
+      ) ?? plan.days.find((day) => day.date === outfit.date)
+    const day: PlanDay =
+      matchingDay ??
+      ({
+        id: crypto.randomUUID(),
+        date: outfit.date,
+        location: outfit.location,
+        weather: {
+          ...defaultWeatherInput,
+          location: outfit.location,
+        },
+        requests: [request],
+      } satisfies PlanDay)
+
+    setRegeneratingOutfitId(outfit.id)
+
+    try {
+      const recommendation = await generateOutfit({
+        askAIFirst: true,
+        closet: closetItems,
+        context: outfit.context,
+        profile,
+        selectedItemId: lockedItemId || undefined,
+        userId,
+        weather: {
+          ...day.weather,
+          location: outfit.location || day.location || day.weather.location,
+        },
+      })
+      const nextOutfit = {
+        ...recommendationToItineraryOutfit({
+          day: {
+            ...day,
+            location: outfit.location || day.location,
+          },
+          recommendation,
+          request,
+        }),
+        id: outfit.id,
+      }
+      await onChange(plan.itinerary.map((entry) => (entry.id === outfit.id ? nextOutfit : entry)))
+      showAppToast('Itinerary outfit regenerated. Packing list updated.', 'success')
+    } catch (error) {
+      showAppToast(error instanceof Error ? error.message : 'Could not regenerate outfit.', 'error')
+    } finally {
+      setRegeneratingOutfitId(null)
+    }
+  }
+
   if (plan.itinerary.length === 0) {
     return (
       <div className="empty-state">
@@ -1471,8 +1533,10 @@ function ItinerarySection({
               onChange(plan.itinerary.map((entry) => (entry.id === outfit.id ? nextOutfit : entry)))
             }
             onRemove={() => onChange(plan.itinerary.filter((entry) => entry.id !== outfit.id))}
+            onRegenerate={(lockedItemId) => regenerateOutfit(outfit, lockedItemId)}
             outfit={outfit}
             profile={profile}
+            isRegenerating={regeneratingOutfitId === outfit.id}
             userId={userId}
             weather={weatherForItineraryOutfit(plan, outfit)}
           />
@@ -1505,16 +1569,20 @@ function weatherForItineraryOutfit(plan: Plan, outfit: Plan['itinerary'][number]
 
 function EditableItineraryCard({
   closetItems,
+  isRegenerating,
   onChange,
   onRemove,
+  onRegenerate,
   outfit,
   profile,
   userId,
   weather,
 }: {
   closetItems: ClothingItem[]
+  isRegenerating: boolean
   onChange: (outfit: Plan['itinerary'][number]) => Promise<void> | void
   onRemove: () => void
+  onRegenerate: (lockedItemId?: string) => Promise<void> | void
   outfit: Plan['itinerary'][number]
   profile: UserProfile | null
   userId: string
@@ -1525,6 +1593,7 @@ function EditableItineraryCard({
   const [location, setLocation] = useState(outfit.location)
   const [label, setLabel] = useState(outfit.label)
   const [selectedItemIDs, setSelectedItemIDs] = useState(outfit.itemIDs)
+  const [lockedRegenerationItemId, setLockedRegenerationItemId] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
   const [editMessage, setEditMessage] = useState<string | null>(null)
   const [isSavingOutfit, setIsSavingOutfit] = useState(false)
@@ -1728,12 +1797,37 @@ function EditableItineraryCard({
             selectionMode="multiple"
           />
         </label>
+        <label className="form-field compact">
+          <span>Lock Item When Regenerating</span>
+          <select
+            onChange={(event) => setLockedRegenerationItemId(event.target.value)}
+            value={lockedRegenerationItemId}
+          >
+            <option value="">No locked item</option>
+            {selectedItems.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
         {editMessage ? <p className="success-message">{editMessage}</p> : null}
         {editError ? <p className="error-message">{editError}</p> : null}
         <div className="generation-actions">
           <button type="button" className="danger-button" onClick={onRemove}>
             <Trash2 size={18} aria-hidden="true" />
             Remove Outfit
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={isRegenerating}
+            onClick={() => {
+              void onRegenerate(lockedRegenerationItemId || undefined)
+            }}
+          >
+            {isRegenerating ? <span className="spinner small" aria-hidden="true" /> : <Sparkles size={20} aria-hidden="true" />}
+            Regenerate
           </button>
           <button type="button" className="secondary-button" disabled={isSavingOutfit} onClick={() => {
             void saveEdits()

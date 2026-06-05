@@ -9,6 +9,7 @@ import { contextOptionsFromSettings, contextStylesPrompt, loadContextStyles } fr
 import {
   defaultContextDescription,
   defaultContextLabel,
+  normalizeOutfitContext,
   outfitContexts,
   type OutfitContext,
   type OutfitContextOption,
@@ -25,6 +26,16 @@ export {
 } from './outfitContextCatalog'
 export type OutfitSource = 'ai' | 'local'
 export type OutfitFeedbackType = 'liked' | 'rejected' | 'issue'
+export type FeedbackSignalType = 'liked_combo' | 'rejected_combo' | 'issue_combo'
+
+export type FeedbackLearningSignal = {
+  type: FeedbackSignalType
+  context: OutfitContext
+  itemIDs: string[]
+  itemPairKeys: string[]
+  note: string
+  createdAt: number
+}
 
 export type WeatherInput = {
   location: string
@@ -52,6 +63,7 @@ export type OutfitRecommendation = {
 export type OutfitGenerationRequest = {
   closet: ClothingItem[]
   context: OutfitContext
+  feedbackSignals?: FeedbackLearningSignal[]
   weather: WeatherInput
   profile: UserProfile | null
   userId: string
@@ -106,14 +118,19 @@ export const defaultWeatherInput: WeatherInput = {
 export async function generateOutfit(
   request: OutfitGenerationRequest,
 ): Promise<OutfitRecommendation> {
-  const localRecommendation = generateLocalOutfit(request)
+  const feedbackSignals = request.feedbackSignals ?? (await loadFeedbackLearningSignals(request.userId))
+  const requestWithSignals = {
+    ...request,
+    feedbackSignals,
+  }
+  const localRecommendation = generateLocalOutfit(requestWithSignals)
 
   if (!request.askAIFirst) {
     return localRecommendation
   }
 
   try {
-    const aiRecommendation = await requestAIOutfit(request)
+    const aiRecommendation = await requestAIOutfit(requestWithSignals)
     return aiRecommendation.items.length > 0 ? aiRecommendation : localRecommendation
   } catch (error) {
     return {
@@ -130,6 +147,7 @@ export async function generateOutfit(
 export function generateLocalOutfit({
   closet,
   context,
+  feedbackSignals = [],
   profile,
   selectedItemId,
   weather,
@@ -153,19 +171,19 @@ export function generateLocalOutfit({
     addItem(
       selectedRole === 'top'
         ? selectedItem
-        : bestItem(availableItems, 'top', context, weather, profile, selectedItemId),
+        : bestItem(availableItems, 'top', context, weather, profile, selectedItemId, feedbackSignals),
     )
     addItem(
       selectedRole === 'bottom'
         ? selectedItem
-        : bestItem(availableItems, 'bottom', context, weather, profile, selectedItemId),
+        : bestItem(availableItems, 'bottom', context, weather, profile, selectedItemId, feedbackSignals),
     )
     addItem(
       selectedRole === 'shoes'
         ? selectedItem
-        : bestItem(availableItems, 'shoes', context, weather, profile, selectedItemId),
+        : bestItem(availableItems, 'shoes', context, weather, profile, selectedItemId, feedbackSignals),
     )
-    addItem(bestItem(availableItems, 'socks', context, weather, profile, selectedItemId))
+    addItem(bestItem(availableItems, 'socks', context, weather, profile, selectedItemId, feedbackSignals))
   } else {
     const selectedIsFullBody = selectedRole === 'fullBody'
     const fullBody = selectedIsFullBody
@@ -178,32 +196,32 @@ export function generateLocalOutfit({
       addItem(
         selectedRole === 'top'
           ? selectedItem
-          : bestItem(availableItems, 'top', context, weather, profile, selectedItemId),
+          : bestItem(availableItems, 'top', context, weather, profile, selectedItemId, feedbackSignals),
       )
       addItem(
         selectedRole === 'bottom'
           ? selectedItem
-          : bestItem(availableItems, 'bottom', context, weather, profile, selectedItemId),
+          : bestItem(availableItems, 'bottom', context, weather, profile, selectedItemId, feedbackSignals),
       )
     }
 
     addItem(
       selectedRole === 'shoes'
         ? selectedItem
-        : bestItem(availableItems, 'shoes', context, weather, profile, selectedItemId),
+        : bestItem(availableItems, 'shoes', context, weather, profile, selectedItemId, feedbackSignals),
     )
 
     const shouldAddOuterwear =
       dayLowTemperature(weather) < 64 || weather.isRaining || /rain|storm|wind/i.test(weather.condition)
     if (shouldAddOuterwear) {
-      addItem(bestItem(availableItems, 'outerwear', context, weather, profile, selectedItemId))
+      addItem(bestItem(availableItems, 'outerwear', context, weather, profile, selectedItemId, feedbackSignals))
     }
 
     const needsBelt =
       isWorkContext(context) ||
       (hasCollaredTop(items) && items.some((item) => itemRole(item) === 'bottom' && hasBeltLoops(item)))
     if (needsBelt) {
-      addItem(bestItem(availableItems, 'belt', context, weather, profile, selectedItemId))
+      addItem(bestItem(availableItems, 'belt', context, weather, profile, selectedItemId, feedbackSignals))
     }
   }
 
@@ -213,6 +231,7 @@ export function generateLocalOutfit({
 
   return scoreOutfit(items, {
     context,
+    feedbackSignals,
     profile,
     source: 'local',
     weather,
@@ -269,6 +288,19 @@ export async function saveOutfitFeedback({
     score: recommendation.score,
     source: recommendation.source,
     rationale: recommendation.rationale,
+    createdAt: serverTimestamp(),
+  })
+
+  await addDoc(collection(db, 'users', userId, 'feedbackSignals'), {
+    type: feedbackSignalType(feedback),
+    note: note.trim(),
+    context,
+    weatherSummary: weatherSummary(weather),
+    itemIDs: recommendation.items.map((item) => item.id),
+    itemNames: recommendation.items.map((item) => item.name),
+    itemPairKeys: itemPairKeys(recommendation.items.map((item) => item.id)),
+    score: recommendation.score,
+    source: recommendation.source,
     createdAt: serverTimestamp(),
   })
 }
@@ -369,19 +401,25 @@ async function requestAIOutfit(request: OutfitGenerationRequest): Promise<Outfit
     )
     .filter((item): item is ClothingItem => Boolean(item))
 
-  const scored = scoreOutfit(items, {
+  const completedItems = completeOutfitWithLocalFallback(items, localCandidate.items, request.context)
+  const scored = scoreOutfit(completedItems, {
     context: request.context,
+    feedbackSignals: request.feedbackSignals ?? [],
     profile: request.profile,
     source: 'ai',
     weather: request.weather,
   })
+  const repairCautions =
+    completedItems.length > items.length
+      ? ['AI omitted a required role, so FitCheck completed the outfit with local scorer picks.']
+      : []
 
   return {
     ...scored,
     rationale: String(data.rationale ?? 'AI selected this from your closet.'),
     cautions: Array.isArray(data.cautions)
-      ? data.cautions.map(String).slice(0, 5)
-      : scored.cautions,
+      ? [...repairCautions, ...data.cautions.map(String), ...scored.cautions].slice(0, 5)
+      : [...repairCautions, ...scored.cautions].slice(0, 5),
   }
 }
 
@@ -412,15 +450,68 @@ async function loadRecentFeedback(userId: string) {
     .map((feedback) => feedback.text)
 }
 
+async function loadFeedbackLearningSignals(userId: string): Promise<FeedbackLearningSignal[]> {
+  if (!db) {
+    return []
+  }
+
+  const snapshot = await getDocs(collection(db, 'users', userId, 'feedbackSignals'))
+  return snapshot.docs
+    .map((feedbackSnapshot) => {
+      const data = feedbackSnapshot.data()
+      const createdAt = data.createdAt as { toMillis?: () => number } | undefined
+      return {
+        type: feedbackSignalType(data.type),
+        context: normalizeOutfitContext(data.context),
+        itemIDs: stringArray(data.itemIDs),
+        itemPairKeys: stringArray(data.itemPairKeys),
+        note: typeof data.note === 'string' ? data.note : '',
+        createdAt: createdAt?.toMillis?.() ?? 0,
+      }
+    })
+    .sort((first, second) => second.createdAt - first.createdAt)
+    .slice(0, 80)
+}
+
+function feedbackSignalType(value: unknown): FeedbackSignalType {
+  if (value === 'liked') return 'liked_combo'
+  if (value === 'rejected') return 'rejected_combo'
+  if (value === 'issue') return 'issue_combo'
+  if (value === 'liked_combo' || value === 'rejected_combo' || value === 'issue_combo') {
+    return value
+  }
+
+  return 'issue_combo'
+}
+
+function itemPairKeys(itemIDs: string[]) {
+  const uniqueIDs = [...new Set(itemIDs)].sort()
+  const keys: string[] = []
+
+  for (let firstIndex = 0; firstIndex < uniqueIDs.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < uniqueIDs.length; secondIndex += 1) {
+      keys.push(`${uniqueIDs[firstIndex]}::${uniqueIDs[secondIndex]}`)
+    }
+  }
+
+  return keys
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : []
+}
+
 function scoreOutfit(
   items: ClothingItem[],
   {
     context,
+    feedbackSignals = [],
     profile,
     source,
     weather,
   }: {
     context: OutfitContext
+    feedbackSignals?: FeedbackLearningSignal[]
     profile: UserProfile | null
     source: OutfitSource
     weather: WeatherInput
@@ -549,6 +640,16 @@ function scoreOutfit(
     reasons.push('Includes a rain-friendly item.')
   }
 
+  const qualityReview = reviewOutfitQuality(items, { context, profile, weather })
+  score += qualityReview.scoreAdjustment
+  reasons.push(...qualityReview.reasons)
+  cautions.push(...qualityReview.cautions)
+
+  const feedbackReview = reviewFeedbackSignals(items, context, feedbackSignals)
+  score += feedbackReview.scoreAdjustment
+  reasons.push(...feedbackReview.reasons)
+  cautions.push(...feedbackReview.cautions)
+
   const boundedScore = Math.max(0, Math.min(100, Math.round(score)))
   const uniqueReasons = [...new Set(reasons)].slice(0, 6)
   const uniqueCautions = [...new Set(cautions)].slice(0, 5)
@@ -575,6 +676,7 @@ function bestItem(
   weather: WeatherInput,
   profile: UserProfile | null,
   selectedItemId?: string,
+  feedbackSignals: FeedbackLearningSignal[] = [],
 ) {
   const candidates = items.filter((item) => item.id !== selectedItemId && itemRole(item) === role)
   const relaxedCandidates =
@@ -583,8 +685,216 @@ function bestItem(
       : items.filter((item) => item.id !== selectedItemId && relaxedRole(item, role, context))
 
   return relaxedCandidates
-    .map((item) => ({ item, score: scoreItem(item, context, weather, profile) }))
+    .map((item) => ({
+      item,
+      score: scoreItem(item, context, weather, profile) + itemFeedbackAdjustment(item, context, feedbackSignals),
+    }))
     .sort((first, second) => second.score - first.score)[0]?.item
+}
+
+function reviewOutfitQuality(
+  items: ClothingItem[],
+  {
+    context,
+    profile,
+    weather,
+  }: {
+    context: OutfitContext
+    profile: UserProfile | null
+    weather: WeatherInput
+  },
+) {
+  const reasons: string[] = []
+  const cautions: string[] = []
+  let scoreAdjustment = 0
+  const roles = items.map(itemRole)
+  const hasTop = roles.includes('top')
+  const hasBottom = roles.includes('bottom')
+  const hasFullBody = roles.includes('fullBody')
+  const hasShoes = roles.includes('shoes')
+  const hasCoreOutfit = ((hasTop && hasBottom) || hasFullBody) && hasShoes
+
+  if (items.length === 0) {
+    return {
+      scoreAdjustment: -60,
+      reasons,
+      cautions: ['Quality review failed: no closet items were selected.'],
+    }
+  }
+
+  if (isExerciseContext(context)) {
+    if (hasTop && hasBottom && hasShoes) {
+      scoreAdjustment += 10
+      reasons.push('Quality review passed: workout top, bottom, and shoes are present.')
+    } else {
+      scoreAdjustment -= 26
+      cautions.push('Quality review: workout outfits need a top, bottom, and training shoes.')
+    }
+  } else if (hasCoreOutfit) {
+    scoreAdjustment += 10
+    reasons.push('Quality review passed: top/bottom or dress plus shoes are present.')
+  } else {
+    scoreAdjustment -= 30
+    cautions.push('Quality review: outfit is missing a required clothing role.')
+  }
+
+  if (isWorkContext(context) && items.some(isCasualOnlyFootwear)) {
+    scoreAdjustment -= 22
+    cautions.push('Quality review: casual-only footwear should not be used for work.')
+  }
+
+  if (isWorkContext(context) && items.some(isSweatsOrJoggers)) {
+    scoreAdjustment -= 26
+    cautions.push('Quality review: sweatpants and joggers are not acceptable for work.')
+  }
+
+  if (isExerciseContext(context) && items.some((item) => item.category === 'belt')) {
+    scoreAdjustment -= 24
+    cautions.push('Quality review: belts do not belong in workout outfits.')
+  }
+
+  if (dayHighTemperature(weather) >= 84 && weather.humidityPercent >= 55 && items.some(isInsulatingLayer)) {
+    scoreAdjustment -= 18
+    cautions.push('Quality review: hot, humid weather should avoid insulating layers.')
+  }
+
+  if ((weather.isRaining || /storm|rain/i.test(weather.condition)) && !items.some(isRainFriendly)) {
+    cautions.push('Weather review: rain or storms are possible, but no rain-specific item is included.')
+  }
+
+  const personalReview = reviewPersonalRules(items, profile)
+  scoreAdjustment += personalReview.scoreAdjustment
+  cautions.push(...personalReview.cautions)
+
+  return {
+    scoreAdjustment,
+    reasons,
+    cautions,
+  }
+}
+
+function reviewFeedbackSignals(
+  items: ClothingItem[],
+  context: OutfitContext,
+  feedbackSignals: FeedbackLearningSignal[],
+) {
+  const reasons: string[] = []
+  const cautions: string[] = []
+  let scoreAdjustment = 0
+  const itemIDs = items.map((item) => item.id)
+  const currentPairKeys = itemPairKeys(itemIDs)
+
+  for (const signal of feedbackSignals) {
+    if (signal.context !== context) {
+      continue
+    }
+
+    const hasExactCombo =
+      signal.itemIDs.length > 0 && signal.itemIDs.every((itemID) => itemIDs.includes(itemID))
+    const hasPairMatch = signal.itemPairKeys.some((pairKey) => currentPairKeys.includes(pairKey))
+
+    if (signal.type === 'liked_combo' && (hasExactCombo || hasPairMatch)) {
+      scoreAdjustment += hasExactCombo ? 12 : 5
+      reasons.push('Learns from feedback: similar combo was liked before.')
+    }
+
+    if (signal.type !== 'liked_combo' && (hasExactCombo || hasPairMatch)) {
+      scoreAdjustment -= hasExactCombo ? 18 : 8
+      cautions.push('Learns from feedback: similar combo was previously rejected or flagged.')
+    }
+  }
+
+  return {
+    scoreAdjustment,
+    reasons,
+    cautions,
+  }
+}
+
+function itemFeedbackAdjustment(
+  item: ClothingItem,
+  context: OutfitContext,
+  feedbackSignals: FeedbackLearningSignal[],
+) {
+  return feedbackSignals.reduce((adjustment, signal) => {
+    if (signal.context !== context || !signal.itemIDs.includes(item.id)) {
+      return adjustment
+    }
+
+    if (signal.type === 'liked_combo') {
+      return adjustment + 2
+    }
+
+    return adjustment - 4
+  }, 0)
+}
+
+function reviewPersonalRules(items: ClothingItem[], profile: UserProfile | null) {
+  const text = [profile?.rules, profile?.dislikedCombinations].filter(Boolean).join('\n').toLowerCase()
+  const cautions: string[] = []
+  let scoreAdjustment = 0
+
+  if (!text) {
+    return { scoreAdjustment, cautions }
+  }
+
+  if (/collared|collar|button/.test(text) && /belt/.test(text) && hasCollaredTop(items)) {
+    const needsBelt = items.some((item) => itemRole(item) === 'bottom' && hasBeltLoops(item))
+    const hasBelt = items.some((item) => item.category === 'belt')
+    if (needsBelt && !hasBelt) {
+      scoreAdjustment -= 16
+      cautions.push('Personal rule review: collared shirt outfit needs a belt.')
+    }
+  }
+
+  if (/shorts?.*boots?|boots?.*shorts?/.test(text) && items.some(isShorts) && items.some(isBoots)) {
+    scoreAdjustment -= 24
+    cautions.push('Personal rule review: shorts with boots is blocked by your style rules.')
+  }
+
+  if (/no shorts.*work|work.*no shorts/.test(text) && items.some(isShorts)) {
+    scoreAdjustment -= 20
+    cautions.push('Personal rule review: your work rules reject shorts.')
+  }
+
+  return { scoreAdjustment, cautions }
+}
+
+function completeOutfitWithLocalFallback(
+  aiItems: ClothingItem[],
+  localItems: ClothingItem[],
+  context: OutfitContext,
+) {
+  const completedItems = [...aiItems]
+
+  function addRole(role: ItemRole) {
+    if (!completedItems.some((item) => itemRole(item) === role)) {
+      const fallback = localItems.find((item) => itemRole(item) === role)
+      if (fallback && !completedItems.some((item) => item.id === fallback.id)) {
+        completedItems.push(fallback)
+      }
+    }
+  }
+
+  if (isExerciseContext(context)) {
+    addRole('top')
+    addRole('bottom')
+    addRole('shoes')
+    addRole('socks')
+    return completedItems
+  }
+
+  if (!completedItems.some((item) => itemRole(item) === 'fullBody')) {
+    addRole('top')
+    addRole('bottom')
+  }
+  addRole('shoes')
+
+  if (hasCollaredTop(completedItems)) {
+    addRole('belt')
+  }
+
+  return completedItems
 }
 
 function scoreItem(
@@ -842,6 +1152,10 @@ function isHeatFriendly(item: ClothingItem) {
 
 function isRainFriendly(item: ClothingItem) {
   return /rain|shell|waterproof|water resistant|gore-tex|storm/.test(itemText(item))
+}
+
+function isInsulatingLayer(item: ClothingItem) {
+  return /fleece|heavy|insulated|down|wool sweater|thick|parka/.test(itemText(item))
 }
 
 function isShorts(item: ClothingItem) {

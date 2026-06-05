@@ -32,12 +32,17 @@ import {
   type ClothingItemDraft,
   type ClothingStatus,
 } from '../lib/closet'
+import {
+  closetSetupTasks,
+  clothingItemInsight,
+  starterClosetImportTemplate,
+} from '../lib/closetIntelligence'
 import { describeClothingPhoto } from '../lib/photoImport'
 import type { WearerProfile } from '../lib/profile'
 
 type StatusFilter = 'all' | ClothingStatus
 type CategoryFilter = 'all' | ClothingCategory
-type ClosetView = 'list' | 'form' | 'import' | 'bulk'
+type ClosetView = 'list' | 'form' | 'import' | 'bulk' | 'guided'
 
 export function ClosetPanel({
   userId,
@@ -118,6 +123,7 @@ export function ClosetPanel({
   const unavailableCount = items.filter(
     (item) => item.status === 'laundry' || item.status === 'unavailable',
   ).length
+  const setupTasks = useMemo(() => closetSetupTasks(items), [items])
 
   function openNewItemForm() {
     setDraft({
@@ -180,6 +186,20 @@ export function ClosetPanel({
     setBulkImportText('')
     setActionMessage(null)
     setActionError(null)
+  }
+
+  function openGuidedSetup() {
+    setClosetView('guided')
+    setActionMessage(null)
+    setActionError(null)
+  }
+
+  function openStarterBulkImport() {
+    setBulkImportText(starterClosetImportTemplate(wearerProfile))
+    setClosetView('bulk')
+    setActionMessage('Starter template loaded. Edit the list before importing.')
+    setActionError(null)
+    showAppToast('Starter template loaded.', 'success')
   }
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -468,6 +488,61 @@ export function ClosetPanel({
     )
   }
 
+  if (closetView === 'guided') {
+    return (
+      <div className="closet-panel" {...swipeBackHandlers}>
+        <ClosetSubpageHeader onBack={backFromClosetView} subtitle="Closet" title="Guided Setup" />
+        {statusBlock}
+        <section className="photo-import-card">
+          <div className="section-title">
+            <Shirt size={20} aria-hidden="true" />
+            <div>
+              <p className="eyebrow">Closet intake</p>
+              <h2>Build a useful wardrobe database</h2>
+            </div>
+          </div>
+          <p className="helper-text">
+            Add the pieces that affect outfit decisions first. FitCheck can work with a small closet
+            if the core roles, workout gear, and weather layers are represented.
+          </p>
+          <div className="setup-step-list">
+            {setupTasks.map((task) => (
+              <article className="setup-step readonly" key={task.id}>
+                <span className={task.done ? 'setup-step-status done' : 'setup-step-status'}>
+                  {task.done ? <CheckCircle2 size={20} /> : <Package size={20} />}
+                </span>
+                <span className="menu-row-content">
+                  <strong>{task.title}</strong>
+                  <span>{task.description}</span>
+                </span>
+                <span className="quantity-chip">{task.done ? 'Covered' : `${task.count} saved`}</span>
+              </article>
+            ))}
+          </div>
+          <details className="nested-details">
+            <summary>Fastest first-time import</summary>
+            <ol>
+              <li>Tap Load Starter Template.</li>
+              <li>Delete anything you do not own.</li>
+              <li>Rename the examples to your real items.</li>
+              <li>Import, then use Photo Import for items that need better descriptions.</li>
+            </ol>
+          </details>
+          <div className="generation-actions sticky-action-bar">
+            <button type="button" className="secondary-button" onClick={openPhotoImport}>
+              <Camera size={20} aria-hidden="true" />
+              Photo Import
+            </button>
+            <button type="button" className="primary-button" onClick={openStarterBulkImport}>
+              <Package size={20} aria-hidden="true" />
+              Load Starter Template
+            </button>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="closet-panel" {...swipeBackHandlers}>
       <div className="summary-grid" aria-label="Closet summary">
@@ -490,6 +565,10 @@ export function ClosetPanel({
           <button type="button" className="primary-button" onClick={openNewItemForm}>
             <Plus size={20} aria-hidden="true" />
             Add Item
+          </button>
+          <button type="button" className="secondary-button" onClick={openGuidedSetup}>
+            <Shirt size={20} aria-hidden="true" />
+            Guided Setup
           </button>
           <button type="button" className="secondary-button" onClick={openBulkImport}>
             <Package size={20} aria-hidden="true" />
@@ -570,6 +649,10 @@ export function ClosetPanel({
           <Shirt size={24} aria-hidden="true" />
           <h3>Start your closet</h3>
           <p>Add the clothes you actually own. This becomes the source for outfit planning.</p>
+          <button type="button" className="secondary-button" onClick={openGuidedSetup}>
+            <Shirt size={20} aria-hidden="true" />
+            Start Guided Setup
+          </button>
         </div>
       ) : null}
 
@@ -900,6 +983,7 @@ function ClothingItemCard({
   onDelete: () => void
   onEdit: () => void
 }) {
+  const insight = clothingItemInsight(item)
   const detailParts = [
     categoryLabel(item.category),
     item.brand || null,
@@ -923,6 +1007,15 @@ function ClothingItemCard({
         </div>
 
         {item.notes ? <p className="item-notes">{item.notes}</p> : null}
+
+        <div className="item-intelligence">
+          <span>Best for: {insight.bestContexts.slice(0, 3).join(', ')}</span>
+          <span>{insight.weatherUse}</span>
+          <span>{insight.rewearGuidance}</span>
+          {insight.metadataPrompts.length > 0 ? (
+            <span>Improve: {insight.metadataPrompts.join(', ')}</span>
+          ) : null}
+        </div>
 
         <div className="item-footer">
           <span className={`status-chip ${item.status}`}>{statusLabel(item.status)}</span>

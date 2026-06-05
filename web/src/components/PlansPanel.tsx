@@ -69,6 +69,7 @@ import {
   generateOutfit,
   scoreCustomOutfit,
   weatherSummary,
+  type OutfitGenerationMode,
   type OutfitContext,
   type OutfitContextOption,
   type OutfitRecommendation,
@@ -241,7 +242,7 @@ export function PlansPanel({
     }
   }
 
-  async function handleGenerateItinerary(askAIFirst: boolean) {
+  async function handleGenerateItinerary(generationMode: OutfitGenerationMode) {
     if (!selectedPlan || !effectivePlanDraft) {
       return
     }
@@ -249,7 +250,7 @@ export function PlansPanel({
     setIsGenerating(true)
     setStatusMessage(null)
     setErrorMessage(null)
-    showAppToast(askAIFirst ? 'Generating AI itinerary...' : 'Generating local itinerary...', 'info')
+    showAppToast(generationMode === 'ai' ? 'Generating AI itinerary...' : 'Generating local itinerary...', 'info')
 
     try {
       await savePlan(userId, selectedPlan.id, effectivePlanDraft)
@@ -277,9 +278,9 @@ export function PlansPanel({
             usageByItemID,
           })
           const recommendation = await generateOutfit({
-            askAIFirst,
             closet: eligibleCloset,
             context: request.context,
+            generationMode,
             profile,
             userId,
             weather: {
@@ -708,10 +709,10 @@ export function PlansPanel({
           onBulkLocationChange={setBulkLocation}
           onChange={setPlanDraft}
           onGenerateAI={() => {
-            void handleGenerateItinerary(true)
+            void handleGenerateItinerary('ai')
           }}
           onGenerateLocal={() => {
-            void handleGenerateItinerary(false)
+            void handleGenerateItinerary('local')
           }}
           onLookupAllWeather={() => {
             void lookupWeatherForAllDays()
@@ -1628,9 +1629,9 @@ function ItinerarySection({
 
     try {
       const recommendation = await generateOutfit({
-        askAIFirst: true,
         closet: closetItems,
         context: outfit.context,
+        generationMode: 'ai',
         profile,
         selectedItemId: lockedItemId || undefined,
         userId,

@@ -47,6 +47,7 @@ import {
   weatherSummary,
   type OutfitContext,
   type OutfitFeedbackType,
+  type OutfitGenerationMode,
   type OutfitRecommendation,
   type WeatherInput,
 } from '../lib/outfits'
@@ -127,20 +128,20 @@ export function OutfitExperiencePanel({
     }
   }, [mode])
 
-  async function handleGenerate(askAIFirst: boolean) {
+  async function handleGenerate(generationMode: OutfitGenerationMode) {
     setIsGenerating(true)
     setGenerationError(null)
     setFeedbackMessage(null)
     setFeedbackError(null)
     setWearLogMessage(null)
     setWearLogError(null)
-    showAppToast(askAIFirst ? 'Asking AI for an outfit...' : 'Generating a local outfit...', 'info')
+    showAppToast(generationMode === 'ai' ? 'Asking AI for an outfit...' : 'Generating a local outfit...', 'info')
 
     try {
       const nextRecommendation = await generateOutfit({
-        askAIFirst,
         closet: items,
         context: effectiveContext,
+        generationMode,
         profile,
         selectedItemId: mode === 'build' ? selectedItemId || undefined : undefined,
         userId,
@@ -462,7 +463,7 @@ export function OutfitExperiencePanel({
             className="primary-button"
             disabled={isGenerating || activeItems.length === 0}
             onClick={() => {
-              void handleGenerate(true)
+              void handleGenerate('ai')
             }}
           >
             {isGenerating ? <span className="spinner small" aria-hidden="true" /> : <Sparkles size={20} />}
@@ -474,7 +475,7 @@ export function OutfitExperiencePanel({
             className="secondary-button"
             disabled={isGenerating || activeItems.length === 0}
             onClick={() => {
-              void handleGenerate(false)
+              void handleGenerate('local')
             }}
           >
             <Wand2 size={20} aria-hidden="true" />

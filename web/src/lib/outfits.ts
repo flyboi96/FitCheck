@@ -25,6 +25,7 @@ export {
   type OutfitContextOption,
 } from './outfitContextCatalog'
 export type OutfitSource = 'ai' | 'local'
+export type OutfitGenerationMode = 'local' | 'ai' | 'aiWithFallback'
 export type OutfitFeedbackType = 'liked' | 'rejected' | 'issue'
 export type FeedbackSignalType = 'liked_combo' | 'rejected_combo' | 'issue_combo'
 
@@ -93,7 +94,7 @@ export type OutfitGenerationRequest = {
   profile: UserProfile | null
   userId: string
   selectedItemId?: string
-  askAIFirst: boolean
+  generationMode?: OutfitGenerationMode
 }
 
 type ItemRole = 'top' | 'bottom' | 'fullBody' | 'shoes' | 'outerwear' | 'belt' | 'socks' | 'accessory'
@@ -143,21 +144,30 @@ export const defaultWeatherInput: WeatherInput = {
 export async function generateOutfit(
   request: OutfitGenerationRequest,
 ): Promise<OutfitRecommendation> {
+  const generationMode = outfitGenerationMode(request)
   const feedbackSignals = request.feedbackSignals ?? (await loadFeedbackLearningSignals(request.userId))
   const requestWithSignals = {
     ...request,
     feedbackSignals,
   }
-  const localRecommendation = generateLocalOutfit(requestWithSignals)
 
-  if (!request.askAIFirst) {
-    return localRecommendation
+  if (generationMode === 'local') {
+    return generateLocalOutfit(requestWithSignals)
   }
 
+  const localRecommendation = generateLocalOutfit(requestWithSignals)
+
   try {
-    const aiRecommendation = await requestAIOutfit(requestWithSignals)
-    return aiRecommendation.items.length > 0 ? aiRecommendation : localRecommendation
+    const aiRecommendation = await requestAIOutfit(requestWithSignals, localRecommendation, {
+      allowLocalCompletion: generationMode === 'aiWithFallback',
+    })
+    return aiRecommendation
   } catch (error) {
+    if (generationMode === 'ai') {
+      const message = error instanceof Error ? error.message : 'AI proxy request failed.'
+      throw new Error(`AI outfit generation failed: ${message}`, { cause: error })
+    }
+
     return {
       ...localRecommendation,
       rationale: 'AI was unavailable, so FitCheck used the local closet scorer.',
@@ -167,6 +177,10 @@ export async function generateOutfit(
       ].slice(0, 5),
     }
   }
+}
+
+function outfitGenerationMode(request: OutfitGenerationRequest): OutfitGenerationMode {
+  return request.generationMode ?? 'local'
 }
 
 export function generateLocalOutfit({
@@ -448,7 +462,15 @@ function temperatureRangeLabel(weather: WeatherInput) {
   return low === high ? `${high}F` : `${low}-${high}F`
 }
 
-async function requestAIOutfit(request: OutfitGenerationRequest): Promise<OutfitRecommendation> {
+async function requestAIOutfit(
+  request: OutfitGenerationRequest,
+  localCandidate: OutfitRecommendation,
+  {
+    allowLocalCompletion,
+  }: {
+    allowLocalCompletion: boolean
+  },
+): Promise<OutfitRecommendation> {
   const settings = getAIProxySettings()
   const baseURL = settings.proxyUrl.trim().replace(/\/+$/, '')
 
@@ -458,7 +480,6 @@ async function requestAIOutfit(request: OutfitGenerationRequest): Promise<Outfit
 
   const recentFeedback = await loadRecentFeedback(request.userId)
   const contextStyles = await loadContextStyles(request.userId)
-  const localCandidate = generateLocalOutfit({ ...request, askAIFirst: false })
   const selectedContext = contextDetails(request.context, contextOptionsFromSettings(contextStyles))
 
   const response = await fetch(`${baseURL}/outfit-recommendation`, {
@@ -523,7 +544,17 @@ async function requestAIOutfit(request: OutfitGenerationRequest): Promise<Outfit
     )
     .filter((item): item is ClothingItem => Boolean(item))
 
-  const completedItems = completeOutfitWithLocalFallback(items, localCandidate.items, request.context)
+  if (items.length === 0) {
+    throw new Error('AI did not return any active closet items.')
+  }
+
+  if (!allowLocalCompletion && !hasRequiredCoreRoles(items, request.context)) {
+    throw new Error('AI returned an incomplete outfit. Try again or use Local Itinerary.')
+  }
+
+  const completedItems = allowLocalCompletion
+    ? completeOutfitWithLocalFallback(items, localCandidate.items, request.context)
+    : items
   const scored = scoreOutfit(completedItems, {
     context: request.context,
     feedbackSignals: request.feedbackSignals ?? [],
@@ -1088,6 +1119,20 @@ function reviewOutfitQuality(
     reasons,
     cautions,
   }
+}
+
+function hasRequiredCoreRoles(items: ClothingItem[], context: OutfitContext) {
+  const roles = items.map(itemRole)
+  const hasTop = roles.includes('top')
+  const hasBottom = roles.includes('bottom')
+  const hasFullBody = roles.includes('fullBody')
+  const hasShoes = roles.includes('shoes')
+
+  if (isExerciseContext(context)) {
+    return hasTop && hasBottom && hasShoes
+  }
+
+  return ((hasTop && hasBottom) || hasFullBody) && hasShoes
 }
 
 function reviewFeedbackSignals(

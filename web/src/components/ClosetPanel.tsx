@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import { useClosetItems } from '../hooks/useClosetItems'
+import { useSwipeBack } from '../hooks/useSwipeBack'
 import { showAppToast } from '../lib/appToasts'
 import {
   categoryLabel,
@@ -152,6 +153,19 @@ export function ClosetPanel({
     setEditingItemId(null)
     setDraft(defaultClothingItemDraft)
   }
+
+  function backFromClosetView() {
+    if (closetView === 'form') {
+      closeForm()
+      return
+    }
+
+    if (closetView !== 'list') {
+      setClosetView('list')
+    }
+  }
+
+  const swipeBackHandlers = useSwipeBack(backFromClosetView, closetView !== 'list')
 
   function openPhotoImport() {
     setClosetView('import')
@@ -330,9 +344,9 @@ export function ClosetPanel({
 
   if (closetView === 'form') {
     return (
-      <div className="closet-panel">
+      <div className="closet-panel" {...swipeBackHandlers}>
         <ClosetSubpageHeader
-          onBack={closeForm}
+          onBack={backFromClosetView}
           subtitle="Closet"
           title={editingItemId ? 'Edit Item' : 'Add Item'}
         />
@@ -352,8 +366,8 @@ export function ClosetPanel({
 
   if (closetView === 'import') {
     return (
-      <div className="closet-panel">
-        <ClosetSubpageHeader onBack={() => setClosetView('list')} subtitle="Closet" title="Photo Import" />
+      <div className="closet-panel" {...swipeBackHandlers}>
+        <ClosetSubpageHeader onBack={backFromClosetView} subtitle="Closet" title="Photo Import" />
         {statusBlock}
         <div className="photo-import-card">
           <div className="section-title">
@@ -404,8 +418,8 @@ export function ClosetPanel({
 
   if (closetView === 'bulk') {
     return (
-      <div className="closet-panel">
-        <ClosetSubpageHeader onBack={() => setClosetView('list')} subtitle="Closet" title="Bulk Import" />
+      <div className="closet-panel" {...swipeBackHandlers}>
+        <ClosetSubpageHeader onBack={backFromClosetView} subtitle="Closet" title="Bulk Import" />
         {statusBlock}
         <div className="photo-import-card">
           <div className="section-title">
@@ -455,7 +469,7 @@ export function ClosetPanel({
   }
 
   return (
-    <div className="closet-panel">
+    <div className="closet-panel" {...swipeBackHandlers}>
       <div className="summary-grid" aria-label="Closet summary">
         <SummaryCard label="Active" value={activeCount.toString()} />
         <SummaryCard label="Total Qty" value={totalQuantity.toString()} />

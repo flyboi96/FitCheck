@@ -309,6 +309,53 @@ h3 {
   gap: 10px;
 }
 
+.onboarding-card {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 96%, var(--accent) 4%);
+}
+
+.onboarding-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.setup-step-list {
+  display: grid;
+  gap: 8px;
+}
+
+.setup-step {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 72px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: inherit;
+  background: var(--surface);
+  text-align: left;
+}
+
+.setup-step-status {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.setup-step-status.done {
+  color: var(--success);
+}
+
 .menu-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
@@ -465,6 +512,7 @@ h3 {
 .danger-button:active,
 .ghost-button:active,
 .menu-row:active,
+.setup-step:active,
 .icon-button:active {
   transform: translateY(1px);
   opacity: 0.82;
@@ -1647,7 +1695,20 @@ h3 {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
+  .setup-step {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .setup-step .menu-row-icon {
+    display: none;
+  }
+
   .menu-row .quantity-chip {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .setup-step .quantity-chip {
     grid-column: 2;
     justify-self: start;
   }

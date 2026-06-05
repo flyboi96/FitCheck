@@ -24,8 +24,10 @@ import {
   Wand2,
 } from 'lucide-react'
 import { AppToastHost } from './components/AppToasts'
+import { OnboardingGuide } from './components/OnboardingGuide'
 import './App.css'
 import { useAuthProfile } from './hooks/useAuthProfile'
+import { useSwipeBack } from './hooks/useSwipeBack'
 import { appVersionLabel } from './lib/appVersion'
 import { auth, firebaseStatus } from './lib/firebase'
 import {
@@ -104,6 +106,11 @@ type MoreRoute =
   | 'ai'
   | 'offline'
 
+type NavigationState = {
+  activeTab: TabID
+  moreRoute: MoreRoute
+}
+
 const wearerOptions: Array<{ value: WearerProfile; label: string }> = [
   { value: 'unspecified', label: 'Unspecified' },
   { value: 'male', label: 'Male' },
@@ -111,6 +118,8 @@ const wearerOptions: Array<{ value: WearerProfile; label: string }> = [
 ]
 
 const defaultProfileDraft: UserProfileDraft = emptyUserProfileDraft()
+
+const onboardingKey = (userId: string) => `fitcheck.onboarding.completed.${userId}`
 
 function App() {
   const authState = useAuthProfile()
@@ -131,6 +140,7 @@ function App() {
     <>
       <AuthenticatedShell
         error={authState.error}
+        key={authState.user.uid}
         profile={authState.profile}
         refreshProfile={authState.refreshProfile}
         user={authState.user}
@@ -310,14 +320,76 @@ function AuthenticatedShell({
   user: User
 }) {
   const [activeTab, setActiveTab] = useState<TabID>('today')
+  const [moreRoute, setMoreRoute] = useState<MoreRoute>('menu')
+  const [navigationStack, setNavigationStack] = useState<NavigationState[]>([])
+  const [showOnboarding, setShowOnboarding] = useState(
+    () => localStorage.getItem(onboardingKey(user.uid)) !== 'true',
+  )
   const ActiveIcon = tabs.find((tab) => tab.id === activeTab)?.icon ?? CloudSun
   const displayName = profile?.displayName || user.displayName || 'FitCheck user'
   const profileSummary = profile
     ? `${genderLabel(profile.gender)} profile${profile.styleDescription ? ' - style notes saved' : ''}`
     : 'Profile loading'
+  const canGoBack = navigationStack.length > 0 || (activeTab === 'more' && moreRoute !== 'menu')
+
+  function navigate(nextState: NavigationState) {
+    const currentState = { activeTab, moreRoute }
+
+    if (currentState.activeTab === nextState.activeTab && currentState.moreRoute === nextState.moreRoute) {
+      return
+    }
+
+    setNavigationStack((currentStack) => [...currentStack, currentState].slice(-24))
+    setActiveTab(nextState.activeTab)
+    setMoreRoute(nextState.moreRoute)
+  }
+
+  function navigateToTab(tabId: TabID) {
+    navigate({
+      activeTab: tabId,
+      moreRoute: tabId === 'more' ? moreRoute : 'menu',
+    })
+  }
+
+  function navigateToMoreRoute(route: MoreRoute) {
+    navigate({
+      activeTab: 'more',
+      moreRoute: route,
+    })
+  }
+
+  function goBack() {
+    if (navigationStack.length > 0) {
+      const previousState = navigationStack[navigationStack.length - 1]
+      setNavigationStack((currentStack) => currentStack.slice(0, -1))
+      setActiveTab(previousState.activeTab)
+      setMoreRoute(previousState.moreRoute)
+      return
+    }
+
+    if (activeTab === 'more' && moreRoute !== 'menu') {
+      setMoreRoute('menu')
+    }
+  }
+
+  function dismissOnboarding() {
+    localStorage.setItem(onboardingKey(user.uid), 'true')
+    setShowOnboarding(false)
+  }
+
+  function openOnboarding() {
+    localStorage.removeItem(onboardingKey(user.uid))
+    setShowOnboarding(true)
+    navigate({
+      activeTab: 'today',
+      moreRoute: 'menu',
+    })
+  }
+
+  const swipeBackHandlers = useSwipeBack(goBack, canGoBack)
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" {...swipeBackHandlers}>
       <section className="top-bar" aria-label="FitCheck PWA status">
         <div>
           <p className="eyebrow">Personal wardrobe</p>
@@ -358,8 +430,31 @@ function AuthenticatedShell({
           </div>
         ) : null}
 
+        {showOnboarding ? (
+          <OnboardingGuide
+            onComplete={dismissOnboarding}
+            onDismiss={dismissOnboarding}
+            onOpenAIProxy={() => navigateToMoreRoute('ai')}
+            onOpenAvatar={() => navigateToMoreRoute('avatar')}
+            onOpenCloset={() => navigateToTab('closet')}
+            onOpenProfile={() => navigateToMoreRoute('profile')}
+            onOpenToday={() => navigateToTab('today')}
+            profile={profile}
+            userId={user.uid}
+          />
+        ) : null}
+
         <Suspense fallback={<TabPanelFallback label={tabs.find((tab) => tab.id === activeTab)?.label ?? 'Tab'} />}>
-          {renderTabPanel(activeTab, user, profile, refreshProfile)}
+          {renderTabPanel({
+            activeTab,
+            moreRoute,
+            onBack: goBack,
+            onOpenSetupGuide: openOnboarding,
+            onRouteMore: navigateToMoreRoute,
+            profile,
+            refreshProfile,
+            user,
+          })}
         </Suspense>
       </section>
 
@@ -372,7 +467,7 @@ function AuthenticatedShell({
               type="button"
               className={isActive ? 'tab active' : 'tab'}
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => navigateToTab(tab.id)}
               aria-current={isActive ? 'page' : undefined}
             >
               <Icon size={24} aria-hidden="true" />
@@ -385,12 +480,25 @@ function AuthenticatedShell({
   )
 }
 
-function renderTabPanel(
-  activeTab: TabID,
-  user: User,
-  profile: UserProfile | null,
-  refreshProfile: () => Promise<void>,
-) {
+function renderTabPanel({
+  activeTab,
+  moreRoute,
+  onBack,
+  onOpenSetupGuide,
+  onRouteMore,
+  profile,
+  refreshProfile,
+  user,
+}: {
+  activeTab: TabID
+  moreRoute: MoreRoute
+  onBack: () => void
+  onOpenSetupGuide: () => void
+  onRouteMore: (route: MoreRoute) => void
+  profile: UserProfile | null
+  refreshProfile: () => Promise<void>
+  user: User
+}) {
   switch (activeTab) {
     case 'today':
       return <LazyOutfitExperiencePanel mode="today" profile={profile} userId={user.uid} />
@@ -401,7 +509,17 @@ function renderTabPanel(
     case 'build':
       return <LazyOutfitExperiencePanel mode="build" profile={profile} userId={user.uid} />
     case 'more':
-      return <MorePanel profile={profile} refreshProfile={refreshProfile} user={user} />
+      return (
+        <MorePanel
+          onBack={onBack}
+          onOpenSetupGuide={onOpenSetupGuide}
+          onRouteChange={onRouteMore}
+          profile={profile}
+          refreshProfile={refreshProfile}
+          route={moreRoute}
+          user={user}
+        />
+      )
   }
 }
 
@@ -418,20 +536,26 @@ function TabPanelFallback({ label }: { label: string }) {
 }
 
 function MorePanel({
+  onBack,
+  onOpenSetupGuide,
+  onRouteChange,
   profile,
   refreshProfile,
+  route,
   user,
 }: {
+  onBack: () => void
+  onOpenSetupGuide: () => void
+  onRouteChange: (route: MoreRoute) => void
   profile: UserProfile | null
   refreshProfile: () => Promise<void>
+  route: MoreRoute
   user: User
 }) {
-  const [route, setRoute] = useState<MoreRoute>('menu')
-
   if (route !== 'menu') {
     return (
       <div className="tab-content">
-        <SubpageHeader onBack={() => setRoute('menu')} title={moreRouteTitle(route)} />
+        <SubpageHeader onBack={onBack} title={moreRouteTitle(route)} />
         {route === 'profile' ? (
           <ProfileEditor profile={profile} refreshProfile={refreshProfile} user={user} />
         ) : null}
@@ -476,50 +600,56 @@ function MorePanel({
         <MenuRow
           description="Name, gender, style profile, comfort, and rules."
           icon={<UserRound size={20} aria-hidden="true" />}
-          onClick={() => setRoute('profile')}
+          onClick={() => onRouteChange('profile')}
           title="Profile"
         />
         <MenuRow
           description="Save one full-body avatar for faster outfit previews."
           icon={<Wand2 size={20} aria-hidden="true" />}
-          onClick={() => setRoute('avatar')}
+          onClick={() => onRouteChange('avatar')}
           title="Avatar Studio"
         />
         <MenuRow
           description="Logged outfits, item wear counts, and cleanup."
           icon={<CalendarDays size={20} aria-hidden="true" />}
-          onClick={() => setRoute('history')}
+          onClick={() => onRouteChange('history')}
           title="Outfit History"
         />
         <MenuRow
           description="Export or restore closet, profile, plans, history, and avatar metadata."
           icon={<Database size={20} aria-hidden="true" />}
-          onClick={() => setRoute('backup')}
+          onClick={() => onRouteChange('backup')}
           title="Backup / Import"
         />
         <MenuRow
           description="How FitCheck scores weather, fashion, rotation, and preferences."
           icon={<CheckCircle2 size={20} aria-hidden="true" />}
-          onClick={() => setRoute('scoring')}
+          onClick={() => onRouteChange('scoring')}
           title="Scoring Guide"
         />
         <MenuRow
           description="Add, remove, rename, and define the outfit contexts you want."
           icon={<Shirt size={20} aria-hidden="true" />}
-          onClick={() => setRoute('contexts')}
+          onClick={() => onRouteChange('contexts')}
           title="Context Styles"
         />
         <MenuRow
           description="OpenAI proxy URL and token settings."
           icon={<Wand2 size={20} aria-hidden="true" />}
-          onClick={() => setRoute('ai')}
+          onClick={() => onRouteChange('ai')}
           title="AI Proxy"
         />
         <MenuRow
           description="Firestore cache status and weak-connection behavior."
           icon={<Database size={20} aria-hidden="true" />}
-          onClick={() => setRoute('offline')}
+          onClick={() => onRouteChange('offline')}
           title="Offline Cache"
+        />
+        <MenuRow
+          description="Reopen the guided setup checklist for profile, AI, closet, and avatar."
+          icon={<CheckCircle2 size={20} aria-hidden="true" />}
+          onClick={onOpenSetupGuide}
+          title="Setup Guide"
         />
       </section>
       <button

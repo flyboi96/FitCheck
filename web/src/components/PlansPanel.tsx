@@ -22,6 +22,7 @@ import { useClosetItems } from '../hooks/useClosetItems'
 import { useContextStyles } from '../hooks/useContextStyles'
 import { usePlans } from '../hooks/usePlans'
 import { useSavedAvatar } from '../hooks/useSavedAvatar'
+import { useSwipeBack } from '../hooks/useSwipeBack'
 import { showAppToast } from '../lib/appToasts'
 import { generateAvatarPreview, type AvatarPreview } from '../lib/avatar'
 import {
@@ -118,6 +119,19 @@ export function PlansPanel({
 
     return [...groups.entries()]
   }, [selectedPlan])
+
+  function backFromPlanView() {
+    if (planView === 'itinerary' || planView === 'packing') {
+      setPlanView('setup')
+      return
+    }
+
+    if (planView !== 'home') {
+      setPlanView('home')
+    }
+  }
+
+  const swipeBackHandlers = useSwipeBack(backFromPlanView, planView !== 'home')
 
   function openPlan(plan: Plan, view: PlanView = 'setup') {
     setSelectedPlanId(plan.id)
@@ -469,9 +483,9 @@ export function PlansPanel({
 
   if (planView === 'new') {
     return (
-      <div className="plans-panel">
+      <div className="plans-panel" {...swipeBackHandlers}>
         <PlanSubpageHeader
-          onBack={() => setPlanView('home')}
+          onBack={backFromPlanView}
           subtitle="Plans"
           title="Start Plan"
         />
@@ -565,8 +579,8 @@ export function PlansPanel({
 
   if (planView !== 'home' && (!selectedPlan || !effectivePlanDraft)) {
     return (
-      <div className="plans-panel">
-        <PlanSubpageHeader onBack={() => setPlanView('home')} subtitle="Plans" title="Plan" />
+      <div className="plans-panel" {...swipeBackHandlers}>
+        <PlanSubpageHeader onBack={backFromPlanView} subtitle="Plans" title="Plan" />
         {statusBlock}
         <div className="empty-state">
           <Clipboard size={24} aria-hidden="true" />
@@ -579,8 +593,8 @@ export function PlansPanel({
 
   if (planView === 'setup' && selectedPlan && effectivePlanDraft) {
     return (
-      <div className="plans-panel">
-        <PlanSubpageHeader onBack={() => setPlanView('home')} subtitle="Plans" title={selectedPlan.name} />
+      <div className="plans-panel" {...swipeBackHandlers}>
+        <PlanSubpageHeader onBack={backFromPlanView} subtitle="Plans" title={selectedPlan.name} />
         {statusBlock}
         <section className="subpage-list" aria-label="Plan sections">
           <PlanMenuRow
@@ -645,9 +659,9 @@ export function PlansPanel({
 
   if (planView === 'itinerary' && selectedPlan) {
     return (
-      <div className="plans-panel">
+      <div className="plans-panel" {...swipeBackHandlers}>
         <PlanSubpageHeader
-          onBack={() => setPlanView('setup')}
+          onBack={backFromPlanView}
           subtitle={selectedPlan.name}
           title="Itinerary"
         />
@@ -677,9 +691,9 @@ export function PlansPanel({
 
   if (planView === 'packing' && selectedPlan) {
     return (
-      <div className="plans-panel">
+      <div className="plans-panel" {...swipeBackHandlers}>
         <PlanSubpageHeader
-          onBack={() => setPlanView('setup')}
+          onBack={backFromPlanView}
           subtitle={selectedPlan.name}
           title="Packing List"
         />
@@ -718,7 +732,7 @@ export function PlansPanel({
   }
 
   return (
-    <div className="plans-panel">
+    <div className="plans-panel" {...swipeBackHandlers}>
       <section className="plan-workspace">
         <div className="section-title">
           <Clipboard size={20} aria-hidden="true" />

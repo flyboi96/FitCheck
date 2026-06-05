@@ -1323,6 +1323,144 @@ h3 {
   background: color-mix(in srgb, var(--warning) 8%, var(--panel));
 }
 
+.score-debug-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.score-debug-panel summary {
+  min-height: 36px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.score-debug-panel[open] summary {
+  margin-bottom: 4px;
+}
+
+.score-debug-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.score-debug-summary span {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.score-debug-summary strong {
+  color: var(--text);
+  font-size: 1.2rem;
+}
+
+.score-debug-section,
+.score-component-list,
+.score-debug-items {
+  display: grid;
+  gap: 8px;
+}
+
+.score-debug-section h3 {
+  font-size: 0.95rem;
+}
+
+.score-component-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 46px;
+  gap: 8px;
+  align-items: start;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.score-component-row span:nth-child(2),
+.score-debug-item summary strong,
+.score-debug-item summary small {
+  overflow-wrap: anywhere;
+}
+
+.score-component-row span:nth-child(2) {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.score-component-row small {
+  justify-self: end;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.score-debug-item {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.score-debug-item summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 36px;
+}
+
+.score-debug-item summary span:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.score-debug-item summary small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.score-delta {
+  display: inline-flex;
+  justify-content: center;
+  min-width: 48px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.score-delta.positive {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, var(--surface));
+}
+
+.score-delta.negative {
+  color: #ff9b9b;
+  background: color-mix(in srgb, #ff7b7b 14%, var(--surface));
+}
+
+.score-delta.neutral {
+  color: var(--muted);
+  background: var(--panel);
+}
+
 .feedback-actions {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

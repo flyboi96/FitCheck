@@ -19,6 +19,7 @@ import {
   weatherSummary,
   type OutfitContext,
   type OutfitRecommendation,
+  type OutfitScoreBreakdown,
   type OutfitSource,
   type WeatherInput,
 } from './outfits'
@@ -52,6 +53,7 @@ export type ItineraryOutfit = {
   source: OutfitSource
   rationale: string
   reasons: string[]
+  scoreBreakdown?: OutfitScoreBreakdown
   cautions: string[]
 }
 
@@ -271,6 +273,7 @@ export function recommendationToItineraryOutfit({
     source: recommendation.source,
     rationale: recommendation.rationale,
     reasons: recommendation.reasons,
+    scoreBreakdown: recommendation.scoreBreakdown,
     cautions: recommendation.cautions,
   }
 }
@@ -496,6 +499,7 @@ function normalizeItineraryOutfit(value: unknown): ItineraryOutfit | null {
   const data = value as Record<string, unknown>
   const context = contextValue(data.context)
   const savedLabel = stringValue(data.label).trim()
+  const scoreBreakdown = normalizeScoreBreakdown(data.scoreBreakdown)
 
   return {
     id: stringValue(data.id, crypto.randomUUID()),
@@ -511,8 +515,76 @@ function normalizeItineraryOutfit(value: unknown): ItineraryOutfit | null {
     source: data.source === 'ai' ? 'ai' : 'local',
     rationale: stringValue(data.rationale),
     reasons: stringArray(data.reasons),
+    ...(scoreBreakdown ? { scoreBreakdown } : {}),
     cautions: stringArray(data.cautions),
   }
+}
+
+function normalizeScoreBreakdown(value: unknown): OutfitScoreBreakdown | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+
+  const data = value as Record<string, unknown>
+  const finalScore = numberValue(data.finalScore, 0)
+  const rawScore = numberValue(data.rawScore, finalScore)
+  const startingScore = numberValue(data.startingScore, 62)
+
+  return {
+    finalScore,
+    itemBreakdowns: Array.isArray(data.itemBreakdowns)
+      ? data.itemBreakdowns
+          .map((itemBreakdown) => {
+            if (!itemBreakdown || typeof itemBreakdown !== 'object') {
+              return null
+            }
+
+            const itemData = itemBreakdown as Record<string, unknown>
+            return {
+              categoryLabel: stringValue(itemData.categoryLabel, 'Item'),
+              components: normalizeScoreComponents(itemData.components),
+              contributionToOutfit: numberValue(itemData.contributionToOutfit, 0),
+              itemID: stringValue(itemData.itemID),
+              itemName: stringValue(itemData.itemName, 'Item'),
+              rawScore: numberValue(itemData.rawScore, 0),
+            }
+          })
+          .filter((itemBreakdown): itemBreakdown is OutfitScoreBreakdown['itemBreakdowns'][number] =>
+            Boolean(itemBreakdown),
+          )
+      : [],
+    outfitComponents: normalizeScoreComponents(data.outfitComponents),
+    rawScore,
+    startingScore,
+  }
+}
+
+function normalizeScoreComponents(value: unknown) {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .map((component) => {
+      if (!component || typeof component !== 'object') {
+        return null
+      }
+
+      const data = component as Record<string, unknown>
+      const kind = stringValue(data.kind, 'bonus')
+      return {
+        delta: numberValue(data.delta, 0),
+        kind:
+          kind === 'base' || kind === 'bonus' || kind === 'item' || kind === 'penalty'
+            ? kind
+            : 'bonus',
+        label: stringValue(data.label, 'Score adjustment'),
+        scoreAfter: numberValue(data.scoreAfter, 0),
+      }
+    })
+    .filter((component): component is OutfitScoreBreakdown['outfitComponents'][number] =>
+      Boolean(component),
+    )
 }
 
 function normalizePackingList(value: unknown): PackingListItem[] {

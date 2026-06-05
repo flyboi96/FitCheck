@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react'
 import { ClothingItemBrowser } from './ClothingItemBrowser'
+import { ScoreDebugPanel } from './ScoreDebugPanel'
 import { useClosetItems } from '../hooks/useClosetItems'
 import { useContextStyles } from '../hooks/useContextStyles'
 import { useSavedAvatar } from '../hooks/useSavedAvatar'
@@ -804,6 +805,8 @@ function OutfitResultCard({
           </ul>
         </div>
       ) : null}
+
+      <ScoreDebugPanel breakdown={recommendation.scoreBreakdown} />
 
       <details className="avatar-panel">
         <summary>Avatar Preview</summary>

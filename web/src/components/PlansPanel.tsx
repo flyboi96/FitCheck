@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react'
 import { ClothingItemBrowser } from './ClothingItemBrowser'
+import { ScoreDebugPanel } from './ScoreDebugPanel'
 import { useClosetItems } from '../hooks/useClosetItems'
 import { useContextStyles } from '../hooks/useContextStyles'
 import { usePlans } from '../hooks/usePlans'
@@ -304,7 +305,10 @@ export function PlansPanel({
   }
 
   function updateDraft(updater: (draft: PlanDraft) => PlanDraft) {
-    setPlanDraft((currentDraft) => (currentDraft ? updater(currentDraft) : currentDraft))
+    setPlanDraft((currentDraft) => {
+      const baseDraft = currentDraft ?? effectivePlanDraft
+      return baseDraft ? updater(baseDraft) : currentDraft
+    })
   }
 
   async function lookupWeatherForDay(dayId: string) {
@@ -392,26 +396,62 @@ export function PlansPanel({
   }
 
   function applyBulkContext() {
-    updateDraft((draft) => ({
-      ...draft,
-      days: draft.days.map((day) => ({
-        ...day,
-        requests: day.requests.some((request) => request.context === effectiveBulkContext)
-          ? day.requests
-          : [...day.requests, newOutfitRequest(effectiveBulkContext)],
-      })),
-    }))
+    if (!effectivePlanDraft) {
+      return
+    }
+
+    setErrorMessage(null)
+    let changedDays = 0
+    const selectedContextLabel = contextLabel(effectiveBulkContext)
+    const nextDraft = {
+      ...effectivePlanDraft,
+      days: effectivePlanDraft.days.map((day) => {
+        if (day.requests.some((request) => request.context === effectiveBulkContext)) {
+          return day
+        }
+
+        changedDays += 1
+        return {
+          ...day,
+          requests: [...day.requests, newOutfitRequest(effectiveBulkContext)],
+        }
+      }),
+    }
+
+    setPlanDraft(nextDraft)
+
+    if (changedDays === 0) {
+      const message = `${selectedContextLabel} is already on every day.`
+      setStatusMessage(message)
+      showAppToast(message, 'info')
+      return
+    }
+
+    const message = `Added ${selectedContextLabel} to ${changedDays} day${
+      changedDays === 1 ? '' : 's'
+    }. Save the plan to keep this setup.`
+    setStatusMessage(message)
+    showAppToast(`Added ${selectedContextLabel} to all plan days.`, 'success')
   }
 
   function applyBulkLocation() {
     const nextLocation = bulkLocation.trim()
     if (!nextLocation) {
+      const message = 'Enter a location before applying it to all days.'
+      setStatusMessage(null)
+      setErrorMessage(message)
+      showAppToast(message, 'error')
       return
     }
 
-    updateDraft((draft) => ({
-      ...draft,
-      days: draft.days.map((day) => ({
+    if (!effectivePlanDraft) {
+      return
+    }
+
+    setErrorMessage(null)
+    const nextDraft = {
+      ...effectivePlanDraft,
+      days: effectivePlanDraft.days.map((day) => ({
         ...day,
         location: nextLocation,
         weather: {
@@ -419,7 +459,15 @@ export function PlansPanel({
           location: nextLocation,
         },
       })),
-    }))
+    }
+
+    setPlanDraft(nextDraft)
+    const message = `Set ${nextLocation} on ${nextDraft.days.length} day${
+      nextDraft.days.length === 1 ? '' : 's'
+    }. Save the plan to keep this setup.`
+    setStatusMessage(message)
+    setErrorMessage(null)
+    showAppToast(`Applied ${nextLocation} to all plan days.`, 'success')
   }
 
   async function handleSaveItinerary(nextItinerary: Plan['itinerary']) {
@@ -1652,6 +1700,7 @@ function EditableItineraryCard({
         itemIDs: selectedItems.map((item) => item.id),
         itemNames: selectedItems.map((item) => item.name),
         score: rescoredOutfit.score,
+        scoreBreakdown: rescoredOutfit.scoreBreakdown,
         scoreLabel: rescoredOutfit.scoreLabel,
         rationale: 'Edited itinerary outfit rescored from your selected closet items.',
         reasons: rescoredOutfit.reasons,
@@ -1682,10 +1731,21 @@ function EditableItineraryCard({
       return
     }
 
+    const previewScore = scoreCustomOutfit({
+      context: outfit.context,
+      items: selectedItems,
+      profile,
+      source: outfit.source,
+      weather: {
+        ...weather,
+        location: location || weather.location,
+      },
+    })
     const recommendation: OutfitRecommendation = {
       id: outfit.id,
       items: selectedItems,
       score: outfit.score,
+      scoreBreakdown: outfit.scoreBreakdown ?? previewScore.scoreBreakdown,
       scoreLabel: outfit.scoreLabel,
       source: outfit.source,
       rationale: outfit.rationale,
@@ -1771,6 +1831,7 @@ function EditableItineraryCard({
           <p key={caution}>Watch-out: {caution}</p>
         ))}
       </details>
+      <ScoreDebugPanel breakdown={outfit.scoreBreakdown} />
       <details>
         <summary>Edit this outfit</summary>
         <div className="two-column-fields">

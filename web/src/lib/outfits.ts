@@ -28,6 +28,30 @@ export type OutfitSource = 'ai' | 'local'
 export type OutfitFeedbackType = 'liked' | 'rejected' | 'issue'
 export type FeedbackSignalType = 'liked_combo' | 'rejected_combo' | 'issue_combo'
 
+export type ScoreBreakdownComponent = {
+  delta: number
+  kind: 'base' | 'bonus' | 'item' | 'penalty'
+  label: string
+  scoreAfter: number
+}
+
+export type ItemScoreBreakdown = {
+  categoryLabel: string
+  components: ScoreBreakdownComponent[]
+  contributionToOutfit: number
+  itemID: string
+  itemName: string
+  rawScore: number
+}
+
+export type OutfitScoreBreakdown = {
+  finalScore: number
+  itemBreakdowns: ItemScoreBreakdown[]
+  outfitComponents: ScoreBreakdownComponent[]
+  rawScore: number
+  startingScore: number
+}
+
 export type FeedbackLearningSignal = {
   type: FeedbackSignalType
   context: OutfitContext
@@ -53,6 +77,7 @@ export type OutfitRecommendation = {
   id: string
   items: ClothingItem[]
   score: number
+  scoreBreakdown: OutfitScoreBreakdown
   scoreLabel: string
   source: OutfitSource
   rationale: string
@@ -501,6 +526,10 @@ function stringArray(value: unknown) {
   return Array.isArray(value) ? value.map(String).filter(Boolean) : []
 }
 
+function roundScore(value: number) {
+  return Math.round(value * 10) / 10
+}
+
 function scoreOutfit(
   items: ClothingItem[],
   {
@@ -519,104 +548,137 @@ function scoreOutfit(
 ): OutfitRecommendation {
   const reasons: string[] = []
   const cautions: string[] = []
-  let score = 62
+  const startingScore = 62
+  let score = startingScore
+  const outfitComponents: ScoreBreakdownComponent[] = [
+    {
+      delta: startingScore,
+      kind: 'base',
+      label: 'Base outfit score before context, weather, fashion, and feedback checks',
+      scoreAfter: startingScore,
+    },
+  ]
+  const itemBreakdowns: ItemScoreBreakdown[] = []
   const roles = items.map(itemRole)
   const hasTopBottom = roles.includes('top') && roles.includes('bottom')
   const hasDress = roles.includes('fullBody')
   const hasShoes = roles.includes('shoes')
 
+  function addOutfitScore(delta: number, label: string, kind?: ScoreBreakdownComponent['kind']) {
+    if (delta === 0) {
+      return
+    }
+
+    score += delta
+    outfitComponents.push({
+      delta: roundScore(delta),
+      kind: kind ?? (delta > 0 ? 'bonus' : 'penalty'),
+      label,
+      scoreAfter: roundScore(score),
+    })
+  }
+
   if ((hasTopBottom || hasDress) && hasShoes) {
-    score += 14
+    addOutfitScore(14, 'Core roles covered: top/bottom or dress plus shoes')
     reasons.push('Has the core clothing roles covered.')
   } else {
-    score -= 22
+    addOutfitScore(-22, 'Missing a core role such as top, bottom, dress, or shoes')
     cautions.push('Missing a core role such as top, bottom, dress, or shoes.')
   }
 
   for (const item of items) {
-    const itemScore = scoreItem(item, context, weather, profile)
-    score += (itemScore - 58) / 4
+    const itemBreakdown = scoreItemBreakdown(item, context, weather, profile)
+    const contributionToOutfit = (itemBreakdown.rawScore - 58) / 4
+    itemBreakdowns.push({
+      ...itemBreakdown,
+      contributionToOutfit: roundScore(contributionToOutfit),
+    })
+    addOutfitScore(
+      contributionToOutfit,
+      `${item.name}: item score ${itemBreakdown.rawScore}/100 contributes to outfit`,
+      'item',
+    )
   }
 
   if (isWorkContext(context)) {
     if (items.some(isShorts)) {
-      score -= 30
+      addOutfitScore(-30, 'Work context penalty: shorts weaken a work outfit')
       cautions.push('Shorts weaken a work outfit.')
     }
     if (items.some(isSweatsOrJoggers)) {
-      score -= 36
+      addOutfitScore(-36, 'Work context penalty: sweats or joggers are not workwear')
       cautions.push('Sweats or joggers are not workwear.')
     }
     if (items.some(isCasualOnlyFootwear)) {
-      score -= 34
+      addOutfitScore(-34, 'Work context penalty: casual-only footwear is not office appropriate')
       cautions.push('Casual clogs, slides, or slippers do not work for office wear.')
     }
   }
 
   if (isExerciseContext(context)) {
     if (items.some((item) => item.category === 'belt' || item.category === 'watch' || item.category === 'jewelry')) {
-      score -= 28
+      addOutfitScore(-28, 'Workout penalty: belts, watches, jewelry, or dress accessories included')
       cautions.push('Workout outfits should not include belts, watches, jewelry, or dress accessories.')
     }
     if (items.some((item) => /button-down|button down|collar|chino|trouser|leather|dress/.test(itemText(item)))) {
-      score -= 30
+      addOutfitScore(-30, 'Workout penalty: office or dress pieces included')
       cautions.push('Workout contexts need exercise clothing, not office or dress pieces.')
     }
     if (isRunningContext(context) && !items.some((item) => /running shoe|run shoe|runner/.test(itemText(item)))) {
-      score -= 12
+      addOutfitScore(-12, 'Running penalty: no running-specific shoes found')
       cautions.push('Running works best with running-specific shoes.')
     }
     if (isRunningContext(context) && items.some((item) => item.category === 'socks' && /run|running/.test(itemText(item)))) {
-      score += 6
+      addOutfitScore(6, 'Running bonus: running socks included')
       reasons.push('Running socks support the running context.')
     }
   }
 
   if (context === 'goingOut') {
     if (items.some(isSweatsOrJoggers)) {
-      score -= 24
+      addOutfitScore(-24, 'Going-out penalty: sweats or joggers weaken the outfit')
       cautions.push('Sweats or joggers weaken a going-out outfit.')
     }
     if (items.some(isCasualOnlyFootwear)) {
-      score -= 18
+      addOutfitScore(-18, 'Going-out penalty: footwear is too relaxed')
       cautions.push('Very casual footwear is usually too relaxed for going out.')
     }
   }
 
   if (context === 'coastalCasual') {
     if (items.some((item) => /flip-flop|flip flop|sandal|shorts|tank|linen|cotton|tee|t-shirt/.test(itemText(item)))) {
-      score += 10
+      addOutfitScore(10, 'Coastal casual bonus: relaxed beach-town pieces included')
       reasons.push('Relaxed beach-town pieces fit coastal casual.')
     }
   }
 
   if (items.some(isShorts) && items.some(isBoots)) {
-    score -= 32
+    addOutfitScore(-32, 'Fashion rule penalty: shorts with boots is rarely polished')
     cautions.push('Shorts with boots is usually not a polished combination.')
   }
 
   if (items.some(isSweatsOrJoggers) && items.some(isBoots)) {
-    score -= 34
+    addOutfitScore(-34, 'Fashion rule penalty: sweats or joggers with leather boots')
     cautions.push('Sweats or joggers should not be paired with leather boots.')
   }
 
   if (items.some((item) => item.category === 'belt') && items.some(isSweatsOrJoggers)) {
-    score -= 26
+    addOutfitScore(-26, 'Function rule penalty: belt with sweatpants or joggers')
     cautions.push('A belt does not make sense with sweatpants or joggers.')
   }
 
   if (hasCollaredTop(items)) {
     if (items.some((item) => item.category === 'belt')) {
-      score += 7
+      addOutfitScore(7, 'Collared shirt bonus: belt supports tailored bottom')
       reasons.push('Belt supports the collared shirt and tailored bottom.')
     } else if (items.some((item) => itemRole(item) === 'bottom' && hasBeltLoops(item))) {
-      score -= 8
+      addOutfitScore(-8, 'Collared shirt penalty: belt would improve this outfit')
       cautions.push('A belt would improve this collared-shirt outfit.')
     }
   }
 
   const colorNote = colorHarmonyNote(items)
-  score += colorNote.scoreAdjustment
+  addOutfitScore(colorNote.scoreAdjustment, colorNote.reason ?? colorNote.caution ?? 'Color palette adjustment')
   if (colorNote.reason) {
     reasons.push(colorNote.reason)
   }
@@ -626,31 +688,40 @@ function scoreOutfit(
 
   if (dayHighTemperature(weather) >= 85 && weather.humidityPercent >= 55) {
     if (items.some((item) => item.category === 'jacket' || item.category === 'sweater')) {
-      score -= 18
+      addOutfitScore(-18, 'Weather penalty: hot, humid day argues against extra layers')
       cautions.push('Hot, humid weather argues against extra layers.')
     }
     if (items.some(isHeatFriendly)) {
-      score += 8
+      addOutfitScore(8, 'Weather bonus: heat-friendly piece included')
       reasons.push('Uses at least one heat-friendly piece.')
     }
   }
 
   if (weather.isRaining && items.some(isRainFriendly)) {
-    score += 5
+    addOutfitScore(5, 'Weather bonus: rain-friendly item included')
     reasons.push('Includes a rain-friendly item.')
   }
 
   const qualityReview = reviewOutfitQuality(items, { context, profile, weather })
-  score += qualityReview.scoreAdjustment
+  addOutfitScore(qualityReview.scoreAdjustment, 'Quality review total adjustment')
   reasons.push(...qualityReview.reasons)
   cautions.push(...qualityReview.cautions)
 
   const feedbackReview = reviewFeedbackSignals(items, context, feedbackSignals)
-  score += feedbackReview.scoreAdjustment
+  addOutfitScore(feedbackReview.scoreAdjustment, 'Feedback learning total adjustment')
   reasons.push(...feedbackReview.reasons)
   cautions.push(...feedbackReview.cautions)
 
+  const rawScore = roundScore(score)
   const boundedScore = Math.max(0, Math.min(100, Math.round(score)))
+  if (boundedScore !== Math.round(rawScore)) {
+    outfitComponents.push({
+      delta: roundScore(boundedScore - rawScore),
+      kind: boundedScore > rawScore ? 'bonus' : 'penalty',
+      label: 'Final score clamped to 0-100 range',
+      scoreAfter: boundedScore,
+    })
+  }
   const uniqueReasons = [...new Set(reasons)].slice(0, 6)
   const uniqueCautions = [...new Set(cautions)].slice(0, 5)
 
@@ -658,6 +729,13 @@ function scoreOutfit(
     id: crypto.randomUUID(),
     items,
     score: boundedScore,
+    scoreBreakdown: {
+      finalScore: boundedScore,
+      itemBreakdowns,
+      outfitComponents,
+      rawScore,
+      startingScore,
+    },
     scoreLabel: scoreLabel(boundedScore),
     source,
     rationale:
@@ -903,159 +981,200 @@ function scoreItem(
   weather: WeatherInput,
   profile: UserProfile | null,
 ) {
+  return scoreItemBreakdown(item, context, weather, profile).rawScore
+}
+
+function scoreItemBreakdown(
+  item: ClothingItem,
+  context: OutfitContext,
+  weather: WeatherInput,
+  profile: UserProfile | null,
+): ItemScoreBreakdown {
   let score = 50
+  const components: ScoreBreakdownComponent[] = [
+    {
+      delta: 50,
+      kind: 'base',
+      label: 'Base item score before context, weather, profile, and rotation checks',
+      scoreAfter: 50,
+    },
+  ]
   const text = itemText(item)
   const role = itemRole(item)
 
+  function addItemScore(delta: number, label: string) {
+    if (delta === 0) {
+      return
+    }
+
+    score += delta
+    components.push({
+      delta: roundScore(delta),
+      kind: delta > 0 ? 'bonus' : 'penalty',
+      label,
+      scoreAfter: roundScore(score),
+    })
+  }
+
   if (isExerciseContext(context)) {
     if (/run|running|lifting|training|gym|workout|dri|athletic|performance|compression|sport/.test(text)) {
-      score += 22
+      addItemScore(22, 'Exercise context match: athletic/performance wording')
     }
     if (isRunningContext(context) && /run|running|runner|running sock|running shoe|reflective/.test(text)) {
-      score += 14
+      addItemScore(14, 'Running context match: running-specific wording')
     }
     if (isLiftingContext(context) && /lift|lifting|training|trainer|gym|mobility|workout/.test(text)) {
-      score += 12
+      addItemScore(12, 'Lifting context match: gym/training wording')
     }
     if (role === 'belt' || /leather|dress|chino|trouser|button-down|button down|collar/.test(text)) {
-      score -= 24
+      addItemScore(-24, 'Exercise context penalty: dress, office, or accessory item')
     }
   }
 
   if (isWorkContext(context)) {
     if (/button|collar|polo|chino|trouser|oxford|loafer|boot|leather|belt|blazer/.test(text)) {
-      score += 18
+      addItemScore(18, 'Work context match: polished or business-casual wording')
     }
     if (/sweat|jogger|track|gym|running|crocs|clog|slide|slipper/.test(text)) {
-      score -= 28
+      addItemScore(-28, 'Work context penalty: too casual or athletic')
     }
   }
 
   if (context === 'travel') {
     if (/sneaker|tee|t-shirt|shirt|chino|pant|jogger|comfortable|stretch|travel|wrinkle|soft|layer/.test(text)) {
-      score += 14
+      addItemScore(14, 'Travel context match: comfortable, wrinkle-resistant, or easy to move in')
     }
     if (/stiff|formal|heel|heavy/.test(text)) {
-      score -= 8
+      addItemScore(-8, 'Travel context penalty: stiff, formal, heavy, or hard to move in')
     }
   }
 
   if (context === 'casual') {
     if (/sneaker|tee|t-shirt|shirt|short|chino|jean|comfortable|stretch/.test(text)) {
-      score += 12
+      addItemScore(12, 'Casual context match: everyday relaxed piece')
     }
     if (/sweatpant|slipper|pajama/.test(text)) {
-      score -= 8
+      addItemScore(-8, 'Casual context penalty: too lounge-specific')
     }
   }
 
   if (context === 'coastalCasual') {
     if (/flip-flop|flip flop|sandal|short|tank|tee|t-shirt|linen|cotton|swim|beach/.test(text)) {
-      score += 18
+      addItemScore(18, 'Coastal casual match: warm-weather beach-town piece')
     }
     if (/boot|blazer|wool|heavy|formal/.test(text)) {
-      score -= 12
+      addItemScore(-12, 'Coastal casual penalty: too heavy or formal')
     }
   }
 
   if (context === 'lounge') {
     if (/sweat|jogger|hoodie|legging|soft|lounge|pajama|slide|slipper|tee|t-shirt/.test(text)) {
-      score += 18
+      addItemScore(18, 'Lounge context match: comfort-first piece')
     }
     if (/dress shoe|loafer|blazer|stiff|formal/.test(text)) {
-      score -= 12
+      addItemScore(-12, 'Lounge context penalty: too formal or stiff')
     }
   }
 
   if (context === 'goingOut') {
     if (/button|collar|sweater|dress|skirt|chino|trouser|leather|loafer|boot/.test(text)) {
-      score += 15
+      addItemScore(15, 'Going-out context match: sharper or polished piece')
     }
     if (/jewelry|watch|polished|fitted|dark/.test(text)) {
-      score += 8
+      addItemScore(8, 'Going-out bonus: intentional styling detail')
     }
     if (/sweat|gym|running|compression|flip-flop|flip flop|slipper/.test(text)) {
-      score -= 18
+      addItemScore(-18, 'Going-out penalty: too casual or workout-focused')
     }
   }
 
   if (context === 'exploring') {
     if (/sneaker|walking|walkable|comfortable|breathable|short|chino|jean|hat|sunglass|layer/.test(text)) {
-      score += 14
+      addItemScore(14, 'Exploring context match: walkable and practical')
     }
     if (/stiff|formal|heel|slipper/.test(text)) {
-      score -= 10
+      addItemScore(-10, 'Exploring context penalty: stiff, formal, or impractical footwear')
     }
   }
 
   if (context === 'outdoorRecreation') {
     if (/outdoor|hiking|trail|sturdy|sun|hat|breathable|performance|sandal|short|layer|dust|beach|lake/.test(text)) {
-      score += 16
+      addItemScore(16, 'Outdoor recreation match: practical outdoor wording')
     }
     if (/dress|loafer|heel|formal|silk/.test(text)) {
-      score -= 14
+      addItemScore(-14, 'Outdoor recreation penalty: too formal or delicate')
     }
   }
 
   if (dayHighTemperature(weather) >= 85) {
     if (isHeatFriendly(item)) {
-      score += 16
+      addItemScore(16, 'Weather bonus: heat-friendly for a hot day')
     }
     if (/heavy|fleece|wool|jacket|sweater|boot/.test(text) && !/merino|lightweight/.test(text)) {
-      score -= 16
+      addItemScore(-16, 'Weather penalty: heavy or warm for a hot day')
     }
   } else if (dayLowTemperature(weather) < 62) {
     if (/jacket|sweater|wool|pants|boot/.test(text)) {
-      score += 12
+      addItemScore(12, 'Weather bonus: useful for a cooler day')
     }
     if (/short sleeve|shorts|linen/.test(text)) {
-      score -= 10
+      addItemScore(-10, 'Weather penalty: light piece on a cooler day')
     }
   }
 
   if (weather.isRaining || /rain|storm/.test(weather.condition.toLowerCase())) {
     if (isRainFriendly(item)) {
-      score += 14
+      addItemScore(14, 'Weather bonus: rain-friendly')
     }
     if (/suede|white sneaker|canvas/.test(text)) {
-      score -= 8
+      addItemScore(-8, 'Weather penalty: poor choice for rain risk')
     }
   }
 
   const styleText = profileStyleSummary(profile).toLowerCase()
   if (styleText) {
     if (styleText.includes('runs hot') && dayHighTemperature(weather) >= 74 && isHeatFriendly(item)) {
-      score += 8
+      addItemScore(8, 'Profile bonus: user runs hot and this is heat-friendly')
     }
     if (styleText.includes('no shorts for work') && isWorkContext(context) && isShorts(item)) {
-      score -= 28
+      addItemScore(-28, 'Profile penalty: user rule rejects shorts for work')
     }
     if (styleText.includes('no shorts with boots') && (isShorts(item) || isBoots(item))) {
-      score -= 4
+      addItemScore(-4, 'Profile penalty: part of a disliked shorts-with-boots combo')
     }
   }
 
   if (profile?.temperatureSensitivity === 'runs_hot' && dayHighTemperature(weather) >= 74) {
     if (isHeatFriendly(item)) {
-      score += 7
+      addItemScore(7, 'Temperature preference bonus: user runs hot')
     }
     if (/jacket|sweater|fleece|heavy/.test(text)) {
-      score -= 10
+      addItemScore(-10, 'Temperature preference penalty: warm layer for user who runs hot')
     }
   }
 
   if (profile?.temperatureSensitivity === 'runs_cold' && dayLowTemperature(weather) <= 76) {
     if (/pants|sweater|jacket|wool|merino|layer/.test(text)) {
-      score += 7
+      addItemScore(7, 'Temperature preference bonus: user runs cold')
     }
     if (/shorts|tank|sleeveless/.test(text)) {
-      score -= 7
+      addItemScore(-7, 'Temperature preference penalty: too light for user who runs cold')
     }
   }
 
-  score -= recentWearPenalty(item)
+  const rotationPenalty = recentWearPenalty(item)
+  if (rotationPenalty > 0) {
+    addItemScore(-rotationPenalty, 'Rotation penalty: item was worn recently')
+  }
 
-  return score
+  return {
+    categoryLabel: categoryLabel(item.category),
+    components,
+    contributionToOutfit: 0,
+    itemID: item.id,
+    itemName: item.name,
+    rawScore: Math.round(score),
+  }
 }
 
 function recentWearPenalty(item: ClothingItem) {

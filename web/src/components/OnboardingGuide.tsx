@@ -4,11 +4,12 @@ import {
   CloudSun,
   Image as ImageIcon,
   Shirt,
+  Smartphone,
   UserRound,
   Wand2,
   X,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useClosetItems } from '../hooks/useClosetItems'
 import { useSavedAvatar } from '../hooks/useSavedAvatar'
 import { getAIProxySettings } from '../lib/settings'
@@ -46,6 +47,9 @@ export function OnboardingGuide({
 }) {
   const { items } = useClosetItems(userId)
   const { avatar } = useSavedAvatar(userId)
+  const [installInstructionsOpen, setInstallInstructionsOpen] = useState(
+    () => !isRunningAsInstalledPWA(),
+  )
   const proxySettings = getAIProxySettings()
   const hasProfile =
     Boolean(profile?.displayName.trim()) &&
@@ -54,9 +58,25 @@ export function OnboardingGuide({
   const hasCloset = items.some((item) => item.status === 'active')
   const hasAvatar = Boolean(avatar)
   const hasAIProxy = Boolean(proxySettings.proxyUrl.trim()) && Boolean(proxySettings.proxyToken.trim())
+  const isInstalled = isRunningAsInstalledPWA()
   const isComplete = hasProfile && hasAIProxy && hasCloset && hasAvatar
 
   const steps: SetupStep[] = [
+    {
+      actionLabel: 'How to Install',
+      description: 'Add FitCheck to the Home Screen so it opens like a normal app.',
+      done: isInstalled,
+      icon: <Smartphone size={20} aria-hidden="true" />,
+      onClick: () => {
+        setInstallInstructionsOpen(true)
+        requestAnimationFrame(() => {
+          document
+            .getElementById('install-fitcheck-instructions')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        })
+      },
+      title: 'Install App',
+    },
     {
       actionLabel: 'Edit Profile',
       description: 'Add name, gender, style preferences, temperature comfort, dislikes, and rules.',
@@ -106,13 +126,45 @@ export function OnboardingGuide({
           <p className="eyebrow">First-time setup</p>
           <h2 id="setup-guide-title">Get FitCheck Ready</h2>
           <p className="helper-text">
-            The outfit quality depends on your profile, real closet, weather, and AI proxy setup.
+            Install it first, then add your profile, closet, avatar, and AI proxy settings.
           </p>
         </div>
         <button type="button" className="icon-button" onClick={onDismiss} aria-label="Hide setup guide">
           <X size={20} aria-hidden="true" />
         </button>
       </div>
+
+      <details
+        className="nested-details"
+        id="install-fitcheck-instructions"
+        onToggle={(event) => setInstallInstructionsOpen(event.currentTarget.open)}
+        open={installInstructionsOpen}
+      >
+        <summary>Install FitCheck on your Home Screen</summary>
+        <div className="install-instructions">
+          <div>
+            <h3>iPhone or iPad</h3>
+            <ol>
+              <li>Open the shared FitCheck link in Safari.</li>
+              <li>Tap the Share button.</li>
+              <li>Choose Add to Home Screen.</li>
+              <li>Tap Add, then open FitCheck from the new Home Screen icon.</li>
+            </ol>
+            <p className="helper-text">
+              If Add to Home Screen is missing, open the link in Safari instead of an in-app
+              browser, then check the Share sheet again.
+            </p>
+          </div>
+          <div>
+            <h3>Android or Desktop</h3>
+            <ol>
+              <li>Open the shared link in Chrome or Edge.</li>
+              <li>Use the browser menu or install icon.</li>
+              <li>Choose Install app or Add to Home screen.</li>
+            </ol>
+          </div>
+        </div>
+      </details>
 
       <div className="setup-step-list">
         {steps.map((step) => (
@@ -152,4 +204,17 @@ export function OnboardingGuide({
       </div>
     </section>
   )
+}
+
+function isRunningAsInstalledPWA() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  const standaloneNavigator = window.navigator as Navigator & { standalone?: boolean }
+  const isDisplayModeStandalone =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(display-mode: standalone)').matches
+
+  return isDisplayModeStandalone || standaloneNavigator.standalone === true
 }

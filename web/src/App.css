@@ -1361,6 +1361,15 @@ h3 {
   align-items: stretch;
 }
 
+.packing-item-object {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
 .packing-row input {
   width: 100%;
   min-height: 42px;
@@ -1373,15 +1382,26 @@ h3 {
 
 .packing-edit-actions {
   display: grid;
-  grid-template-columns: 76px 1fr 1fr;
+  grid-template-columns: minmax(92px, 0.8fr) 1fr 1fr;
   gap: 8px;
-  align-items: center;
+  align-items: end;
 }
 
 .packing-edit-actions .secondary-button,
 .packing-edit-actions .danger-button {
-  min-height: 42px;
+  min-height: 50px;
   padding: 0 10px;
+}
+
+.packing-closet-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.packing-closet-editor summary {
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-weight: 850;
 }
 
 .share-actions {

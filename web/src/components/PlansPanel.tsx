@@ -23,7 +23,16 @@ import { useContextStyles } from '../hooks/useContextStyles'
 import { usePlans } from '../hooks/usePlans'
 import { useSavedAvatar } from '../hooks/useSavedAvatar'
 import { generateAvatarPreview, type AvatarPreview } from '../lib/avatar'
-import type { ClothingItem } from '../lib/closet'
+import {
+  categoryLabel,
+  categoryOptionsForWearer,
+  clothingStatuses,
+  saveClothingItem,
+  type ClothingCategory,
+  type ClothingItem,
+  type ClothingItemDraft,
+  type ClothingStatus,
+} from '../lib/closet'
 import {
   addDaysISO,
   buildPackingList,
@@ -382,7 +391,9 @@ export function PlansPanel({
       await saveGeneratedPlan(userId, selectedPlan.id, nextItinerary, buildPackingList(nextItinerary, items))
       setStatusMessage('Itinerary edits saved. Packing list updated.')
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Could not save itinerary edits.')
+      const message = error instanceof Error ? error.message : 'Could not save itinerary edits.'
+      setErrorMessage(message)
+      throw new Error(message, { cause: error })
     }
   }
 
@@ -605,9 +616,7 @@ export function PlansPanel({
         {statusBlock}
         <ItinerarySection
           closetItems={items}
-          onChange={(nextItinerary) => {
-            void handleSaveItinerary(nextItinerary)
-          }}
+          onChange={(nextItinerary) => handleSaveItinerary(nextItinerary)}
           plan={selectedPlan}
           profile={profile}
           userId={userId}
@@ -636,11 +645,14 @@ export function PlansPanel({
         />
         {statusBlock}
         <PackingSection
+          closetItems={items}
           groupedPackingList={groupedPackingList}
           onChange={(nextPackingList) => {
             void handleSavePackingList(nextPackingList)
           }}
           plan={selectedPlan}
+          profile={profile}
+          userId={userId}
         />
         {groupedPackingList.length === 0 ? (
           <div className="empty-state">
@@ -1371,7 +1383,7 @@ function ItinerarySection({
   userId,
 }: {
   closetItems: ClothingItem[]
-  onChange: (itinerary: Plan['itinerary']) => void
+  onChange: (itinerary: Plan['itinerary']) => Promise<void> | void
   plan: Plan
   profile: UserProfile | null
   userId: string
@@ -1443,7 +1455,7 @@ function EditableItineraryCard({
   weather,
 }: {
   closetItems: ClothingItem[]
-  onChange: (outfit: Plan['itinerary'][number]) => void
+  onChange: (outfit: Plan['itinerary'][number]) => Promise<void> | void
   onRemove: () => void
   outfit: Plan['itinerary'][number]
   profile: UserProfile | null
@@ -1456,6 +1468,8 @@ function EditableItineraryCard({
   const [label, setLabel] = useState(outfit.label)
   const [selectedItemIDs, setSelectedItemIDs] = useState(outfit.itemIDs)
   const [editError, setEditError] = useState<string | null>(null)
+  const [editMessage, setEditMessage] = useState<string | null>(null)
+  const [isSavingOutfit, setIsSavingOutfit] = useState(false)
   const [avatarPreview, setAvatarPreview] = useState<AvatarPreview | null>(null)
   const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false)
   const [avatarError, setAvatarError] = useState<string | null>(null)
@@ -1476,13 +1490,14 @@ function EditableItineraryCard({
     [closetItemsById, selectedItemIDs],
   )
 
-  function saveEdits() {
+  async function saveEdits() {
     const weatherForScore = {
       ...weather,
       location: location || weather.location,
     }
 
     if (selectedItems.length === 0) {
+      setEditMessage(null)
       setEditError('Choose at least one closet item.')
       return
     }
@@ -1495,21 +1510,32 @@ function EditableItineraryCard({
       weather: weatherForScore,
     })
 
-    onChange({
-      ...outfit,
-      date,
-      location,
-      label,
-      weatherSummary: weatherSummary(weatherForScore),
-      itemIDs: selectedItems.map((item) => item.id),
-      itemNames: selectedItems.map((item) => item.name),
-      score: rescoredOutfit.score,
-      scoreLabel: rescoredOutfit.scoreLabel,
-      rationale: 'Edited itinerary outfit rescored from your selected closet items.',
-      reasons: rescoredOutfit.reasons,
-      cautions: rescoredOutfit.cautions,
-    })
+    setIsSavingOutfit(true)
     setEditError(null)
+    setEditMessage('Saving outfit edits...')
+
+    try {
+      await onChange({
+        ...outfit,
+        date,
+        location,
+        label,
+        weatherSummary: weatherSummary(weatherForScore),
+        itemIDs: selectedItems.map((item) => item.id),
+        itemNames: selectedItems.map((item) => item.name),
+        score: rescoredOutfit.score,
+        scoreLabel: rescoredOutfit.scoreLabel,
+        rationale: 'Edited itinerary outfit rescored from your selected closet items.',
+        reasons: rescoredOutfit.reasons,
+        cautions: rescoredOutfit.cautions,
+      })
+      setEditMessage('Outfit saved and score recalculated.')
+    } catch (error) {
+      setEditMessage(null)
+      setEditError(error instanceof Error ? error.message : 'Could not save outfit edits.')
+    } finally {
+      setIsSavingOutfit(false)
+    }
   }
 
   async function handleAvatarPreview() {
@@ -1612,14 +1638,17 @@ function EditableItineraryCard({
             selectionMode="multiple"
           />
         </label>
+        {editMessage ? <p className="success-message">{editMessage}</p> : null}
         {editError ? <p className="error-message">{editError}</p> : null}
         <div className="generation-actions">
           <button type="button" className="danger-button" onClick={onRemove}>
             <Trash2 size={18} aria-hidden="true" />
             Remove Outfit
           </button>
-          <button type="button" className="secondary-button" onClick={saveEdits}>
-            <Save size={20} aria-hidden="true" />
+          <button type="button" className="secondary-button" disabled={isSavingOutfit} onClick={() => {
+            void saveEdits()
+          }}>
+            {isSavingOutfit ? <span className="spinner small" aria-hidden="true" /> : <Save size={20} aria-hidden="true" />}
             Save Outfit Edits
           </button>
         </div>
@@ -1657,13 +1686,19 @@ function EditableItineraryCard({
 }
 
 function PackingSection({
+  closetItems,
   groupedPackingList,
   onChange,
   plan,
+  profile,
+  userId,
 }: {
+  closetItems: ClothingItem[]
   groupedPackingList: Array<[string, Plan['packingList']]>
   onChange: (packingList: Plan['packingList']) => void
   plan: Plan
+  profile: UserProfile | null
+  userId: string
 }) {
   if (groupedPackingList.length === 0) {
     return null
@@ -1681,6 +1716,7 @@ function PackingSection({
           <h3>{category}</h3>
           {items.map((item) => (
             <EditablePackingRow
+              closetItem={closetItems.find((closetItem) => closetItem.id === item.itemID) ?? null}
               item={item}
               key={item.itemID}
               onChange={(nextItem) =>
@@ -1693,6 +1729,8 @@ function PackingSection({
               onRemove={() =>
                 onChange(plan.packingList.filter((entry) => entry.itemID !== item.itemID))
               }
+              profile={profile}
+              userId={userId}
             />
           ))}
         </div>
@@ -1702,51 +1740,263 @@ function PackingSection({
 }
 
 function EditablePackingRow({
+  closetItem,
   item,
   onChange,
   onRemove,
+  profile,
+  userId,
 }: {
+  closetItem: ClothingItem | null
   item: Plan['packingList'][number]
   onChange: (item: Plan['packingList'][number]) => void
   onRemove: () => void
+  profile: UserProfile | null
+  userId: string
 }) {
-  const [name, setName] = useState(item.name)
   const [packQuantity, setPackQuantity] = useState(item.packQuantity)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  function savePackingQuantity() {
+    setError(null)
+    onChange({ ...item, packQuantity })
+    setMessage('Packing quantity saved.')
+  }
+
+  function handleClosetItemSaved(updatedItem: ClothingItem) {
+    onChange({
+      ...item,
+      availableQuantity: updatedItem.quantity,
+      category: updatedItem.category,
+      categoryLabel: categoryLabel(updatedItem.category),
+      name: updatedItem.name,
+    })
+    setError(null)
+    setMessage(`${updatedItem.name} updated in your closet and this packing list.`)
+  }
 
   return (
     <div className="packing-row editable">
-      <div>
-        <input
-          aria-label="Packing item name"
-          onChange={(event) => setName(event.target.value)}
-          type="text"
-          value={name}
-        />
+      <div className="packing-item-object">
+        <strong>{closetItem?.name ?? item.name}</strong>
         <span>
-          Used {item.useCount}x - available {item.availableQuantity}
+          {closetItem ? categoryLabel(closetItem.category) : item.categoryLabel}
+          {closetItem?.brand ? ` - ${closetItem.brand}` : ''}
+          {closetItem?.material ? ` - ${closetItem.material}` : ''}
+        </span>
+        <span>
+          Used {item.useCount}x - available {closetItem?.quantity ?? item.availableQuantity}
         </span>
       </div>
+
       <div className="packing-edit-actions">
-        <input
-          aria-label="Pack quantity"
-          min={0}
-          onChange={(event) => setPackQuantity(numberInput(event.target.value, item.packQuantity))}
-          type="number"
-          value={packQuantity}
-        />
+        <label className="form-field compact">
+          <span>Pack Qty</span>
+          <input
+            aria-label="Pack quantity"
+            min={0}
+            onChange={(event) => setPackQuantity(numberInput(event.target.value, item.packQuantity))}
+            type="number"
+            value={packQuantity}
+          />
+        </label>
         <button
           type="button"
           className="secondary-button"
-          onClick={() => onChange({ ...item, name, packQuantity })}
+          onClick={savePackingQuantity}
         >
-          Save
+          Save Qty
         </button>
         <button type="button" className="danger-button" onClick={onRemove}>
           Remove
         </button>
       </div>
+
+      {closetItem ? (
+        <details className="packing-closet-editor">
+          <summary>Edit connected closet item</summary>
+          <PackingClosetItemEditor
+            item={closetItem}
+            onSaved={handleClosetItemSaved}
+            profile={profile}
+            userId={userId}
+          />
+        </details>
+      ) : (
+        <p className="error-message">
+          This packing entry no longer matches a closet item. Remove it or regenerate the itinerary.
+        </p>
+      )}
+
+      {message ? <p className="success-message">{message}</p> : null}
+      {error ? <p className="error-message">{error}</p> : null}
     </div>
   )
+}
+
+function PackingClosetItemEditor({
+  item,
+  onSaved,
+  profile,
+  userId,
+}: {
+  item: ClothingItem
+  onSaved: (item: ClothingItem) => void
+  profile: UserProfile | null
+  userId: string
+}) {
+  const [draft, setDraft] = useState<ClothingItemDraft>(() => clothingItemDraftFromItem(item))
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const categoryOptions = categoryOptionsForWearer(profile?.gender ?? 'unspecified')
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setIsSaving(true)
+    setError(null)
+
+    try {
+      await saveClothingItem(userId, draft, item.id)
+      onSaved({
+        ...item,
+        name: draft.name.trim(),
+        brand: draft.brand.trim(),
+        category: draft.category,
+        quantity: Math.max(1, Math.floor(draft.quantity || 1)),
+        color: draft.color.trim(),
+        material: draft.material.trim(),
+        pattern: draft.pattern.trim(),
+        notes: draft.notes.trim(),
+        status: draft.status,
+      })
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save closet item.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <form className="quick-edit-card" onSubmit={handleSubmit}>
+      <label className="form-field">
+        <span>Name</span>
+        <input
+          onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+          required
+          type="text"
+          value={draft.name}
+        />
+      </label>
+
+      <div className="two-column-fields">
+        <label className="form-field compact">
+          <span>Category</span>
+          <select
+            onChange={(event) =>
+              setDraft({ ...draft, category: event.target.value as ClothingCategory })
+            }
+            value={draft.category}
+          >
+            {categoryOptions.map((category) => (
+              <option key={category.value} value={category.value}>
+                {category.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="form-field compact">
+          <span>Quantity</span>
+          <input
+            min={1}
+            onChange={(event) =>
+              setDraft({ ...draft, quantity: Number.parseInt(event.target.value, 10) || 1 })
+            }
+            type="number"
+            value={draft.quantity}
+          />
+        </label>
+      </div>
+
+      <div className="two-column-fields">
+        <label className="form-field compact">
+          <span>Brand</span>
+          <input
+            onChange={(event) => setDraft({ ...draft, brand: event.target.value })}
+            type="text"
+            value={draft.brand}
+          />
+        </label>
+
+        <label className="form-field compact">
+          <span>Status</span>
+          <select
+            onChange={(event) =>
+              setDraft({ ...draft, status: event.target.value as ClothingStatus })
+            }
+            value={draft.status}
+          >
+            {clothingStatuses.map((status) => (
+              <option key={status.value} value={status.value}>
+                {status.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="two-column-fields">
+        <label className="form-field compact">
+          <span>Color</span>
+          <input
+            onChange={(event) => setDraft({ ...draft, color: event.target.value })}
+            type="text"
+            value={draft.color}
+          />
+        </label>
+
+        <label className="form-field compact">
+          <span>Material</span>
+          <input
+            onChange={(event) => setDraft({ ...draft, material: event.target.value })}
+            type="text"
+            value={draft.material}
+          />
+        </label>
+      </div>
+
+      <label className="form-field">
+        <span>Notes</span>
+        <textarea
+          onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
+          rows={3}
+          value={draft.notes}
+        />
+      </label>
+
+      {error ? <p className="error-message">{error}</p> : null}
+
+      <button type="submit" className="secondary-button" disabled={isSaving}>
+        {isSaving ? <span className="spinner small" aria-hidden="true" /> : <Save size={20} aria-hidden="true" />}
+        Save Closet Item
+      </button>
+    </form>
+  )
+}
+
+function clothingItemDraftFromItem(item: ClothingItem): ClothingItemDraft {
+  return {
+    name: item.name,
+    brand: item.brand,
+    category: item.category,
+    quantity: item.quantity,
+    color: item.color,
+    material: item.material,
+    pattern: item.pattern,
+    notes: item.notes,
+    status: item.status,
+  }
 }
 
 function numberInput(value: string, fallback: number) {

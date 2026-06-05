@@ -1,6 +1,6 @@
 # FitCheck AI Proxy
 
-Small local backend for FitCheck AI outfit review, AI-first outfit selection, clothing photo import, and avatar outfit previews. The iPhone app never stores the OpenAI API key; it calls this proxy instead.
+Small backend for FitCheck AI outfit review, AI-first outfit selection, clothing photo import, avatar outfit previews, and weather fallback. The PWA never stores the OpenAI API key; it calls this proxy instead.
 
 ## Run locally
 
@@ -20,15 +20,14 @@ set +a
 node server.mjs
 ```
 
-In FitCheck Settings:
+In FitCheck `More -> AI Proxy`:
 
-- Turn on `Use AI proxy`.
-- Set `Proxy endpoint` to the base URL, such as `http://127.0.0.1:8787` for the iOS Simulator. Do not include a route like `/outfit-recommendation`.
+- Set `Proxy URL` to the base URL, such as `http://127.0.0.1:8787` for local browser testing. Do not include a route like `/outfit-recommendation`.
 - Set `Proxy token` to the same value as `FITCHECK_PROXY_TOKEN`.
 
 If the app says a route was not found, restart this backend from the latest code and confirm the base URL in Settings.
 
-For a physical iPhone, set `HOST=0.0.0.0` before starting the proxy and use your Mac's LAN address instead of `127.0.0.1`.
+For a phone on the same Wi-Fi network, set `HOST=0.0.0.0` before starting the proxy and use your Mac's LAN address instead of `127.0.0.1`.
 
 ## Render deployment
 
@@ -61,5 +60,6 @@ to browser code. Never put `OPENAI_API_KEY` in `web/`.
 - `POST /clothing-item-description` accepts a compressed base64 image plus optional user notes and returns an editable clothing-item draft.
 - `POST /style-profile-draft` turns guided style answers into editable style-preference fields.
 - `POST /avatar-outfit-preview` accepts a compressed user reference photo plus outfit, weather, location, and style context, then returns a base64 PNG preview.
+- `POST /weather-lookup` looks up city/current-location weather server-side, using Open-Meteo with MET Norway and Nominatim fallbacks.
 
 The PWA uses `clothing-item-description` for closet photo import, `style-profile-draft` for AI Style Coach, and `avatar-outfit-preview` for saved-avatar and outfit previews.

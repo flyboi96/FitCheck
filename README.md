@@ -1,76 +1,140 @@
 # FitCheck
 
-FitCheck is a personal wardrobe and outfit planning app. The repository contains the original SwiftUI iPhone app plus a Progressive Web App in `web/`.
+FitCheck is a personal wardrobe and outfit planning Progressive Web App. It stores a real digital closet, generates outfit recommendations from owned clothing, plans trip/week itineraries, tracks wear history, and uses a backend proxy for AI features without exposing the OpenAI API key in browser code.
 
-## MVP Scope
+The repository is now PWA-only. The original Swift app was archived before removal with:
 
-- Local digital closet with active, archived, and laundry/unavailable states
-- Add and edit clothing item metadata, including quantity and item photos
-- Photo-based closet import with optional notes and AI-generated item drafts
-- Bulk text import for quickly entering a starting wardrobe
-- Today's outfit recommendations from the clothes stored on device
-- Current weather lookup with Core Location and Open-Meteo, including humidity, plus a fallback location in Settings
-- Build an outfit around a selected item
-- Outfit wear history, wear counts, and feedback
-- Deletable outfit history, grouped wear logs by item, and clear-history controls
-- Personal style preferences
-- Plans for travel or normal weeks, with stops, packing lists, socks/underwear estimates, laundry-aware packing, separate packing/itinerary export, itinerary scoring comments, and itinerary feedback
-- Wearer profile setting for male/female/unset personalization context
-- Firebase Auth account screen for registering, signing in, and saving a cloud user profile
-- Firestore user profile document for name, gender, and style preferences, plus optional per-user closet metadata sync
-- Settings for an optional AI proxy endpoint
-- Optional AI outfit review and clothing photo description through a local backend proxy
-- JSON export/import for moving local FitCheck data to a new phone
+```bash
+git tag ios-swift-archive-before-pwa-cleanup
+```
 
-## Architecture Notes
+## Current Architecture
 
-The first version stores data locally with SwiftData and uses a rules-based recommendation engine. The scoring engine considers weather, a combined context picker, color palette harmony, inferred dressiness, rotation history, style preferences, positive and negative feedback, and required-item bonuses.
-
-Weather lookup uses Open-Meteo directly from the app. No weather API key is required for this MVP. The app asks for location permission by default, falls back to the default city saved in Settings if permission is denied or location lookup fails, and also supports typing a city or place for manual weather lookup. Manual weather also supports humidity.
-
-OpenAI integration is intentionally behind an app-owned backend/proxy abstraction in `FitCheck/Services/OpenAIOutfitClient.swift`. Do not put an OpenAI API key in the iPhone app. For local prototyping, keep the key in a backend environment variable such as `OPENAI_API_KEY`, run `backend/server.mjs`, and point the app at that backend from Settings. The proxy supports outfit review, AI-first outfit selection, and clothing photo import.
-
-The local color scorer recognizes neutrals, accent colors, analogous colors, complementary contrast, classic menswear pairings, and pattern conflicts. This keeps the app useful when the AI proxy is off.
-
-Settings includes a backup section. Export writes closet items, outfit history, feedback, style preferences, trips, packing lists, and itinerary feedback to JSON. Import restores that JSON and replaces the local FitCheck data on the device.
-
-Firebase is used for optional login and profile sync. SwiftData remains the local closet database for this version. Firestore stores one document per signed-in user at `users/{uid}` with account email, display name, gender, and style preferences. The Account screen can also upload/download closet metadata in `users/{uid}/clothingItems/{itemId}`. Photos are intentionally not synced yet; Firebase Storage is a better fit for that later.
-
-## Progressive Web App
-
-The PWA lives in `web/` and is intended to avoid the seven-day iOS free provisioning limit.
+- `web/`: React, TypeScript, Vite, and PWA frontend hosted on GitHub Pages.
+- `backend/`: Node backend proxy hosted on Render for OpenAI, avatar image generation, photo import, style coaching, and server-side weather fallback.
+- `firestore.rules`: Firestore security rules for per-user data.
+- `firebase.json`: Firebase CLI config for deploying Firestore rules.
+- `.github/workflows/deploy-web.yml`: GitHub Pages deployment workflow.
 
 Deployment split:
 
-- GitHub Pages hosts the PWA frontend at `https://flyboi96.github.io/FitCheck/`.
-- Render hosts the backend proxy so the OpenAI API key stays off the phone and out of browser code.
-- Firebase is used for Auth, Firestore, and security rules only.
+- GitHub Pages hosts the PWA at `https://flyboi96.github.io/FitCheck/`.
+- Render hosts the backend proxy.
+- Firebase handles Authentication and Firestore.
+- OpenAI keys stay in Render environment variables only.
 
-See `PWA_MIGRATION.md` and `web/README.md`.
+## App Features
 
-## Firebase Setup
+- Firebase Auth login/register
+- User profile with name, gender, style preferences, temperature comfort, disliked combinations, and personal rules
+- Digital closet with search, category/status filters, brand, quantity, notes, archive/delete, and wear stats
+- Bulk closet import for first-time wardrobe setup
+- AI photo import for clothing item drafts
+- Today and Build outfit generation
+- Editable outfit contexts under More
+- Local outfit scoring plus optional AI-first outfit selection
+- Weather lookup by current location or city, with day-specific forecast lookup for plans
+- Open-Meteo browser lookup with Render proxy fallback and MET Norway backend fallback
+- Outfit feedback and wear history
+- Trip/week plans with daily outfit requests, generated itineraries, packing lists, reorderable days, editable itinerary cards, and editable packing rows
+- Avatar Studio and avatar outfit previews through the backend proxy
+- JSON backup/export/import for profile, closet, plans, history, feedback, avatar metadata, and context settings
+- Firestore IndexedDB persistence for weak-connection/offline resilience
 
-1. Create a Firebase project.
-2. Add an iOS app with bundle ID `com.alexcorbin.personal.FitCheck`.
-3. Download `GoogleService-Info.plist`.
-4. Add that plist to the FitCheck app target in Xcode. The file is gitignored so local Firebase project details do not need to be committed.
-5. Enable Email/Password under Firebase Authentication.
-6. Create a Cloud Firestore database.
-7. Publish rules equivalent to `firestore.rules` so users can only read and write their own `users/{uid}` document and nested user data. From this folder, `firebase deploy --only firestore:rules` will use `firebase.json`.
-8. For the PWA, add `flyboi96.github.io` under Firebase Authentication authorized domains.
+## Local Setup
 
-After setup, open More > Account in FitCheck to register or sign in. Saving the account profile writes to Firestore and also applies the same gender/style preferences locally for outfit recommendations. Use the Cloud Personalization section to upload or download closet metadata for that signed-in user.
+Frontend:
 
-## AI Proxy
+```bash
+cd web
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+Backend:
+
+```bash
+cd backend
+npm install
+cp .env.example .env
+npm start
+```
+
+The backend `.env` should contain:
+
+```text
+OPENAI_API_KEY=...
+FITCHECK_PROXY_TOKEN=...
+HOST=0.0.0.0
+PORT=8787
+```
+
+Never put `OPENAI_API_KEY` in `web/` or GitHub Pages secrets.
+
+## GitHub Pages
+
+The PWA deploys from `.github/workflows/deploy-web.yml`.
+
+Required GitHub Actions secrets:
+
+```text
+VITE_FIREBASE_API_KEY
+VITE_FIREBASE_AUTH_DOMAIN
+VITE_FIREBASE_PROJECT_ID
+VITE_FIREBASE_STORAGE_BUCKET
+VITE_FIREBASE_MESSAGING_SENDER_ID
+VITE_FIREBASE_APP_ID
+VITE_FIREBASE_MEASUREMENT_ID
+VITE_FITCHECK_PROXY_URL
+```
+
+`VITE_FITCHECK_PROXY_URL` should be the Render backend base URL, for example:
+
+```text
+https://your-fitcheck-api.onrender.com
+```
+
+Optional:
+
+```text
+VITE_FITCHECK_PROXY_TOKEN
+```
+
+Prefer entering the proxy token in the PWA under `More -> AI Proxy` if you do not want it baked into the GitHub Pages build.
+
+## Firebase
+
+1. Enable Email/Password Authentication.
+2. Add `flyboi96.github.io` as an authorized Firebase Auth domain.
+3. Create a Cloud Firestore database.
+4. Deploy rules:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+The PWA stores user data under `users/{uid}` and nested subcollections such as `clothingItems`, `plans`, `outfits`, `wearLogs`, `outfitFeedback`, `avatars`, and `contextStyles`.
+
+## Backend Proxy
 
 See `backend/README.md`.
 
-The backend reads `OPENAI_API_KEY` and optional `FITCHECK_PROXY_TOKEN` from environment variables. The app stores only the proxy URL and optional proxy token.
+Main routes:
 
-## Open In Xcode
+- `GET /health`
+- `POST /outfit-recommendation`
+- `POST /clothing-item-description`
+- `POST /style-profile-draft`
+- `POST /avatar-outfit-preview`
+- `POST /weather-lookup`
 
-Open `FitCheck.xcodeproj` in Xcode and run the `FitCheck` scheme on an iPhone simulator.
+## Install On iPhone
 
-## TestFlight
+Open the GitHub Pages URL in Safari:
 
-See `TESTFLIGHT.md` for the archive, upload, and smoke-test checklist.
+```text
+Share -> Add to Home Screen
+```
+
+This avoids the seven-day Apple free provisioning limit because FitCheck is installed as a PWA.

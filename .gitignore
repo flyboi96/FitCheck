@@ -1,7 +1,4 @@
 .DS_Store
-DerivedData/
 backend/.env
 backend/node_modules/
-GoogleService-Info.plist
-*.xcuserstate
 .env

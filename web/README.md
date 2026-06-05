@@ -1,6 +1,6 @@
 # FitCheck Web PWA
 
-This is the Progressive Web App version of FitCheck. It lives beside the native iOS app and will be ported in phases.
+This is the FitCheck Progressive Web App. It is the active app implementation for iPhone and desktop browser use.
 
 ## Current Scope
 
@@ -9,7 +9,7 @@ This is the Progressive Web App version of FitCheck. It lives beside the native 
 - iPhone Home Screen metadata
 - Firebase Web SDK configuration
 - GitHub Pages deployment workflow
-- FitCheck app shell with the same primary sections as the iOS app
+- FitCheck app shell with Today, Plans, Closet, Build, and More
 - Firebase Auth sign in, registration, password visibility toggle, and sign out
 - Firestore user profile sync under `users/{uid}`
 - Firestore closet sync under `users/{uid}/clothingItems`
@@ -20,7 +20,7 @@ This is the Progressive Web App version of FitCheck. It lives beside the native 
 - Outfit feedback saved under `users/{uid}/outfitFeedback`
 - Plans saved under `users/{uid}/plans`
 - Daily outfit requests, AI/local itinerary generation, derived packing list, and share text
-- Weather lookup by city/current location through Open-Meteo
+- Weather lookup by city/current location through Open-Meteo, with backend fallback weather lookup through Render
 - Closet photo import through the backend proxy
 - Avatar outfit previews through the backend proxy
 - Outfit history, item wear logs, delete/clear history, and rotation stats

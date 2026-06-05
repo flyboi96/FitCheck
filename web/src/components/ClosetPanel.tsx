@@ -528,11 +528,15 @@ export function ClosetPanel({
 
       <div className="closet-list" aria-label="Clothing items">
         {groupedItems.map((group) => (
-          <section className="category-section" key={group.category.value}>
-            <div className="category-heading">
+          <details
+            className="category-section"
+            key={group.category.value}
+            open={Boolean(searchTerm.trim()) || categoryFilter !== 'all'}
+          >
+            <summary className="category-heading">
               <h3>{group.category.label}</h3>
               <span>{group.items.length}</span>
-            </div>
+            </summary>
             <div className="item-list">
               {group.items.map((item) => (
                 <ClothingItemCard
@@ -548,7 +552,7 @@ export function ClosetPanel({
                 />
               ))}
             </div>
-          </section>
+          </details>
         ))}
       </div>
     </div>

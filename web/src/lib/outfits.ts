@@ -29,10 +29,13 @@ export type OutfitFeedbackType = 'liked' | 'rejected' | 'issue'
 export type WeatherInput = {
   location: string
   temperatureF: number
+  highTemperatureF: number
+  lowTemperatureF: number
   condition: string
   isRaining: boolean
   humidityPercent: number
   windMph: number
+  source?: string
 }
 
 export type OutfitRecommendation = {
@@ -92,6 +95,8 @@ function normalizedContextText(context: OutfitContext) {
 export const defaultWeatherInput: WeatherInput = {
   location: '',
   temperatureF: 75,
+  highTemperatureF: 75,
+  lowTemperatureF: 75,
   condition: 'Clear',
   isRaining: false,
   humidityPercent: 45,
@@ -189,7 +194,7 @@ export function generateLocalOutfit({
     )
 
     const shouldAddOuterwear =
-      weather.temperatureF < 64 || weather.isRaining || /rain|storm|wind/i.test(weather.condition)
+      dayLowTemperature(weather) < 64 || weather.isRaining || /rain|storm|wind/i.test(weather.condition)
     if (shouldAddOuterwear) {
       addItem(bestItem(availableItems, 'outerwear', context, weather, profile, selectedItemId))
     }
@@ -271,14 +276,22 @@ export async function saveOutfitFeedback({
 export function weatherSummary(weather: WeatherInput) {
   const parts = [
     weather.location.trim() || 'Unknown location',
-    `${weather.temperatureF}F`,
+    `day ${temperatureRangeLabel(weather)}`,
     weather.condition.trim() || 'Weather not specified',
     weather.isRaining ? 'rain' : null,
     `humidity ${weather.humidityPercent}%`,
     `wind ${weather.windMph} mph`,
+    weather.source ?? null,
   ].filter(Boolean)
 
   return parts.join(' - ')
+}
+
+function temperatureRangeLabel(weather: WeatherInput) {
+  const low = dayLowTemperature(weather)
+  const high = dayHighTemperature(weather)
+
+  return low === high ? `${high}F` : `${low}-${high}F`
 }
 
 async function requestAIOutfit(request: OutfitGenerationRequest): Promise<OutfitRecommendation> {
@@ -520,7 +533,7 @@ function scoreOutfit(
     cautions.push(colorNote.caution)
   }
 
-  if (weather.temperatureF >= 85 && weather.humidityPercent >= 55) {
+  if (dayHighTemperature(weather) >= 85 && weather.humidityPercent >= 55) {
     if (items.some((item) => item.category === 'jacket' || item.category === 'sweater')) {
       score -= 18
       cautions.push('Hot, humid weather argues against extra layers.')
@@ -674,14 +687,14 @@ function scoreItem(
     }
   }
 
-  if (weather.temperatureF >= 85) {
+  if (dayHighTemperature(weather) >= 85) {
     if (isHeatFriendly(item)) {
       score += 16
     }
     if (/heavy|fleece|wool|jacket|sweater|boot/.test(text) && !/merino|lightweight/.test(text)) {
       score -= 16
     }
-  } else if (weather.temperatureF < 62) {
+  } else if (dayLowTemperature(weather) < 62) {
     if (/jacket|sweater|wool|pants|boot/.test(text)) {
       score += 12
     }
@@ -701,7 +714,7 @@ function scoreItem(
 
   const styleText = profileStyleSummary(profile).toLowerCase()
   if (styleText) {
-    if (styleText.includes('runs hot') && weather.temperatureF >= 74 && isHeatFriendly(item)) {
+    if (styleText.includes('runs hot') && dayHighTemperature(weather) >= 74 && isHeatFriendly(item)) {
       score += 8
     }
     if (styleText.includes('no shorts for work') && isWorkContext(context) && isShorts(item)) {
@@ -712,7 +725,7 @@ function scoreItem(
     }
   }
 
-  if (profile?.temperatureSensitivity === 'runs_hot' && weather.temperatureF >= 74) {
+  if (profile?.temperatureSensitivity === 'runs_hot' && dayHighTemperature(weather) >= 74) {
     if (isHeatFriendly(item)) {
       score += 7
     }
@@ -721,7 +734,7 @@ function scoreItem(
     }
   }
 
-  if (profile?.temperatureSensitivity === 'runs_cold' && weather.temperatureF <= 76) {
+  if (profile?.temperatureSensitivity === 'runs_cold' && dayLowTemperature(weather) <= 76) {
     if (/pants|sweater|jacket|wool|merino|layer/.test(text)) {
       score += 7
     }
@@ -753,6 +766,14 @@ function recentWearPenalty(item: ClothingItem) {
   if (daysSinceWorn <= 3) return 9
   if (daysSinceWorn <= 6) return 5
   return 0
+}
+
+function dayHighTemperature(weather: WeatherInput) {
+  return Math.max(weather.highTemperatureF ?? weather.temperatureF, weather.temperatureF)
+}
+
+function dayLowTemperature(weather: WeatherInput) {
+  return Math.min(weather.lowTemperatureF ?? weather.temperatureF, weather.temperatureF)
 }
 
 function itemRole(item: ClothingItem): ItemRole {

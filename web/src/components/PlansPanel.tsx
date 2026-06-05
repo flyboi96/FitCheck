@@ -17,6 +17,7 @@ import {
   Wand2,
   X,
 } from 'lucide-react'
+import { ClothingItemBrowser } from './ClothingItemBrowser'
 import { useClosetItems } from '../hooks/useClosetItems'
 import { useContextStyles } from '../hooks/useContextStyles'
 import { usePlans } from '../hooks/usePlans'
@@ -47,7 +48,6 @@ import {
   type PackingListItem,
 } from '../lib/plans'
 import {
-  categoryName,
   defaultWeatherInput,
   generateOutfit,
   scoreCustomOutfit,
@@ -821,14 +821,7 @@ function PlanEditor({
       date: nextDate,
       location: lastDay?.location ?? '',
       weather: {
-        ...(lastDay?.weather ?? {
-          location: '',
-          temperatureF: 75,
-          condition: 'Clear',
-          isRaining: false,
-          humidityPercent: 45,
-          windMph: 5,
-        }),
+        ...(lastDay?.weather ?? defaultWeatherInput),
         location: lastDay?.location ?? '',
       },
       requests: [createRequest(contextOptions[0]?.value ?? 'casual')],
@@ -1122,6 +1115,21 @@ function PlanDayEditor({
     onChange({ ...day, weather })
   }
 
+  function updateDayTemperature(field: 'highTemperatureF' | 'lowTemperatureF', value: number) {
+    const nextWeather = {
+      ...day.weather,
+      [field]: value,
+    }
+    const high = nextWeather.highTemperatureF
+    const low = nextWeather.lowTemperatureF
+
+    updateWeather({
+      ...nextWeather,
+      temperatureF: Math.round((high + low) / 2),
+      source: 'Manual full-day weather',
+    })
+  }
+
   function updateRequest(requestId: string, context: OutfitContext) {
     const contextLabel = contextOptions.find((option) => option.value === context)?.label ?? context
 
@@ -1227,16 +1235,23 @@ function PlanDayEditor({
 
       <div className="weather-grid">
         <label className="form-field compact">
-          <span>Temp F</span>
+          <span>Day High F</span>
           <input
             onChange={(event) =>
-              updateWeather({
-                ...day.weather,
-                temperatureF: numberInput(event.target.value, 75),
-              })
+              updateDayTemperature('highTemperatureF', numberInput(event.target.value, 75))
             }
             type="number"
-            value={day.weather.temperatureF}
+            value={day.weather.highTemperatureF}
+          />
+        </label>
+        <label className="form-field compact">
+          <span>Day Low F</span>
+          <input
+            onChange={(event) =>
+              updateDayTemperature('lowTemperatureF', numberInput(event.target.value, 75))
+            }
+            type="number"
+            value={day.weather.lowTemperatureF}
           />
         </label>
         <label className="form-field compact">
@@ -1296,7 +1311,7 @@ function PlanDayEditor({
 
       <button type="button" className="secondary-button" onClick={onLookupWeather}>
         <MapPin size={20} aria-hidden="true" />
-        Look Up Weather
+        Look Up Full-Day Forecast
       </button>
 
       <div className="request-list">
@@ -1443,15 +1458,7 @@ function EditableItineraryCard({
     [closetItems],
   )
   const selectableItems = useMemo(
-    () =>
-      closetItems
-        .filter((item) => item.status === 'active' || selectedItemIDs.includes(item.id))
-        .slice()
-        .sort((first, second) =>
-          `${categoryName(first.category)} ${first.name}`.localeCompare(
-            `${categoryName(second.category)} ${second.name}`,
-          ),
-        ),
+    () => closetItems.filter((item) => item.status === 'active' || selectedItemIDs.includes(item.id)),
     [closetItems, selectedItemIDs],
   )
   const selectedItems = useMemo(
@@ -1461,14 +1468,6 @@ function EditableItineraryCard({
         .filter((item): item is ClothingItem => Boolean(item)),
     [closetItemsById, selectedItemIDs],
   )
-
-  function toggleSelectedItem(itemId: string) {
-    setSelectedItemIDs((currentIDs) =>
-      currentIDs.includes(itemId)
-        ? currentIDs.filter((currentID) => currentID !== itemId)
-        : [...currentIDs, itemId],
-    )
-  }
 
   function saveEdits() {
     const weatherForScore = {
@@ -1598,25 +1597,13 @@ function EditableItineraryCard({
         </label>
         <label className="form-field">
           <span>Closet Items</span>
-          <div className="closet-pick-list compact">
-            {selectableItems.map((item) => (
-              <label className="closet-pick-row" key={item.id}>
-                <input
-                  checked={selectedItemIDs.includes(item.id)}
-                  onChange={() => toggleSelectedItem(item.id)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>{item.name}</strong>
-                  <small>
-                    {categoryName(item.category)}
-                    {item.brand ? ` - ${item.brand}` : ''}
-                    {item.material ? ` - ${item.material}` : ''}
-                  </small>
-                </span>
-              </label>
-            ))}
-          </div>
+          <ClothingItemBrowser
+            compact
+            items={selectableItems}
+            onSelectionChange={setSelectedItemIDs}
+            selectedItemIDs={selectedItemIDs}
+            selectionMode="multiple"
+          />
         </label>
         {editError ? <p className="error-message">{editError}</p> : null}
         <div className="generation-actions">

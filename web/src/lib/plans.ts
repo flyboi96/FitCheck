@@ -436,10 +436,19 @@ function normalizeWeather(value: unknown, location: string): WeatherInput {
   return {
     location: stringValue(data.location, location),
     temperatureF: numberValue(data.temperatureF, defaultWeatherInput.temperatureF),
+    highTemperatureF: numberValue(
+      data.highTemperatureF,
+      numberValue(data.temperatureF, defaultWeatherInput.highTemperatureF),
+    ),
+    lowTemperatureF: numberValue(
+      data.lowTemperatureF,
+      numberValue(data.temperatureF, defaultWeatherInput.lowTemperatureF),
+    ),
     condition: stringValue(data.condition, defaultWeatherInput.condition),
     isRaining: Boolean(data.isRaining),
     humidityPercent: numberValue(data.humidityPercent, defaultWeatherInput.humidityPercent),
     windMph: numberValue(data.windMph, defaultWeatherInput.windMph),
+    source: stringValue(data.source),
   }
 }
 

@@ -10,14 +10,6 @@ type GeocodingResult = {
 }
 
 type OpenMeteoForecast = {
-  current?: {
-    temperature_2m?: number
-    relative_humidity_2m?: number
-    precipitation?: number
-    rain?: number
-    weather_code?: number
-    wind_speed_10m?: number
-  }
   daily?: {
     time?: string[]
     weather_code?: number[]
@@ -122,10 +114,6 @@ async function lookupWeatherByCoordinatesDirect({
   url.searchParams.set('latitude', latitude.toString())
   url.searchParams.set('longitude', longitude.toString())
   url.searchParams.set(
-    'current',
-    'temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m',
-  )
-  url.searchParams.set(
     'daily',
     'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max',
   )
@@ -152,21 +140,13 @@ async function lookupWeatherByCoordinatesDirect({
     return {
       location: locationLabel,
       temperatureF: Math.round((maxTemperature + minTemperature) / 2),
+      highTemperatureF: Math.round(maxTemperature),
+      lowTemperatureF: Math.round(minTemperature),
       condition: weatherCodeLabel(data.daily?.weather_code?.[dayIndex]),
       isRaining: precipitation > 0.02,
       humidityPercent: averageHumidityForDate(data, date),
       windMph: Math.round(data.daily?.wind_speed_10m_max?.[dayIndex] ?? defaultWeatherInput.windMph),
-    }
-  }
-
-  if (date === todayISO() && data.current?.temperature_2m != null) {
-    return {
-      location: locationLabel,
-      temperatureF: Math.round(data.current.temperature_2m),
-      condition: weatherCodeLabel(data.current.weather_code),
-      isRaining: Number(data.current.precipitation ?? data.current.rain ?? 0) > 0,
-      humidityPercent: Math.round(data.current.relative_humidity_2m ?? defaultWeatherInput.humidityPercent),
-      windMph: Math.round(data.current.wind_speed_10m ?? defaultWeatherInput.windMph),
+      source: 'Open-Meteo full-day forecast',
     }
   }
 
@@ -234,12 +214,21 @@ function normalizeWeatherInput(data: Partial<WeatherInput>): WeatherInput {
       ? data.location
       : defaultWeatherInput.location,
     temperatureF: numberValue(data.temperatureF, defaultWeatherInput.temperatureF),
+    highTemperatureF: numberValue(
+      data.highTemperatureF,
+      numberValue(data.temperatureF, defaultWeatherInput.highTemperatureF),
+    ),
+    lowTemperatureF: numberValue(
+      data.lowTemperatureF,
+      numberValue(data.temperatureF, defaultWeatherInput.lowTemperatureF),
+    ),
     condition: typeof data.condition === 'string' && data.condition.trim()
       ? data.condition
       : defaultWeatherInput.condition,
     isRaining: Boolean(data.isRaining),
     humidityPercent: numberValue(data.humidityPercent, defaultWeatherInput.humidityPercent),
     windMph: numberValue(data.windMph, defaultWeatherInput.windMph),
+    source: typeof data.source === 'string' && data.source.trim() ? data.source : undefined,
   }
 }
 

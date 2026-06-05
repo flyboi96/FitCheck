@@ -20,6 +20,7 @@ import {
   Wand2,
   X,
 } from 'lucide-react'
+import { ClothingItemBrowser } from './ClothingItemBrowser'
 import { useClosetItems } from '../hooks/useClosetItems'
 import { useContextStyles } from '../hooks/useContextStyles'
 import { useSavedAvatar } from '../hooks/useSavedAvatar'
@@ -91,18 +92,6 @@ export function OutfitExperiencePanel({
 
   const activeItems = useMemo(() => items.filter((item) => item.status === 'active'), [items])
   const selectedItem = activeItems.find((item) => item.id === selectedItemId)
-  const sortedActiveItems = useMemo(
-    () =>
-      activeItems
-        .slice()
-        .sort((first, second) =>
-          `${categoryName(first.category)} ${first.name}`.localeCompare(
-            `${categoryName(second.category)} ${second.name}`,
-          ),
-        ),
-    [activeItems],
-  )
-
   useEffect(() => {
     if (mode !== 'today' || autoWeatherAttempted.current) {
       return
@@ -112,7 +101,7 @@ export function OutfitExperiencePanel({
 
     const timer = window.setTimeout(() => {
       setIsLookingUpWeather(true)
-      setWeatherStatus("Trying today's current-location forecast.")
+      setWeatherStatus("Trying today's full-day forecast for your location.")
       setWeatherError(null)
 
       lookupWeatherAtCurrentLocation(todayWeatherDate())
@@ -180,6 +169,21 @@ export function OutfitExperiencePanel({
     } finally {
       setIsLookingUpWeather(false)
     }
+  }
+
+  function updateDayTemperature(field: 'highTemperatureF' | 'lowTemperatureF', value: number) {
+    const nextWeather = {
+      ...weather,
+      [field]: value,
+    }
+    const high = nextWeather.highTemperatureF
+    const low = nextWeather.lowTemperatureF
+
+    setWeather({
+      ...nextWeather,
+      temperatureF: Math.round((high + low) / 2),
+      source: 'Manual full-day weather',
+    })
   }
 
   async function handleFeedback(type: OutfitFeedbackType) {
@@ -314,11 +318,7 @@ export function OutfitExperiencePanel({
 
         <div className="weather-source-card">
           <strong>Today's Forecast Source</strong>
-          <span>
-            {weather.location.trim()
-              ? `${weather.location} - ${weather.temperatureF}F, ${weather.condition}, ${weather.humidityPercent}% humidity`
-              : 'Manual weather values until current location or city lookup succeeds.'}
-          </span>
+          <span>{weather.location.trim() ? weatherSummary(weather) : 'Manual full-day weather values until current location or city lookup succeeds.'}</span>
         </div>
 
         <div className="weather-actions">
@@ -331,7 +331,7 @@ export function OutfitExperiencePanel({
             }}
           >
             {isLookingUpWeather ? <span className="spinner small" aria-hidden="true" /> : <MapPin size={20} />}
-            Look Up Weather
+            Look Up Full-Day Forecast
           </button>
           <button
             type="button"
@@ -342,7 +342,7 @@ export function OutfitExperiencePanel({
             }}
           >
             <LocateFixed size={20} aria-hidden="true" />
-            Use Current
+            Use My Location
           </button>
         </div>
 
@@ -351,14 +351,26 @@ export function OutfitExperiencePanel({
 
         <div className="weather-grid">
           <label className="form-field">
-            <span>Temp F</span>
+            <span>Day High F</span>
             <input
               inputMode="numeric"
               onChange={(event) =>
-                setWeather({ ...weather, temperatureF: numberInput(event.target.value, 75) })
+                updateDayTemperature('highTemperatureF', numberInput(event.target.value, 75))
               }
               type="number"
-              value={weather.temperatureF}
+              value={weather.highTemperatureF}
+            />
+          </label>
+
+          <label className="form-field">
+            <span>Day Low F</span>
+            <input
+              inputMode="numeric"
+              onChange={(event) =>
+                updateDayTemperature('lowTemperatureF', numberInput(event.target.value, 75))
+              }
+              type="number"
+              value={weather.lowTemperatureF}
             />
           </label>
 
@@ -410,20 +422,18 @@ export function OutfitExperiencePanel({
         </label>
 
         {mode === 'build' ? (
-          <label className="form-field">
+          <div className="form-field">
             <span>Required Item</span>
-            <select
-              onChange={(event) => setSelectedItemId(event.target.value)}
-              value={selectedItemId}
-            >
-              <option value="">No required item</option>
-              {sortedActiveItems.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} - {categoryName(item.category)}
-                </option>
-              ))}
-            </select>
-          </label>
+            <ClothingItemBrowser
+              allowEmptySelection
+              compact
+              emptySelectionLabel="No required item"
+              items={activeItems}
+              onSelectionChange={(itemIDs) => setSelectedItemId(itemIDs[0] ?? '')}
+              selectedItemIDs={selectedItemId ? [selectedItemId] : []}
+              selectionMode="single"
+            />
+          </div>
         ) : null}
 
         {mode === 'build' && selectedItem ? (
@@ -578,14 +588,6 @@ function OutfitResultCard({
     [activeItems],
   )
 
-  function toggleSelectedItem(itemId: string) {
-    setSelectedItemIDs((currentIDs) =>
-      currentIDs.includes(itemId)
-        ? currentIDs.filter((currentID) => currentID !== itemId)
-        : [...currentIDs, itemId],
-    )
-  }
-
   function saveOutfitItemEdits() {
     const selectedItems = selectedItemIDs
       .map((itemId) => activeItemsById.get(itemId))
@@ -721,25 +723,13 @@ function OutfitResultCard({
         <p className="helper-text">
           Add or remove owned active items, then save to recalculate the outfit score.
         </p>
-        <div className="closet-pick-list">
-          {activeItems.map((item) => (
-            <label className="closet-pick-row" key={item.id}>
-              <input
-                checked={selectedItemIDs.includes(item.id)}
-                onChange={() => toggleSelectedItem(item.id)}
-                type="checkbox"
-              />
-              <span>
-                <strong>{item.name}</strong>
-                <small>
-                  {categoryName(item.category)}
-                  {item.brand ? ` - ${item.brand}` : ''}
-                  {item.material ? ` - ${item.material}` : ''}
-                </small>
-              </span>
-            </label>
-          ))}
-        </div>
+        <ClothingItemBrowser
+          compact
+          items={activeItems}
+          onSelectionChange={setSelectedItemIDs}
+          selectedItemIDs={selectedItemIDs}
+          selectionMode="multiple"
+        />
         <button type="button" className="secondary-button" onClick={saveOutfitItemEdits}>
           <Save size={20} aria-hidden="true" />
           Save Outfit Items

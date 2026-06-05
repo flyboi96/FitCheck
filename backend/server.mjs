@@ -442,10 +442,6 @@ async function lookupOpenMeteoForecast({ date, latitude, locationLabel, longitud
   url.searchParams.set("latitude", latitude.toString());
   url.searchParams.set("longitude", longitude.toString());
   url.searchParams.set(
-    "current",
-    "temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m"
-  );
-  url.searchParams.set(
     "daily",
     "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max"
   );
@@ -470,23 +466,13 @@ async function lookupOpenMeteoForecast({ date, latitude, locationLabel, longitud
     return {
       location: locationLabel,
       temperatureF: Math.round((maxTemperature + minTemperature) / 2),
+      highTemperatureF: Math.round(maxTemperature),
+      lowTemperatureF: Math.round(minTemperature),
       condition: weatherLookupCodeLabel(data.daily?.weather_code?.[dayIndex]),
       isRaining: precipitation > 0.02,
       humidityPercent: averageWeatherHumidityForDate(data, date),
       windMph: Math.round(Number(data.daily?.wind_speed_10m_max?.[dayIndex] ?? 5)),
-      source: "Open-Meteo forecast"
-    };
-  }
-
-  if (date === weatherTodayISO() && data.current?.temperature_2m != null) {
-    return {
-      location: locationLabel,
-      temperatureF: Math.round(Number(data.current.temperature_2m)),
-      condition: weatherLookupCodeLabel(data.current.weather_code),
-      isRaining: Number(data.current.precipitation ?? data.current.rain ?? 0) > 0,
-      humidityPercent: Math.round(Number(data.current.relative_humidity_2m ?? 45)),
-      windMph: Math.round(Number(data.current.wind_speed_10m ?? 5)),
-      source: "Open-Meteo current fallback"
+      source: "Open-Meteo full-day forecast"
     };
   }
 
@@ -530,6 +516,8 @@ async function lookupMetNorwayForecast({ date, latitude, locationLabel, longitud
   return {
     location: locationLabel,
     temperatureF: Math.round(averageNumber(temperaturesF, 75)),
+    highTemperatureF: Math.round(Math.max(...temperaturesF)),
+    lowTemperatureF: Math.round(Math.min(...temperaturesF)),
     condition: metNorwayConditionLabel(symbol, precipitationMm),
     isRaining: precipitationMm > 0.5,
     humidityPercent: Math.round(averageNumber(humidityValues, 45)),

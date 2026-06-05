@@ -76,6 +76,8 @@ export async function generateAvatarPreview({
       avatarNotes: 'Full-body realistic avatar preview. Include hair/head and shoes.',
       weatherCondition: weather.condition,
       temperatureF: weather.temperatureF,
+      highTemperatureF: weather.highTemperatureF,
+      lowTemperatureF: weather.lowTemperatureF,
       isRaining: weather.isRaining,
       windMph: weather.windMph,
       humidityPercent: weather.humidityPercent,

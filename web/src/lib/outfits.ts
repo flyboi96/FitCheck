@@ -549,7 +549,7 @@ async function requestAIOutfit(
   }
 
   if (!allowLocalCompletion && !hasRequiredCoreRoles(items, request.context)) {
-    throw new Error('AI returned an incomplete outfit. Try again or use Local Itinerary.')
+    throw new Error('AI returned an incomplete outfit even after the proxy repair pass.')
   }
 
   const completedItems = allowLocalCompletion

@@ -203,6 +203,7 @@ Rules:
 - Crocs, foam clogs, slides, and slippers are casual-only and should usually be rejected unless the user explicitly asks for that kind of casual footwear.
 - Coastal Casual is distinct from Casual: it allows relaxed beach-town pieces such as flip flops, shorts, tanks, T-shirts, linen, cotton, and swimsuit-adjacent casual pieces.
 - For Lifting or Running contexts, do not add belts, dress accessories, or non-exercise clothing. Prefer running socks and running shoes for Running; prefer training shoes and lifting/training socks for Lifting.
+- Always return a complete outfit. For Lifting or Running, include at least a workout top, workout bottom, and training/running shoes. For all other contexts, include either a top plus bottom plus shoes, or a dress/full-body item plus shoes. Socks, belts, watches, jewelry, bags, and outerwear are optional additions; they do not replace the required core roles.
 - Keep the rationale concise and specific.
 - Put risks or caveats in cautions, not the rationale.
 `;
@@ -699,9 +700,14 @@ async function reviewOutfit(requestBody) {
   }
 
   const knownIDs = new Set(closet.map((item) => item.id).filter(Boolean));
+  const closetByID = new Map(closet.map((item) => [item.id, item]));
   const candidateItemIDs = Array.isArray(requestBody.candidateItemIDs)
     ? requestBody.candidateItemIDs.filter((id) => knownIDs.has(id))
     : [];
+  const requiredCoreRoles = requiredCoreRolesForContext(
+    requestBody.context ?? "",
+    requestBody.contextLabel ?? requestBody.occasion ?? ""
+  );
 
   const promptPayload = {
     context: requestBody.context ?? "",
@@ -713,6 +719,7 @@ async function reviewOutfit(requestBody) {
     styleDescription: requestBody.styleDescription ?? "",
     selectedItemID: requestBody.selectedItemID ?? null,
     candidateItemIDs,
+    requiredCoreRoles,
     localScore: requestBody.localScore ?? null,
     localNotes: Array.isArray(requestBody.localNotes) ? requestBody.localNotes : [],
     recentFeedback: Array.isArray(requestBody.recentFeedback) ? requestBody.recentFeedback : [],
@@ -729,10 +736,47 @@ async function reviewOutfit(requestBody) {
       weatherSuitability: item.weatherSuitability,
       occasionSuitability: item.occasionSuitability,
       activitySuitability: item.activitySuitability,
+      outfitRole: outfitRole(item),
       notes: item.notes
     }))
   };
 
+  let parsed = await requestOpenAIOutfitReview(promptPayload);
+  let itemIDs = validUniqueItemIDs(parsed.itemIDs, knownIDs);
+  let repaired = false;
+
+  if (!hasRequiredCoreRolesForIDs(itemIDs, closetByID, requiredCoreRoles)) {
+    const repairPayload = {
+      ...promptPayload,
+      previousItemIDs: itemIDs,
+      repairInstruction: [
+        "The previous itemIDs were incomplete.",
+        `Missing required core roles: ${missingRequiredCoreRoles(itemIDs, closetByID, requiredCoreRoles).join(", ")}.`,
+        "Return a complete outfit using only closet IDs. Keep any previous items that still make sense, but add or swap items until the required core roles are present."
+      ].join(" ")
+    };
+
+    const repairedParsed = await requestOpenAIOutfitReview(repairPayload);
+    const repairedItemIDs = validUniqueItemIDs(repairedParsed.itemIDs, knownIDs);
+
+    if (repairedItemIDs.length > 0) {
+      parsed = repairedParsed;
+      itemIDs = repairedItemIDs;
+      repaired = true;
+    }
+  }
+
+  return {
+    itemIDs: itemIDs.length > 0 ? itemIDs : candidateItemIDs,
+    rationale: String(parsed.rationale ?? "AI review completed."),
+    cautions: [
+      ...(repaired ? ["AI repaired an incomplete first pass before returning this outfit."] : []),
+      ...(Array.isArray(parsed.cautions) ? parsed.cautions.map(String) : [])
+    ].slice(0, 5)
+  };
+}
+
+async function requestOpenAIOutfitReview(promptPayload) {
   const openAIResponse = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -772,16 +816,132 @@ async function reviewOutfit(requestBody) {
     throw httpError(openAIResponse.status, data.error?.message ?? "OpenAI request failed");
   }
 
-  const parsed = parseOpenAIJSON(data, "OpenAI outfit review");
-  const itemIDs = Array.isArray(parsed.itemIDs)
-    ? parsed.itemIDs.filter((id) => knownIDs.has(id))
-    : [];
+  return parseOpenAIJSON(data, "OpenAI outfit review");
+}
+
+function validUniqueItemIDs(value, knownIDs) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seenIDs = new Set();
+  const itemIDs = [];
+
+  for (const rawID of value) {
+    const itemID = String(rawID);
+
+    if (!knownIDs.has(itemID) || seenIDs.has(itemID)) {
+      continue;
+    }
+
+    seenIDs.add(itemID);
+    itemIDs.push(itemID);
+  }
+
+  return itemIDs;
+}
+
+function requiredCoreRolesForContext(context, contextLabel) {
+  const normalizedContext = `${context} ${contextLabel}`.toLowerCase().replace(/[^a-z]/g, "");
+  const isExercise = /lifting|running|gym|training|workout|strength|run/.test(normalizedContext);
 
   return {
-    itemIDs: itemIDs.length > 0 ? itemIDs : candidateItemIDs,
-    rationale: String(parsed.rationale ?? "AI review completed."),
-    cautions: Array.isArray(parsed.cautions) ? parsed.cautions.map(String).slice(0, 5) : []
+    type: isExercise ? "exercise" : "standard",
+    description: isExercise
+      ? "Required: workout top, workout bottom, and training/running shoes."
+      : "Required: top plus bottom plus shoes, or dress/full-body item plus shoes."
   };
+}
+
+function hasRequiredCoreRolesForIDs(itemIDs, closetByID, requiredCoreRoles) {
+  const roles = itemIDs.map((itemID) => outfitRole(closetByID.get(itemID))).filter(Boolean);
+  const hasTop = roles.includes("top");
+  const hasBottom = roles.includes("bottom");
+  const hasFullBody = roles.includes("fullBody");
+  const hasShoes = roles.includes("shoes");
+
+  if (requiredCoreRoles.type === "exercise") {
+    return hasTop && hasBottom && hasShoes;
+  }
+
+  return ((hasTop && hasBottom) || hasFullBody) && hasShoes;
+}
+
+function missingRequiredCoreRoles(itemIDs, closetByID, requiredCoreRoles) {
+  const roles = itemIDs.map((itemID) => outfitRole(closetByID.get(itemID))).filter(Boolean);
+  const missingRoles = [];
+  const hasTop = roles.includes("top");
+  const hasBottom = roles.includes("bottom");
+  const hasFullBody = roles.includes("fullBody");
+  const hasShoes = roles.includes("shoes");
+
+  if (requiredCoreRoles.type === "exercise") {
+    if (!hasTop) missingRoles.push("workout top");
+    if (!hasBottom) missingRoles.push("workout bottom");
+    if (!hasShoes) missingRoles.push("training/running shoes");
+    return missingRoles;
+  }
+
+  if (!hasShoes) {
+    missingRoles.push("shoes");
+  }
+
+  if (!((hasTop && hasBottom) || hasFullBody)) {
+    missingRoles.push("top plus bottom, or dress/full-body item");
+  }
+
+  return missingRoles;
+}
+
+function outfitRole(item) {
+  if (!item || typeof item !== "object") {
+    return "";
+  }
+
+  const category = String(item.category ?? "").toLowerCase();
+  const text = outfitItemText(item);
+
+  switch (category) {
+    case "shirt":
+    case "blouse":
+    case "sweater":
+      return "top";
+    case "pants":
+    case "shorts":
+    case "skirt":
+      return "bottom";
+    case "dress":
+      return "fullBody";
+    case "shoes":
+    case "heels":
+    case "flats":
+      return "shoes";
+    case "jacket":
+      return "outerwear";
+    case "belt":
+      return "belt";
+    case "socks":
+      return "socks";
+    case "activewear":
+      return /short|pants|jogger|tight|legging|bottom/.test(text) ? "bottom" : "top";
+    default:
+      return "accessory";
+  }
+}
+
+function outfitItemText(item) {
+  return [
+    item.name,
+    item.brand,
+    item.category,
+    item.color,
+    item.material,
+    item.pattern,
+    item.notes
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 }
 
 async function describeClothingItem(requestBody) {

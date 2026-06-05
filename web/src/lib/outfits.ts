@@ -647,6 +647,7 @@ function scoreOutfit(
   const cautions: string[] = []
   const startingScore = 62
   let score = startingScore
+  const scoreCaps: Array<{ label: string; maxScore: number }> = []
   const outfitComponents: ScoreBreakdownComponent[] = [
     {
       delta: startingScore,
@@ -673,6 +674,10 @@ function scoreOutfit(
       label,
       scoreAfter: roundScore(score),
     })
+  }
+
+  function capOutfitScore(maxScore: number, label: string) {
+    scoreCaps.push({ label, maxScore })
   }
 
   if ((hasTopBottom || hasDress) && hasShoes) {
@@ -709,6 +714,11 @@ function scoreOutfit(
     if (items.some(isCasualOnlyFootwear)) {
       addOutfitScore(-34, 'Work context penalty: casual-only footwear is not office appropriate')
       cautions.push('Casual clogs, slides, or slippers do not work for office wear.')
+    }
+    if (items.some(isWorkoutTopForWork)) {
+      addOutfitScore(-46, 'Work context penalty: workout top is not workwear')
+      capOutfitScore(52, 'Work outfit capped: workout tops are not appropriate work shirts')
+      cautions.push('Workout shirts do not work with business-casual work outfits.')
     }
   }
 
@@ -808,6 +818,18 @@ function scoreOutfit(
   addOutfitScore(feedbackReview.scoreAdjustment, 'Feedback learning total adjustment')
   reasons.push(...feedbackReview.reasons)
   cautions.push(...feedbackReview.cautions)
+
+  const strongestScoreCap = scoreCaps.sort((first, second) => first.maxScore - second.maxScore)[0]
+  if (strongestScoreCap && score > strongestScoreCap.maxScore) {
+    const capDelta = strongestScoreCap.maxScore - score
+    score = strongestScoreCap.maxScore
+    outfitComponents.push({
+      delta: roundScore(capDelta),
+      kind: 'penalty',
+      label: strongestScoreCap.label,
+      scoreAfter: roundScore(score),
+    })
+  }
 
   const rawScore = roundScore(score)
   const boundedScore = Math.max(0, Math.min(100, Math.round(score)))
@@ -1038,6 +1060,11 @@ function reviewOutfitQuality(
     cautions.push('Quality review: sweatpants and joggers are not acceptable for work.')
   }
 
+  if (isWorkContext(context) && items.some(isWorkoutTopForWork)) {
+    scoreAdjustment -= 34
+    cautions.push('Quality review: workout shirts are not acceptable work tops.')
+  }
+
   if (isExerciseContext(context) && items.some((item) => item.category === 'belt')) {
     scoreAdjustment -= 24
     cautions.push('Quality review: belts do not belong in workout outfits.')
@@ -1247,7 +1274,10 @@ function scoreItemBreakdown(
     if (/button|collar|polo|chino|trouser|oxford|loafer|boot|leather|belt|blazer/.test(text)) {
       addItemScore(18, 'Work context match: polished or business-casual wording')
     }
-    if (/sweat|jogger|track|gym|running|crocs|clog|slide|slipper/.test(text)) {
+    if (isWorkoutTopForWork(item)) {
+      addItemScore(-46, 'Work context penalty: workout top is not a work shirt')
+    }
+    if (/sweat|jogger|track|gym|running|workout|training|crocs|clog|slide|slipper/.test(text)) {
       addItemScore(-28, 'Work context penalty: too casual or athletic')
     }
   }
@@ -1467,6 +1497,30 @@ function relaxedRole(item: ClothingItem, targetRole: ItemRole, context: OutfitCo
   }
 
   return false
+}
+
+function isWorkoutTopForWork(item: ClothingItem) {
+  if (itemRole(item) !== 'top') {
+    return false
+  }
+
+  const text = itemText(item)
+  const hasAthleticConstruction =
+    item.category === 'activewear' ||
+    /workout|gym|training|running|athletic|compression|tank|sleeveless|dri[- ]?fit|dry[- ]?fit|performance/.test(
+      text,
+    )
+
+  return hasAthleticConstruction && !isPolishedWorkTop(item)
+}
+
+function isPolishedWorkTop(item: ClothingItem) {
+  const text = itemText(item)
+
+  return (
+    item.category === 'blouse' ||
+    /button(?:ed)?(?:[- ]?down)?|collar|collared|polo|oxford|dress shirt|woven/.test(text)
+  )
 }
 
 function itemText(item: ClothingItem) {

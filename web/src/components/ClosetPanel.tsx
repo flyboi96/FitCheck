@@ -399,7 +399,7 @@ export function ClosetPanel({
           </div>
 
           <label className="form-field">
-            <span>Photo</span>
+            <span>Take New Photo</span>
             <input
               accept="image/*"
               capture="environment"
@@ -407,6 +407,17 @@ export function ClosetPanel({
               type="file"
             />
           </label>
+
+          <label className="form-field">
+            <span>Choose From Photos</span>
+            <input
+              accept="image/*"
+              onChange={(event) => setPhotoFile(event.target.files?.[0] ?? null)}
+              type="file"
+            />
+          </label>
+
+          {photoFile ? <p className="helper-text">Selected: {photoFile.name}</p> : null}
 
           <label className="form-field">
             <span>Optional Description</span>

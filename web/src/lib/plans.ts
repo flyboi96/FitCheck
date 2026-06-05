@@ -67,18 +67,24 @@ export type PackingListItem = {
   availableQuantity: number
 }
 
+export type PlanLaundrySettings = {
+  avoidConsecutiveRepeats: boolean
+  maxUsesBeforeLaundry: Record<ClothingCategory, number>
+}
+
 export type Plan = {
   id: string
   name: string
   startDate: string
   endDate: string
   notes: string
+  laundrySettings: PlanLaundrySettings
   days: PlanDay[]
   itinerary: ItineraryOutfit[]
   packingList: PackingListItem[]
 }
 
-export type PlanDraft = Pick<Plan, 'name' | 'startDate' | 'endDate' | 'notes' | 'days'>
+export type PlanDraft = Pick<Plan, 'name' | 'startDate' | 'endDate' | 'notes' | 'laundrySettings' | 'days'>
 
 export type NewPlanDraft = {
   name: string
@@ -91,6 +97,34 @@ export type NewPlanDraft = {
 const defaultContext: OutfitContext = 'casual'
 export const MAX_EXPANDED_PLAN_DAYS = 21
 const millisecondsPerDay = 24 * 60 * 60 * 1000
+const unlimitedLaundryUses = 0
+
+export const defaultPlanLaundrySettings: PlanLaundrySettings = {
+  avoidConsecutiveRepeats: true,
+  maxUsesBeforeLaundry: {
+    shirt: 1,
+    blouse: 1,
+    pants: 2,
+    shorts: 2,
+    dress: 1,
+    skirt: 2,
+    shoes: unlimitedLaundryUses,
+    heels: unlimitedLaundryUses,
+    flats: unlimitedLaundryUses,
+    jacket: unlimitedLaundryUses,
+    sweater: 3,
+    activewear: 1,
+    underwear: 1,
+    socks: 1,
+    belt: unlimitedLaundryUses,
+    watch: unlimitedLaundryUses,
+    jewelry: unlimitedLaundryUses,
+    accessory: unlimitedLaundryUses,
+    bag: unlimitedLaundryUses,
+    purse: unlimitedLaundryUses,
+    other: 1,
+  },
+}
 
 function requireFirestore() {
   if (!db) {
@@ -215,6 +249,7 @@ export async function createPlan(userId: string, draft: NewPlanDraft) {
     ...normalizedDraft,
     days: createDaysFromRange(normalizedDraft).map(serializePlanDay),
     itinerary: [],
+    laundrySettings: serializeLaundrySettings(defaultPlanLaundrySettings),
     packingList: [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -228,6 +263,7 @@ export async function savePlan(userId: string, planId: string, draft: PlanDraft)
     startDate: draft.startDate,
     endDate: draft.endDate,
     notes: draft.notes.trim(),
+    laundrySettings: serializeLaundrySettings(draft.laundrySettings),
     days: draft.days.map(serializePlanDay),
     updatedAt: serverTimestamp(),
   })
@@ -281,6 +317,7 @@ export function recommendationToItineraryOutfit({
 export function buildPackingList(
   itinerary: ItineraryOutfit[],
   closet: ClothingItem[],
+  laundrySettings: PlanLaundrySettings = defaultPlanLaundrySettings,
 ): PackingListItem[] {
   const usageByItemID = new Map<string, number>()
 
@@ -303,7 +340,7 @@ export function buildPackingList(
         name: item.name,
         category: item.category,
         categoryLabel: categoryName(item.category),
-        packQuantity: packingQuantityFor(item, useCount),
+        packQuantity: packingQuantityFor(item, useCount, laundrySettings),
         useCount,
         availableQuantity: item.quantity,
       }
@@ -353,6 +390,39 @@ export function packingListShareText(plan: Plan) {
   return lines.join('\n').trim()
 }
 
+export function closetAvailableForPlanRequest({
+  closet,
+  laundrySettings,
+  previousDayItemIDs,
+  usageByItemID,
+}: {
+  closet: ClothingItem[]
+  laundrySettings: PlanLaundrySettings
+  previousDayItemIDs: Set<string>
+  usageByItemID: Map<string, number>
+}) {
+  return closet.filter((item) => {
+    if (item.status !== 'active') {
+      return false
+    }
+
+    if (hasHitLaundryUseLimit(item, usageByItemID.get(item.id) ?? 0, laundrySettings)) {
+      return false
+    }
+
+    if (
+      laundrySettings.avoidConsecutiveRepeats &&
+      item.quantity <= 1 &&
+      previousDayItemIDs.has(item.id) &&
+      maxUsesForCategory(item.category, laundrySettings) > 0
+    ) {
+      return false
+    }
+
+    return true
+  })
+}
+
 function normalizeNewPlanDraft(draft: NewPlanDraft): NewPlanDraft {
   const startDate = normalizePlanDate(draft.startDate)
   const requestedEndDate = normalizePlanDate(draft.endDate, startDate)
@@ -395,6 +465,7 @@ function normalizePlan(id: string, data: Record<string, unknown>): Plan {
     startDate,
     endDate,
     notes: stringValue(data.notes),
+    laundrySettings: normalizeLaundrySettings(data.laundrySettings),
     days: normalizePlanDays(data.days, startDate),
     itinerary: normalizeItinerary(data.itinerary),
     packingList: normalizePackingList(data.packingList),
@@ -614,13 +685,15 @@ function normalizePackingList(value: unknown): PackingListItem[] {
     .filter((item): item is PackingListItem => Boolean(item))
 }
 
-function packingQuantityFor(item: ClothingItem, useCount: number) {
-  if (item.category === 'underwear' || item.category === 'socks') {
-    return Math.min(item.quantity, useCount)
-  }
+function packingQuantityFor(
+  item: ClothingItem,
+  useCount: number,
+  laundrySettings: PlanLaundrySettings,
+) {
+  const maxUses = maxUsesForCategory(item.category, laundrySettings)
 
-  if (item.category === 'activewear') {
-    return Math.min(item.quantity, Math.max(1, useCount))
+  if (maxUses > 0) {
+    return Math.min(item.quantity, Math.max(1, Math.ceil(useCount / maxUses)))
   }
 
   if (
@@ -639,6 +712,68 @@ function packingQuantityFor(item: ClothingItem, useCount: number) {
   }
 
   return Math.min(item.quantity, Math.max(1, Math.min(useCount, 3)))
+}
+
+function hasHitLaundryUseLimit(
+  item: ClothingItem,
+  useCount: number,
+  laundrySettings: PlanLaundrySettings,
+) {
+  const maxUses = maxUsesForCategory(item.category, laundrySettings)
+  return maxUses > 0 && useCount >= maxUses * Math.max(1, item.quantity)
+}
+
+function maxUsesForCategory(category: ClothingCategory, laundrySettings: PlanLaundrySettings) {
+  return Math.max(
+    0,
+    Math.floor(
+      laundrySettings.maxUsesBeforeLaundry[category] ??
+        defaultPlanLaundrySettings.maxUsesBeforeLaundry[category] ??
+        1,
+    ),
+  )
+}
+
+function serializeLaundrySettings(settings: PlanLaundrySettings) {
+  return {
+    avoidConsecutiveRepeats: Boolean(settings.avoidConsecutiveRepeats),
+    maxUsesBeforeLaundry: Object.fromEntries(
+      Object.entries(defaultPlanLaundrySettings.maxUsesBeforeLaundry).map(([category, fallback]) => [
+        category,
+        Math.max(
+          0,
+          Math.floor(
+            settings.maxUsesBeforeLaundry[category as ClothingCategory] ?? Number(fallback),
+          ),
+        ),
+      ]),
+    ),
+  }
+}
+
+function normalizeLaundrySettings(value: unknown): PlanLaundrySettings {
+  if (!value || typeof value !== 'object') {
+    return defaultPlanLaundrySettings
+  }
+
+  const data = value as Record<string, unknown>
+  const maxUsesData =
+    data.maxUsesBeforeLaundry && typeof data.maxUsesBeforeLaundry === 'object'
+      ? (data.maxUsesBeforeLaundry as Record<string, unknown>)
+      : {}
+
+  return {
+    avoidConsecutiveRepeats:
+      typeof data.avoidConsecutiveRepeats === 'boolean'
+        ? data.avoidConsecutiveRepeats
+        : defaultPlanLaundrySettings.avoidConsecutiveRepeats,
+    maxUsesBeforeLaundry: Object.fromEntries(
+      Object.entries(defaultPlanLaundrySettings.maxUsesBeforeLaundry).map(([category, fallback]) => [
+        category,
+        Math.max(0, Math.floor(numberValue(maxUsesData[category], Number(fallback)))),
+      ]),
+    ) as Record<ClothingCategory, number>,
+  }
 }
 
 function contextValue(value: unknown): OutfitContext {

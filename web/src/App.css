@@ -1584,6 +1584,12 @@ h3 {
   background: var(--panel);
 }
 
+.laundry-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px;
+}
+
 .day-list,
 .itinerary-list {
   display: grid;

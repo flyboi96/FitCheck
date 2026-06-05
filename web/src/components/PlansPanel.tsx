@@ -29,6 +29,7 @@ import { generateAvatarPreview, type AvatarPreview } from '../lib/avatar'
 import {
   categoryLabel,
   categoryOptionsForWearer,
+  clothingCategories,
   clothingStatuses,
   saveClothingItem,
   statusLabel,
@@ -40,12 +41,14 @@ import {
 import {
   addDaysISO,
   buildPackingList,
+  closetAvailableForPlanRequest,
   createDaysFromRange,
   createPlanDay,
   createOutfitRequest,
   createPlan,
   dateRangeDayCount,
   defaultNewPlanDraft,
+  defaultPlanLaundrySettings,
   deletePlan,
   itineraryShareText,
   MAX_EXPANDED_PLAN_DAYS,
@@ -58,6 +61,7 @@ import {
   type Plan,
   type PlanDay,
   type PlanDraft,
+  type PlanLaundrySettings,
   type PackingListItem,
 } from '../lib/plans'
 import {
@@ -251,11 +255,30 @@ export function PlansPanel({
       await savePlan(userId, selectedPlan.id, effectivePlanDraft)
 
       const itinerary = []
+      const usageByItemID = new Map<string, number>()
+      let currentDate = ''
+      let previousDayItemIDs = new Set<string>()
+      let currentDayItemIDs = new Set<string>()
+
       for (const day of effectivePlanDraft.days) {
+        if (day.date !== currentDate) {
+          if (currentDate) {
+            previousDayItemIDs = currentDayItemIDs
+          }
+          currentDate = day.date
+          currentDayItemIDs = new Set()
+        }
+
         for (const request of day.requests) {
+          const eligibleCloset = closetAvailableForPlanRequest({
+            closet: items,
+            laundrySettings: effectivePlanDraft.laundrySettings,
+            previousDayItemIDs,
+            usageByItemID,
+          })
           const recommendation = await generateOutfit({
             askAIFirst,
-            closet: items,
+            closet: eligibleCloset,
             context: request.context,
             profile,
             userId,
@@ -265,11 +288,15 @@ export function PlansPanel({
             },
           })
 
+          recommendation.items.forEach((item) => {
+            usageByItemID.set(item.id, (usageByItemID.get(item.id) ?? 0) + 1)
+            currentDayItemIDs.add(item.id)
+          })
           itinerary.push(recommendationToItineraryOutfit({ day, recommendation, request }))
         }
       }
 
-      const packingList = buildPackingList(itinerary, items)
+      const packingList = buildPackingList(itinerary, items, effectivePlanDraft.laundrySettings)
       await saveGeneratedPlan(userId, selectedPlan.id, itinerary, packingList)
       setPlanView('itinerary')
       setStatusMessage('Itinerary and packing list generated.')
@@ -480,7 +507,12 @@ export function PlansPanel({
     showAppToast('Saving itinerary edits...', 'info')
 
     try {
-      await saveGeneratedPlan(userId, selectedPlan.id, nextItinerary, buildPackingList(nextItinerary, items))
+      await saveGeneratedPlan(
+        userId,
+        selectedPlan.id,
+        nextItinerary,
+        buildPackingList(nextItinerary, items, selectedPlan.laundrySettings),
+      )
       setStatusMessage('Itinerary edits saved. Packing list updated.')
       showAppToast('Itinerary edits saved.', 'success')
     } catch (error) {
@@ -1130,6 +1162,11 @@ function PlanEditor({
         </button>
       </div>
 
+      <LaundrySettingsEditor
+        onChange={(laundrySettings) => onChange({ ...draft, laundrySettings })}
+        settings={draft.laundrySettings}
+      />
+
       <div className="generation-actions sticky-action-bar">
         <button type="button" className="secondary-button" onClick={addDay}>
           <Plus size={20} aria-hidden="true" />
@@ -1203,12 +1240,78 @@ function PlanEditor({
   )
 }
 
+function LaundrySettingsEditor({
+  onChange,
+  settings,
+}: {
+  onChange: (settings: PlanLaundrySettings) => void
+  settings: PlanLaundrySettings
+}) {
+  const effectiveSettings = settings ?? defaultPlanLaundrySettings
+
+  function updateAvoidConsecutiveRepeats(avoidConsecutiveRepeats: boolean) {
+    onChange({
+      ...effectiveSettings,
+      avoidConsecutiveRepeats,
+    })
+  }
+
+  function updateMaxUses(category: ClothingCategory, value: string) {
+    onChange({
+      ...effectiveSettings,
+      maxUsesBeforeLaundry: {
+        ...effectiveSettings.maxUsesBeforeLaundry,
+        [category]: Math.max(0, numberInput(value, defaultPlanLaundrySettings.maxUsesBeforeLaundry[category])),
+      },
+    })
+  }
+
+  return (
+    <details className="collapsible-card">
+      <summary>Laundry and repeat rules</summary>
+      <p className="helper-text">
+        These rules apply before itinerary generation. 0 means unlimited reuse, useful for belts,
+        watches, bags, shoes, and outerwear.
+      </p>
+      <label className="toggle-row">
+        <input
+          checked={effectiveSettings.avoidConsecutiveRepeats}
+          onChange={(event) => updateAvoidConsecutiveRepeats(event.target.checked)}
+          type="checkbox"
+        />
+        <span>Avoid wearing the same single-copy laundry item on consecutive days</span>
+      </label>
+      <div className="laundry-settings-grid">
+        {clothingCategories.map((category) => (
+          <label className="form-field compact" key={category.value}>
+            <span>{category.label}</span>
+            <input
+              min={0}
+              onChange={(event) => updateMaxUses(category.value, event.target.value)}
+              type="number"
+              value={effectiveSettings.maxUsesBeforeLaundry[category.value]}
+            />
+          </label>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={() => onChange(defaultPlanLaundrySettings)}
+      >
+        Reset Defaults
+      </button>
+    </details>
+  )
+}
+
 function planToDraft(plan: Plan): PlanDraft {
   return {
     name: plan.name,
     startDate: plan.startDate,
     endDate: plan.endDate,
     notes: plan.notes,
+    laundrySettings: plan.laundrySettings,
     days: plan.days,
   }
 }

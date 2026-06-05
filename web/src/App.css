@@ -1,6 +1,6 @@
 .app-shell {
   min-height: 100svh;
-  padding: 18px 16px 104px;
+  padding: 18px 16px 132px;
 }
 
 .app-shell.centered {
@@ -87,6 +87,40 @@ h3 {
   padding: 5px 8px;
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.toast-stack {
+  position: fixed;
+  right: 16px;
+  bottom: calc(98px + env(safe-area-inset-bottom));
+  left: 16px;
+  z-index: 30;
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.app-toast {
+  justify-self: center;
+  max-width: 620px;
+  width: min(100%, 620px);
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: var(--shadow);
+  font-size: 0.92rem;
+  font-weight: 850;
+}
+
+.app-toast.success {
+  border-color: color-mix(in srgb, var(--success) 38%, var(--border));
+}
+
+.app-toast.error {
+  color: #ffb0b0;
+  border-color: color-mix(in srgb, #ff7b7b 42%, var(--border));
 }
 
 .version-text {
@@ -426,6 +460,16 @@ h3 {
   opacity: 0.52;
 }
 
+.primary-button:active,
+.secondary-button:active,
+.danger-button:active,
+.ghost-button:active,
+.menu-row:active,
+.icon-button:active {
+  transform: translateY(1px);
+  opacity: 0.82;
+}
+
 .helper-text,
 .error-message,
 .success-message {
@@ -440,6 +484,69 @@ h3 {
 
 .success-message {
   color: var(--success);
+}
+
+.sticky-action-bar {
+  position: sticky;
+  bottom: calc(92px + env(safe-area-inset-bottom));
+  z-index: 12;
+  margin: 4px -4px 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+}
+
+.sticky-action-bar > .primary-button,
+.sticky-action-bar > .secondary-button,
+.sticky-action-bar > .danger-button {
+  width: 100%;
+}
+
+.closet-item-card,
+.day-card,
+.itinerary-card,
+.packing-row,
+.history-card,
+.rotation-row,
+.category-section {
+  content-visibility: auto;
+  contain-intrinsic-size: 160px;
+}
+
+.object-card-list {
+  display: grid;
+  gap: 8px;
+}
+
+.object-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.object-card-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.object-card strong,
+.object-card span {
+  overflow-wrap: anywhere;
+}
+
+.object-card span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
 }
 
 .placeholder-panel {
@@ -1142,6 +1249,17 @@ h3 {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
+}
+
+.avatar-panel summary {
+  min-height: 36px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.avatar-panel[open] summary {
+  margin-bottom: 6px;
 }
 
 .avatar-preview-result img {

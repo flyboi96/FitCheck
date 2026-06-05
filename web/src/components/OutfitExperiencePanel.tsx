@@ -24,6 +24,7 @@ import { ClothingItemBrowser } from './ClothingItemBrowser'
 import { useClosetItems } from '../hooks/useClosetItems'
 import { useContextStyles } from '../hooks/useContextStyles'
 import { useSavedAvatar } from '../hooks/useSavedAvatar'
+import { showAppToast } from '../lib/appToasts'
 import { generateAvatarPreview, type AvatarPreview } from '../lib/avatar'
 import {
   categoryOptionsForWearer,
@@ -132,6 +133,7 @@ export function OutfitExperiencePanel({
     setFeedbackError(null)
     setWearLogMessage(null)
     setWearLogError(null)
+    showAppToast(askAIFirst ? 'Asking AI for an outfit...' : 'Generating a local outfit...', 'info')
 
     try {
       const nextRecommendation = await generateOutfit({
@@ -145,8 +147,11 @@ export function OutfitExperiencePanel({
       })
       setRecommendation(nextRecommendation)
       setView('result')
+      showAppToast('Outfit generated.', 'success')
     } catch (error) {
-      setGenerationError(error instanceof Error ? error.message : 'Could not generate an outfit.')
+      const message = error instanceof Error ? error.message : 'Could not generate an outfit.'
+      setGenerationError(message)
+      showAppToast(message, 'error')
     } finally {
       setIsGenerating(false)
     }
@@ -156,6 +161,7 @@ export function OutfitExperiencePanel({
     setIsLookingUpWeather(true)
     setWeatherStatus(null)
     setWeatherError(null)
+    showAppToast('Looking up full-day forecast...', 'info')
 
     try {
       const weatherDate = todayWeatherDate()
@@ -164,8 +170,11 @@ export function OutfitExperiencePanel({
         : await lookupWeatherByLocation(weather.location, weatherDate)
       setWeather(nextWeather)
       setWeatherStatus(`Today forecast updated: ${weatherSummary(nextWeather)}`)
+      showAppToast('Full-day forecast updated.', 'success')
     } catch (error) {
-      setWeatherError(error instanceof Error ? error.message : 'Weather lookup failed.')
+      const message = error instanceof Error ? error.message : 'Weather lookup failed.'
+      setWeatherError(message)
+      showAppToast(message, 'error')
     } finally {
       setIsLookingUpWeather(false)
     }
@@ -206,8 +215,11 @@ export function OutfitExperiencePanel({
       })
       setFeedbackMessage('Feedback saved. Future AI requests include recent feedback.')
       setFeedbackNote('')
+      showAppToast('Feedback saved.', 'success')
     } catch (error) {
-      setFeedbackError(error instanceof Error ? error.message : 'Could not save feedback.')
+      const message = error instanceof Error ? error.message : 'Could not save feedback.'
+      setFeedbackError(message)
+      showAppToast(message, 'error')
     } finally {
       setIsSavingFeedback(false)
     }
@@ -233,8 +245,11 @@ export function OutfitExperiencePanel({
         weather,
       })
       setWearLogMessage('Wear logged. Rotation data updated.')
+      showAppToast('Wear logged.', 'success')
     } catch (error) {
-      setWearLogError(error instanceof Error ? error.message : 'Could not log wear.')
+      const message = error instanceof Error ? error.message : 'Could not log wear.'
+      setWearLogError(message)
+      showAppToast(message, 'error')
     } finally {
       setIsLoggingWear(false)
     }
@@ -440,7 +455,7 @@ export function OutfitExperiencePanel({
           <p className="helper-text">Building around: {selectedItem.name}</p>
         ) : null}
 
-        <div className="generation-actions">
+        <div className="generation-actions sticky-action-bar">
           <button
             type="button"
             className="primary-button"
@@ -790,7 +805,8 @@ function OutfitResultCard({
         </div>
       ) : null}
 
-      <div className="avatar-panel">
+      <details className="avatar-panel">
+        <summary>Avatar Preview</summary>
         <div className="section-title">
           <ImageIcon size={20} aria-hidden="true" />
           <h3>Avatar Preview</h3>
@@ -831,7 +847,7 @@ function OutfitResultCard({
             </a>
           </div>
         ) : null}
-      </div>
+      </details>
 
       <div className="feedback-panel">
         <label className="form-field">
@@ -844,7 +860,7 @@ function OutfitResultCard({
           />
         </label>
 
-        <div className="feedback-actions">
+        <div className="feedback-actions sticky-action-bar">
           <button
             type="button"
             className="ghost-button"

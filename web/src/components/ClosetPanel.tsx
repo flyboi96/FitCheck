@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import { useClosetItems } from '../hooks/useClosetItems'
+import { showAppToast } from '../lib/appToasts'
 import {
   categoryLabel,
   categoryOptionsForWearer,
@@ -175,10 +176,14 @@ export function ClosetPanel({
 
     try {
       await saveClothingItem(userId, draft, editingItemId ?? undefined)
-      setActionMessage(editingItemId ? 'Clothing item updated.' : 'Clothing item added.')
+      const message = editingItemId ? 'Clothing item updated.' : 'Clothing item added.'
+      setActionMessage(message)
+      showAppToast(message, 'success')
       closeForm()
     } catch (saveError) {
-      setActionError(saveError instanceof Error ? saveError.message : 'Could not save item.')
+      const message = saveError instanceof Error ? saveError.message : 'Could not save item.'
+      setActionError(message)
+      showAppToast(message, 'error')
     } finally {
       setIsSaving(false)
     }
@@ -190,9 +195,13 @@ export function ClosetPanel({
 
     try {
       await updateClothingItemStatus(userId, item.id, status)
-      setActionMessage(`${item.name} moved to ${statusLabel(status).toLowerCase()}.`)
+      const message = `${item.name} moved to ${statusLabel(status).toLowerCase()}.`
+      setActionMessage(message)
+      showAppToast(message, 'success')
     } catch (statusError) {
-      setActionError(statusError instanceof Error ? statusError.message : 'Could not update item.')
+      const message = statusError instanceof Error ? statusError.message : 'Could not update item.'
+      setActionError(message)
+      showAppToast(message, 'error')
     }
   }
 
@@ -208,9 +217,13 @@ export function ClosetPanel({
 
     try {
       await deleteClothingItem(userId, item.id)
-      setActionMessage(`${item.name} deleted.`)
+      const message = `${item.name} deleted.`
+      setActionMessage(message)
+      showAppToast(message, 'success')
     } catch (deleteError) {
-      setActionError(deleteError instanceof Error ? deleteError.message : 'Could not delete item.')
+      const message = deleteError instanceof Error ? deleteError.message : 'Could not delete item.'
+      setActionError(message)
+      showAppToast(message, 'error')
     }
   }
 
@@ -226,7 +239,9 @@ export function ClosetPanel({
 
     const typedConfirmation = window.prompt('Type DELETE to clear your entire wardrobe.')
     if (typedConfirmation !== 'DELETE') {
-      setActionError('Wardrobe clear cancelled. Type DELETE exactly to confirm.')
+      const message = 'Wardrobe clear cancelled. Type DELETE exactly to confirm.'
+      setActionError(message)
+      showAppToast(message, 'error')
       return
     }
 
@@ -240,8 +255,11 @@ export function ClosetPanel({
       setCategoryFilter('all')
       setStatusFilter('active')
       setActionMessage('Wardrobe cleared.')
+      showAppToast('Wardrobe cleared.', 'success')
     } catch (clearError) {
-      setActionError(clearError instanceof Error ? clearError.message : 'Could not clear wardrobe.')
+      const message = clearError instanceof Error ? clearError.message : 'Could not clear wardrobe.'
+      setActionError(message)
+      showAppToast(message, 'error')
     } finally {
       setIsClearingWardrobe(false)
     }
@@ -249,7 +267,9 @@ export function ClosetPanel({
 
   async function handlePhotoImport() {
     if (!photoFile) {
-      setActionError('Choose or take a clothing photo first.')
+      const message = 'Choose or take a clothing photo first.'
+      setActionError(message)
+      showAppToast(message, 'error')
       return
     }
 
@@ -267,8 +287,11 @@ export function ClosetPanel({
       setEditingItemId(null)
       setClosetView('form')
       setActionMessage('AI filled the item draft. Review it before saving.')
+      showAppToast('AI filled the item draft. Review it before saving.', 'success')
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Photo import failed.')
+      const message = error instanceof Error ? error.message : 'Photo import failed.'
+      setActionError(message)
+      showAppToast(message, 'error')
     } finally {
       setIsImportingPhoto(false)
     }
@@ -282,11 +305,17 @@ export function ClosetPanel({
     try {
       const importedDrafts = parseBulkClosetImport(bulkImportText, categoryOptions[0]?.value ?? 'other')
       await saveClothingItems(userId, importedDrafts)
-      setActionMessage(`${importedDrafts.length} clothing item${importedDrafts.length === 1 ? '' : 's'} imported.`)
+      const message = `${importedDrafts.length} clothing item${
+        importedDrafts.length === 1 ? '' : 's'
+      } imported.`
+      setActionMessage(message)
+      showAppToast(message, 'success')
       setBulkImportText('')
       setClosetView('list')
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Bulk import failed.')
+      const message = error instanceof Error ? error.message : 'Bulk import failed.'
+      setActionError(message)
+      showAppToast(message, 'error')
     } finally {
       setIsBulkImporting(false)
     }
@@ -355,17 +384,19 @@ export function ClosetPanel({
             />
           </label>
 
-          <button
-            type="button"
-            className="primary-button"
-            disabled={isImportingPhoto}
-            onClick={() => {
-              void handlePhotoImport()
-            }}
-          >
-            {isImportingPhoto ? <span className="spinner small" aria-hidden="true" /> : <Camera size={20} />}
-            Describe Photo
-          </button>
+          <div className="sticky-action-bar">
+            <button
+              type="button"
+              className="primary-button"
+              disabled={isImportingPhoto}
+              onClick={() => {
+                void handlePhotoImport()
+              }}
+            >
+              {isImportingPhoto ? <span className="spinner small" aria-hidden="true" /> : <Camera size={20} />}
+              Describe Photo
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -405,17 +436,19 @@ export function ClosetPanel({
             />
           </label>
 
-          <button
-            type="button"
-            className="primary-button"
-            disabled={isBulkImporting || !bulkImportText.trim()}
-            onClick={() => {
-              void handleBulkImport()
-            }}
-          >
-            {isBulkImporting ? <span className="spinner small" aria-hidden="true" /> : <Package size={20} />}
-            Import Items
-          </button>
+          <div className="sticky-action-bar">
+            <button
+              type="button"
+              className="primary-button"
+              disabled={isBulkImporting || !bulkImportText.trim()}
+              onClick={() => {
+                void handleBulkImport()
+              }}
+            >
+              {isBulkImporting ? <span className="spinner small" aria-hidden="true" /> : <Package size={20} />}
+              Import Items
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -439,7 +472,7 @@ export function ClosetPanel({
             value={searchTerm}
           />
         </label>
-        <div className="split-action-row">
+        <div className="split-action-row sticky-action-bar">
           <button type="button" className="primary-button" onClick={openNewItemForm}>
             <Plus size={20} aria-hidden="true" />
             Add Item
@@ -832,10 +865,12 @@ function ClothingItemForm({
         />
       </label>
 
-      <button type="submit" className="primary-button" disabled={isSaving}>
-        {isSaving ? <span className="spinner small" aria-hidden="true" /> : <CheckCircle2 size={20} />}
-        {isEditing ? 'Save Changes' : 'Add to Closet'}
-      </button>
+      <div className="sticky-action-bar">
+        <button type="submit" className="primary-button" disabled={isSaving}>
+          {isSaving ? <span className="spinner small" aria-hidden="true" /> : <CheckCircle2 size={20} />}
+          {isEditing ? 'Save Changes' : 'Add to Closet'}
+        </button>
+      </div>
     </form>
   )
 }

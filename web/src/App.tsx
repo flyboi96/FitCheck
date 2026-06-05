@@ -23,6 +23,7 @@ import {
   UserRound,
   Wand2,
 } from 'lucide-react'
+import { AppToastHost } from './components/AppToasts'
 import './App.css'
 import { useAuthProfile } from './hooks/useAuthProfile'
 import { appVersionLabel } from './lib/appVersion'
@@ -127,12 +128,15 @@ function App() {
   }
 
   return (
-    <AuthenticatedShell
-      error={authState.error}
-      profile={authState.profile}
-      refreshProfile={authState.refreshProfile}
-      user={authState.user}
-    />
+    <>
+      <AuthenticatedShell
+        error={authState.error}
+        profile={authState.profile}
+        refreshProfile={authState.refreshProfile}
+        user={authState.user}
+      />
+      <AppToastHost />
+    </>
   )
 }
 

@@ -22,12 +22,14 @@ import { useClosetItems } from '../hooks/useClosetItems'
 import { useContextStyles } from '../hooks/useContextStyles'
 import { usePlans } from '../hooks/usePlans'
 import { useSavedAvatar } from '../hooks/useSavedAvatar'
+import { showAppToast } from '../lib/appToasts'
 import { generateAvatarPreview, type AvatarPreview } from '../lib/avatar'
 import {
   categoryLabel,
   categoryOptionsForWearer,
   clothingStatuses,
   saveClothingItem,
+  statusLabel,
   type ClothingCategory,
   type ClothingItem,
   type ClothingItemDraft,
@@ -150,6 +152,7 @@ export function PlansPanel({
     setIsSavingPlan(true)
     setStatusMessage(null)
     setErrorMessage(null)
+    showAppToast('Creating plan...', 'info')
 
     try {
       const planId = await createPlan(userId, newPlanDraft)
@@ -158,8 +161,11 @@ export function PlansPanel({
       setNewPlanDraft(defaultNewPlanDraft())
       setPlanView('setup')
       setStatusMessage('Plan created with one editable card per day. Adjust locations, weather, and outfit requests below.')
+      showAppToast('Plan created.', 'success')
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Could not create plan.')
+      const message = error instanceof Error ? error.message : 'Could not create plan.'
+      setErrorMessage(message)
+      showAppToast(message, 'error')
     } finally {
       setIsSavingPlan(false)
     }
@@ -173,12 +179,16 @@ export function PlansPanel({
     setIsSavingPlan(true)
     setStatusMessage(null)
     setErrorMessage(null)
+    showAppToast('Saving plan...', 'info')
 
     try {
       await savePlan(userId, selectedPlan.id, effectivePlanDraft)
       setStatusMessage('Plan saved.')
+      showAppToast('Plan saved.', 'success')
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Could not save plan.')
+      const message = error instanceof Error ? error.message : 'Could not save plan.'
+      setErrorMessage(message)
+      showAppToast(message, 'error')
     } finally {
       setIsSavingPlan(false)
     }
@@ -196,6 +206,7 @@ export function PlansPanel({
 
     setStatusMessage(null)
     setErrorMessage(null)
+    showAppToast('Deleting plan...', 'info')
 
     try {
       await deletePlan(userId, selectedPlan.id)
@@ -203,8 +214,11 @@ export function PlansPanel({
       setPlanDraft(null)
       setPlanView('home')
       setStatusMessage('Plan deleted.')
+      showAppToast('Plan deleted.', 'success')
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Could not delete plan.')
+      const message = error instanceof Error ? error.message : 'Could not delete plan.'
+      setErrorMessage(message)
+      showAppToast(message, 'error')
     }
   }
 
@@ -216,6 +230,7 @@ export function PlansPanel({
     setIsGenerating(true)
     setStatusMessage(null)
     setErrorMessage(null)
+    showAppToast(askAIFirst ? 'Generating AI itinerary...' : 'Generating local itinerary...', 'info')
 
     try {
       await savePlan(userId, selectedPlan.id, effectivePlanDraft)
@@ -243,8 +258,11 @@ export function PlansPanel({
       await saveGeneratedPlan(userId, selectedPlan.id, itinerary, packingList)
       setPlanView('itinerary')
       setStatusMessage('Itinerary and packing list generated.')
+      showAppToast('Itinerary and packing list generated.', 'success')
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Could not generate itinerary.')
+      const message = error instanceof Error ? error.message : 'Could not generate itinerary.'
+      setErrorMessage(message)
+      showAppToast(message, 'error')
     } finally {
       setIsGenerating(false)
     }
@@ -262,9 +280,12 @@ export function PlansPanel({
       } else {
         await navigator.clipboard.writeText(text)
         setStatusMessage('Copied to clipboard.')
+        showAppToast('Copied to clipboard.', 'success')
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Could not share text.')
+      const message = error instanceof Error ? error.message : 'Could not share text.'
+      setErrorMessage(message)
+      showAppToast(message, 'error')
     }
   }
 
@@ -285,6 +306,7 @@ export function PlansPanel({
     setIsLookingUpWeather(true)
     setStatusMessage(null)
     setErrorMessage(null)
+    showAppToast(`Looking up full-day forecast for ${day.date}...`, 'info')
 
     try {
       const nextWeather = await lookupWeatherByLocation(day.location || day.weather.location, day.date)
@@ -301,8 +323,11 @@ export function PlansPanel({
         ),
       }))
       setStatusMessage(`Full-day forecast updated for ${day.date}: ${weatherSummary(nextWeather)}.`)
+      showAppToast(`Forecast updated for ${day.date}.`, 'success')
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Weather lookup failed.')
+      const message = error instanceof Error ? error.message : 'Weather lookup failed.'
+      setErrorMessage(message)
+      showAppToast(message, 'error')
     } finally {
       setIsLookingUpWeather(false)
     }
@@ -316,6 +341,7 @@ export function PlansPanel({
     setIsLookingUpWeather(true)
     setStatusMessage(null)
     setErrorMessage(null)
+    showAppToast('Looking up full-day forecasts for all plan days...', 'info')
 
     try {
       const nextDays: PlanDay[] = []
@@ -341,8 +367,11 @@ export function PlansPanel({
           sources.length > 0 ? ` via ${sources.join(', ')}` : ''
         }.`,
       )
+      showAppToast(`Forecasts updated for ${nextDays.length} day${nextDays.length === 1 ? '' : 's'}.`, 'success')
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Could not update all weather.')
+      const message = error instanceof Error ? error.message : 'Could not update all weather.'
+      setErrorMessage(message)
+      showAppToast(message, 'error')
     } finally {
       setIsLookingUpWeather(false)
     }
@@ -386,13 +415,16 @@ export function PlansPanel({
 
     setStatusMessage(null)
     setErrorMessage(null)
+    showAppToast('Saving itinerary edits...', 'info')
 
     try {
       await saveGeneratedPlan(userId, selectedPlan.id, nextItinerary, buildPackingList(nextItinerary, items))
       setStatusMessage('Itinerary edits saved. Packing list updated.')
+      showAppToast('Itinerary edits saved.', 'success')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save itinerary edits.'
       setErrorMessage(message)
+      showAppToast(message, 'error')
       throw new Error(message, { cause: error })
     }
   }
@@ -404,12 +436,16 @@ export function PlansPanel({
 
     setStatusMessage(null)
     setErrorMessage(null)
+    showAppToast('Saving packing list...', 'info')
 
     try {
       await saveGeneratedPlan(userId, selectedPlan.id, selectedPlan.itinerary, nextPackingList)
       setStatusMessage('Packing list edits saved.')
+      showAppToast('Packing list saved.', 'success')
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Could not save packing edits.')
+      const message = error instanceof Error ? error.message : 'Could not save packing edits.'
+      setErrorMessage(message)
+      showAppToast(message, 'error')
     }
   }
 
@@ -516,10 +552,12 @@ export function PlansPanel({
             Notes are for constraints. They are not parsed as stops.
           </p>
 
-          <button type="submit" className="primary-button" disabled={isSavingPlan}>
-            {isSavingPlan ? <span className="spinner small" aria-hidden="true" /> : <Plus size={20} />}
-            Create Plan
-          </button>
+          <div className="sticky-action-bar">
+            <button type="submit" className="primary-button" disabled={isSavingPlan}>
+              {isSavingPlan ? <span className="spinner small" aria-hidden="true" /> : <Plus size={20} />}
+              Create Plan
+            </button>
+          </div>
         </form>
       </div>
     )
@@ -621,16 +659,18 @@ export function PlansPanel({
           profile={profile}
           userId={userId}
         />
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => {
-            void shareText(`${selectedPlan.name} itinerary`, itineraryShareText(selectedPlan))
-          }}
-        >
-          <Download size={20} aria-hidden="true" />
-          Share Itinerary
-        </button>
+        <div className="sticky-action-bar">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => {
+              void shareText(`${selectedPlan.name} itinerary`, itineraryShareText(selectedPlan))
+            }}
+          >
+            <Download size={20} aria-hidden="true" />
+            Share Itinerary
+          </button>
+        </div>
       </div>
     )
   }
@@ -661,16 +701,18 @@ export function PlansPanel({
             <p>Generate the itinerary first. The packing list follows from those outfits.</p>
           </div>
         ) : null}
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => {
-            void shareText(`${selectedPlan.name} packing list`, packingListShareText(selectedPlan))
-          }}
-        >
-          <Copy size={20} aria-hidden="true" />
-          Share Packing List
-        </button>
+        <div className="sticky-action-bar">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => {
+              void shareText(`${selectedPlan.name} packing list`, packingListShareText(selectedPlan))
+            }}
+          >
+            <Copy size={20} aria-hidden="true" />
+            Share Packing List
+          </button>
+        </div>
       </div>
     )
   }
@@ -685,10 +727,12 @@ export function PlansPanel({
             <h2>Trips and weekly outfits</h2>
           </div>
         </div>
-        <button type="button" className="primary-button" onClick={openNewPlan}>
-          <Plus size={20} aria-hidden="true" />
-          New Plan
-        </button>
+        <div className="sticky-action-bar">
+          <button type="button" className="primary-button" onClick={openNewPlan}>
+            <Plus size={20} aria-hidden="true" />
+            New Plan
+          </button>
+        </div>
         {statusBlock}
         {!isLoadingPlans && plans.length === 0 ? (
           <div className="empty-state">
@@ -1024,7 +1068,7 @@ function PlanEditor({
         </button>
       </div>
 
-      <div className="generation-actions">
+      <div className="generation-actions sticky-action-bar">
         <button type="button" className="secondary-button" onClick={addDay}>
           <Plus size={20} aria-hidden="true" />
           Add One Day
@@ -1499,6 +1543,7 @@ function EditableItineraryCard({
     if (selectedItems.length === 0) {
       setEditMessage(null)
       setEditError('Choose at least one closet item.')
+      showAppToast('Choose at least one closet item.', 'error')
       return
     }
 
@@ -1530,9 +1575,12 @@ function EditableItineraryCard({
         cautions: rescoredOutfit.cautions,
       })
       setEditMessage('Outfit saved and score recalculated.')
+      showAppToast('Outfit saved and score recalculated.', 'success')
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not save outfit edits.'
       setEditMessage(null)
-      setEditError(error instanceof Error ? error.message : 'Could not save outfit edits.')
+      setEditError(message)
+      showAppToast(message, 'error')
     } finally {
       setIsSavingOutfit(false)
     }
@@ -1541,11 +1589,13 @@ function EditableItineraryCard({
   async function handleAvatarPreview() {
     if (!savedAvatar) {
       setAvatarError('Save a full-body avatar reference in More before generating plan previews.')
+      showAppToast('Save a full-body avatar reference in More first.', 'error')
       return
     }
 
     if (selectedItems.length === 0) {
       setAvatarError('Choose outfit items before generating an avatar preview.')
+      showAppToast('Choose outfit items before generating an avatar preview.', 'error')
       return
     }
 
@@ -1575,8 +1625,11 @@ function EditableItineraryCard({
           },
         }),
       )
+      showAppToast('Plan avatar generated.', 'success')
     } catch (error) {
-      setAvatarError(error instanceof Error ? error.message : 'Avatar preview failed.')
+      const message = error instanceof Error ? error.message : 'Avatar preview failed.'
+      setAvatarError(message)
+      showAppToast(message, 'error')
     } finally {
       setIsGeneratingAvatar(false)
     }
@@ -1597,11 +1650,34 @@ function EditableItineraryCard({
           <span>{outfit.scoreLabel}</span>
         </div>
       </div>
-      <ul>
-        {outfit.itemNames.map((itemName) => (
-          <li key={itemName}>{itemName}</li>
-        ))}
-      </ul>
+      {selectedItems.length > 0 ? (
+        <div className="object-card-list" aria-label="Outfit items">
+          {selectedItems.map((item) => {
+            const itemDetails = [
+              categoryLabel(item.category),
+              item.brand || null,
+              item.material || null,
+              item.status !== 'active' ? statusLabel(item.status) : null,
+            ].filter(Boolean)
+
+            return (
+              <div className="object-card" key={item.id}>
+                <div className="object-card-main">
+                  <strong>{item.name}</strong>
+                  <span>{itemDetails.join(' - ')}</span>
+                </div>
+                <span className="quantity-chip">Qty {item.quantity}</span>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <ul>
+          {outfit.itemNames.map((itemName) => (
+            <li key={itemName}>{itemName}</li>
+          ))}
+        </ul>
+      )}
       <details>
         <summary>Why this scored this way</summary>
         <p>{outfit.rationale}</p>

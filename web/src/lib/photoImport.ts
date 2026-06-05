@@ -12,6 +12,7 @@ type ClothingDescriptionResponse = {
   name?: string
   category?: string
   color?: string
+  material?: string
   pattern?: string
   weatherSuitability?: string
   occasionSuitability?: string
@@ -69,6 +70,7 @@ export async function describeClothingPhoto({
     name: data.name?.trim() || '',
     category: categoryValue(data.category),
     color: data.color?.trim() || '',
+    material: data.material?.trim() || '',
     pattern: data.pattern?.trim() || '',
     notes: tags.join('\n'),
   }

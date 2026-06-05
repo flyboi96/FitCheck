@@ -19,6 +19,7 @@ import {
   clothingCategories,
   clothingStatuses,
   defaultClothingItemDraft,
+  deleteAllClothingItems,
   deleteClothingItem,
   saveClothingItem,
   saveClothingItems,
@@ -57,6 +58,7 @@ export function ClosetPanel({
   const [isImportingPhoto, setIsImportingPhoto] = useState(false)
   const [bulkImportText, setBulkImportText] = useState('')
   const [isBulkImporting, setIsBulkImporting] = useState(false)
+  const [isClearingWardrobe, setIsClearingWardrobe] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -70,6 +72,7 @@ export function ClosetPanel({
           item.brand,
           categoryLabel(item.category),
           item.color,
+          item.material,
           item.pattern,
           item.notes,
           statusLabel(item.status),
@@ -132,6 +135,7 @@ export function ClosetPanel({
       category: item.category,
       quantity: item.quantity,
       color: item.color,
+      material: item.material,
       pattern: item.pattern,
       notes: item.notes,
       status: item.status,
@@ -207,6 +211,39 @@ export function ClosetPanel({
       setActionMessage(`${item.name} deleted.`)
     } catch (deleteError) {
       setActionError(deleteError instanceof Error ? deleteError.message : 'Could not delete item.')
+    }
+  }
+
+  async function handleClearWardrobe() {
+    const itemCount = items.length
+    const confirmed = window.confirm(
+      `Delete all ${itemCount} clothing item${itemCount === 1 ? '' : 's'} from your closet? This cannot be undone.`,
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    const typedConfirmation = window.prompt('Type DELETE to clear your entire wardrobe.')
+    if (typedConfirmation !== 'DELETE') {
+      setActionError('Wardrobe clear cancelled. Type DELETE exactly to confirm.')
+      return
+    }
+
+    setIsClearingWardrobe(true)
+    setActionMessage(null)
+    setActionError(null)
+
+    try {
+      await deleteAllClothingItems(userId)
+      setSearchTerm('')
+      setCategoryFilter('all')
+      setStatusFilter('active')
+      setActionMessage('Wardrobe cleared.')
+    } catch (clearError) {
+      setActionError(clearError instanceof Error ? clearError.message : 'Could not clear wardrobe.')
+    } finally {
+      setIsClearingWardrobe(false)
     }
   }
 
@@ -349,7 +386,7 @@ export function ClosetPanel({
           </div>
 
           <p className="helper-text">
-            Add one item per line. Use `name | category | brand | notes`. Quantity works at the
+            Add one item per line. Use `name | category | brand | material | notes`. Quantity works at the
             front, like `10x black underwear`.
           </p>
 
@@ -358,10 +395,10 @@ export function ClosetPanel({
             <textarea
               onChange={(event) => setBulkImportText(event.target.value)}
               placeholder={[
-                '10x black compression underwear | underwear | Under Armour',
-                'light blue dri-fit short sleeve button-down | shirt | Lululemon',
-                'beige khaki merino wool chino pants | pants',
-                'brown leather Thursday Captain boots | shoes | Thursday',
+                '10x black compression underwear | underwear | Under Armour | synthetic blend',
+                'light blue dri-fit short sleeve button-down | shirt | Lululemon | polyester',
+                'beige khaki merino wool chino pants | pants | Western Rise | merino wool',
+                'brown leather Thursday Captain boots | shoes | Thursday | leather',
               ].join('\n')}
               rows={10}
               value={bulkImportText}
@@ -414,6 +451,17 @@ export function ClosetPanel({
           <button type="button" className="secondary-button" onClick={openPhotoImport}>
             <Camera size={20} aria-hidden="true" />
             Photo Import
+          </button>
+          <button
+            type="button"
+            className="danger-button"
+            disabled={items.length === 0 || isClearingWardrobe}
+            onClick={() => {
+              void handleClearWardrobe()
+            }}
+          >
+            {isClearingWardrobe ? <span className="spinner small" aria-hidden="true" /> : <Trash2 size={18} />}
+            Clear Wardrobe
           </button>
         </div>
       </div>
@@ -563,7 +611,8 @@ function parseBulkImportLine(line: string, fallbackCategory: ClothingCategory): 
   const categoryFromSegment = categoryFromText(segments[1])
   const category = categoryFromSegment ?? inferCategoryFromName(parsedName.name) ?? fallbackCategory
   const brand = categoryFromSegment ? segments[2] ?? '' : segments[1] ?? ''
-  const notes = categoryFromSegment ? segments.slice(3).join(' | ') : segments.slice(2).join(' | ')
+  const material = categoryFromSegment ? segments[3] ?? '' : segments[2] ?? ''
+  const notes = categoryFromSegment ? segments.slice(4).join(' | ') : segments.slice(3).join(' | ')
 
   return {
     ...defaultClothingItemDraft,
@@ -571,6 +620,7 @@ function parseBulkImportLine(line: string, fallbackCategory: ClothingCategory): 
     brand,
     category,
     quantity: parsedName.quantity,
+    material,
     notes,
   }
 }
@@ -759,6 +809,16 @@ function ClothingItemForm({
       </div>
 
       <label className="form-field">
+        <span>Material</span>
+        <input
+          onChange={(event) => onChange({ ...draft, material: event.target.value })}
+          placeholder="Merino wool, cotton, leather, synthetic blend"
+          type="text"
+          value={draft.material}
+        />
+      </label>
+
+      <label className="form-field">
         <span>Notes</span>
         <textarea
           onChange={(event) => onChange({ ...draft, notes: event.target.value })}
@@ -791,6 +851,7 @@ function ClothingItemCard({
     categoryLabel(item.category),
     item.brand || null,
     item.color || null,
+    item.material || null,
     item.pattern || null,
   ].filter(Boolean)
 

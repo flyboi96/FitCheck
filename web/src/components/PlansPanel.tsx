@@ -8,6 +8,7 @@ import {
   Clipboard,
   Copy,
   Download,
+  Image as ImageIcon,
   MapPin,
   Plus,
   Save,
@@ -19,6 +20,9 @@ import {
 import { useClosetItems } from '../hooks/useClosetItems'
 import { useContextStyles } from '../hooks/useContextStyles'
 import { usePlans } from '../hooks/usePlans'
+import { useSavedAvatar } from '../hooks/useSavedAvatar'
+import { generateAvatarPreview, type AvatarPreview } from '../lib/avatar'
+import type { ClothingItem } from '../lib/closet'
 import {
   addDaysISO,
   buildPackingList,
@@ -43,9 +47,14 @@ import {
   type PackingListItem,
 } from '../lib/plans'
 import {
+  categoryName,
+  defaultWeatherInput,
   generateOutfit,
+  scoreCustomOutfit,
+  weatherSummary,
   type OutfitContext,
   type OutfitContextOption,
+  type OutfitRecommendation,
   type WeatherInput,
 } from '../lib/outfits'
 import { contextOptionsFromSettings } from '../lib/contextStyles'
@@ -363,8 +372,8 @@ export function PlansPanel({
     setErrorMessage(null)
 
     try {
-      await saveGeneratedPlan(userId, selectedPlan.id, nextItinerary, selectedPlan.packingList)
-      setStatusMessage('Itinerary edits saved. Packing list unchanged.')
+      await saveGeneratedPlan(userId, selectedPlan.id, nextItinerary, buildPackingList(nextItinerary, items))
+      setStatusMessage('Itinerary edits saved. Packing list updated.')
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not save itinerary edits.')
     }
@@ -588,10 +597,13 @@ export function PlansPanel({
         />
         {statusBlock}
         <ItinerarySection
+          closetItems={items}
           onChange={(nextItinerary) => {
             void handleSaveItinerary(nextItinerary)
           }}
           plan={selectedPlan}
+          profile={profile}
+          userId={userId}
         />
         <button
           type="button"
@@ -1330,11 +1342,17 @@ function PlanDayEditor({
 }
 
 function ItinerarySection({
+  closetItems,
   onChange,
   plan,
+  profile,
+  userId,
 }: {
+  closetItems: ClothingItem[]
   onChange: (itinerary: Plan['itinerary']) => void
   plan: Plan
+  profile: UserProfile | null
+  userId: string
 }) {
   if (plan.itinerary.length === 0) {
     return (
@@ -1355,12 +1373,16 @@ function ItinerarySection({
       <div className="itinerary-list">
         {plan.itinerary.map((outfit) => (
           <EditableItineraryCard
+            closetItems={closetItems}
             key={outfit.id}
             onChange={(nextOutfit) =>
               onChange(plan.itinerary.map((entry) => (entry.id === outfit.id ? nextOutfit : entry)))
             }
             onRemove={() => onChange(plan.itinerary.filter((entry) => entry.id !== outfit.id))}
             outfit={outfit}
+            profile={profile}
+            userId={userId}
+            weather={weatherForItineraryOutfit(plan, outfit)}
           />
         ))}
       </div>
@@ -1368,33 +1390,164 @@ function ItinerarySection({
   )
 }
 
+function weatherForItineraryOutfit(plan: Plan, outfit: Plan['itinerary'][number]): WeatherInput {
+  const matchingDay =
+    plan.days.find(
+      (day) =>
+        day.date === outfit.date &&
+        (!outfit.location || day.location === outfit.location || day.weather.location === outfit.location),
+    ) ?? plan.days.find((day) => day.date === outfit.date)
+
+  if (!matchingDay) {
+    return {
+      ...defaultWeatherInput,
+      location: outfit.location,
+    }
+  }
+
+  return {
+    ...matchingDay.weather,
+    location: outfit.location || matchingDay.location || matchingDay.weather.location,
+  }
+}
+
 function EditableItineraryCard({
+  closetItems,
   onChange,
   onRemove,
   outfit,
+  profile,
+  userId,
+  weather,
 }: {
+  closetItems: ClothingItem[]
   onChange: (outfit: Plan['itinerary'][number]) => void
   onRemove: () => void
   outfit: Plan['itinerary'][number]
+  profile: UserProfile | null
+  userId: string
+  weather: WeatherInput
 }) {
+  const { avatar: savedAvatar } = useSavedAvatar(userId)
   const [date, setDate] = useState(outfit.date)
   const [location, setLocation] = useState(outfit.location)
   const [label, setLabel] = useState(outfit.label)
-  const [itemNamesText, setItemNamesText] = useState(outfit.itemNames.join('\n'))
+  const [selectedItemIDs, setSelectedItemIDs] = useState(outfit.itemIDs)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [avatarPreview, setAvatarPreview] = useState<AvatarPreview | null>(null)
+  const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false)
+  const [avatarError, setAvatarError] = useState<string | null>(null)
+
+  const closetItemsById = useMemo(
+    () => new Map(closetItems.map((item) => [item.id, item])),
+    [closetItems],
+  )
+  const selectableItems = useMemo(
+    () =>
+      closetItems
+        .filter((item) => item.status === 'active' || selectedItemIDs.includes(item.id))
+        .slice()
+        .sort((first, second) =>
+          `${categoryName(first.category)} ${first.name}`.localeCompare(
+            `${categoryName(second.category)} ${second.name}`,
+          ),
+        ),
+    [closetItems, selectedItemIDs],
+  )
+  const selectedItems = useMemo(
+    () =>
+      selectedItemIDs
+        .map((itemID) => closetItemsById.get(itemID))
+        .filter((item): item is ClothingItem => Boolean(item)),
+    [closetItemsById, selectedItemIDs],
+  )
+
+  function toggleSelectedItem(itemId: string) {
+    setSelectedItemIDs((currentIDs) =>
+      currentIDs.includes(itemId)
+        ? currentIDs.filter((currentID) => currentID !== itemId)
+        : [...currentIDs, itemId],
+    )
+  }
 
   function saveEdits() {
-    const itemNames = itemNamesText
-      .split(/\r?\n/)
-      .map((itemName) => itemName.trim())
-      .filter(Boolean)
+    const weatherForScore = {
+      ...weather,
+      location: location || weather.location,
+    }
+
+    if (selectedItems.length === 0) {
+      setEditError('Choose at least one closet item.')
+      return
+    }
+
+    const rescoredOutfit = scoreCustomOutfit({
+      context: outfit.context,
+      items: selectedItems,
+      profile,
+      source: outfit.source,
+      weather: weatherForScore,
+    })
 
     onChange({
       ...outfit,
       date,
       location,
       label,
-      itemNames,
+      weatherSummary: weatherSummary(weatherForScore),
+      itemIDs: selectedItems.map((item) => item.id),
+      itemNames: selectedItems.map((item) => item.name),
+      score: rescoredOutfit.score,
+      scoreLabel: rescoredOutfit.scoreLabel,
+      rationale: 'Edited itinerary outfit rescored from your selected closet items.',
+      reasons: rescoredOutfit.reasons,
+      cautions: rescoredOutfit.cautions,
     })
+    setEditError(null)
+  }
+
+  async function handleAvatarPreview() {
+    if (!savedAvatar) {
+      setAvatarError('Save a full-body avatar reference in More before generating plan previews.')
+      return
+    }
+
+    if (selectedItems.length === 0) {
+      setAvatarError('Choose outfit items before generating an avatar preview.')
+      return
+    }
+
+    const recommendation: OutfitRecommendation = {
+      id: outfit.id,
+      items: selectedItems,
+      score: outfit.score,
+      scoreLabel: outfit.scoreLabel,
+      source: outfit.source,
+      rationale: outfit.rationale,
+      reasons: outfit.reasons,
+      cautions: outfit.cautions,
+    }
+
+    setIsGeneratingAvatar(true)
+    setAvatarError(null)
+
+    try {
+      setAvatarPreview(
+        await generateAvatarPreview({
+          profile,
+          recommendation,
+          savedAvatar,
+          weather: {
+            ...weather,
+            location: location || weather.location,
+          },
+        }),
+      )
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : 'Avatar preview failed.')
+    } finally {
+      setIsGeneratingAvatar(false)
+    }
   }
 
   return (
@@ -1444,13 +1597,28 @@ function EditableItineraryCard({
           <input onChange={(event) => setLabel(event.target.value)} type="text" value={label} />
         </label>
         <label className="form-field">
-          <span>Items, one per line</span>
-          <textarea
-            onChange={(event) => setItemNamesText(event.target.value)}
-            rows={5}
-            value={itemNamesText}
-          />
+          <span>Closet Items</span>
+          <div className="closet-pick-list compact">
+            {selectableItems.map((item) => (
+              <label className="closet-pick-row" key={item.id}>
+                <input
+                  checked={selectedItemIDs.includes(item.id)}
+                  onChange={() => toggleSelectedItem(item.id)}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>{item.name}</strong>
+                  <small>
+                    {categoryName(item.category)}
+                    {item.brand ? ` - ${item.brand}` : ''}
+                    {item.material ? ` - ${item.material}` : ''}
+                  </small>
+                </span>
+              </label>
+            ))}
+          </div>
         </label>
+        {editError ? <p className="error-message">{editError}</p> : null}
         <div className="generation-actions">
           <button type="button" className="danger-button" onClick={onRemove}>
             <Trash2 size={18} aria-hidden="true" />
@@ -1461,6 +1629,34 @@ function EditableItineraryCard({
             Save Outfit Edits
           </button>
         </div>
+      </details>
+      <details>
+        <summary>Avatar preview</summary>
+        <p className="helper-text">
+          Uses your saved full-body avatar from More with this plan outfit and the day weather.
+        </p>
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={isGeneratingAvatar}
+          onClick={() => {
+            void handleAvatarPreview()
+          }}
+        >
+          {isGeneratingAvatar ? <span className="spinner small" aria-hidden="true" /> : <ImageIcon size={20} />}
+          Generate Plan Avatar
+        </button>
+        {avatarError ? <p className="error-message">{avatarError}</p> : null}
+        {avatarPreview ? (
+          <div className="avatar-preview-result">
+            <img alt="Generated avatar wearing this planned outfit" src={avatarPreview.imageURL} />
+            <p className="helper-text">{avatarPreview.promptSummary}</p>
+            <a className="secondary-button" download="fitcheck-plan-avatar.png" href={avatarPreview.imageURL}>
+              <Download size={20} aria-hidden="true" />
+              Save Image
+            </a>
+          </div>
+        ) : null}
       </details>
     </article>
   )

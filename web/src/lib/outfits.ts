@@ -214,6 +214,27 @@ export function generateLocalOutfit({
   })
 }
 
+export function scoreCustomOutfit({
+  context,
+  items,
+  profile,
+  source = 'local',
+  weather,
+}: {
+  context: OutfitContext
+  items: ClothingItem[]
+  profile: UserProfile | null
+  source?: OutfitSource
+  weather: WeatherInput
+}) {
+  return scoreOutfit(items, {
+    context,
+    profile,
+    source,
+    weather,
+  })
+}
+
 export async function saveOutfitFeedback({
   context,
   feedback,
@@ -288,6 +309,7 @@ async function requestAIOutfit(request: OutfitGenerationRequest): Promise<Outfit
           brand: item.brand,
           category: item.category,
           color: item.color,
+          material: item.material,
           quantity: item.quantity,
           pattern: item.pattern,
           formalityLevel: inferredFormality(item),
@@ -786,7 +808,7 @@ function relaxedRole(item: ClothingItem, targetRole: ItemRole, context: OutfitCo
 }
 
 function itemText(item: ClothingItem) {
-  return [item.name, item.brand, item.color, item.pattern, categoryLabel(item.category), item.notes]
+  return [item.name, item.brand, item.color, item.material, item.pattern, categoryLabel(item.category), item.notes]
     .join(' ')
     .toLowerCase()
 }

@@ -3,6 +3,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   serverTimestamp,
   updateDoc,
@@ -45,6 +46,7 @@ export type ClothingItem = {
   category: ClothingCategory
   quantity: number
   color: string
+  material: string
   pattern: string
   notes: string
   status: ClothingStatus
@@ -95,6 +97,7 @@ export const defaultClothingItemDraft: ClothingItemDraft = {
   category: 'shirt',
   quantity: 1,
   color: '',
+  material: '',
   pattern: '',
   notes: '',
   status: 'active',
@@ -146,6 +149,7 @@ function normalizeDraft(draft: ClothingItemDraft) {
     category: draft.category,
     quantity: Math.max(1, Math.floor(draft.quantity || 1)),
     color: draft.color.trim(),
+    material: draft.material.trim(),
     pattern: draft.pattern.trim(),
     notes: draft.notes.trim(),
     status: draft.status,
@@ -166,6 +170,7 @@ function normalizeItem(id: string, data: Record<string, unknown>): ClothingItem 
     category: categoryValue(data.category ?? data.categoryRawValue),
     quantity: Math.max(1, Math.floor(numberValue(data.quantity, 1))),
     color: stringValue(data.color),
+    material: stringValue(data.material),
     pattern: stringValue(data.pattern),
     notes: stringValue(data.notes),
     status: statusValue(data.status ?? data.statusRawValue),
@@ -266,6 +271,21 @@ export async function saveClothingItems(userId: string, drafts: ClothingItemDraf
   })
 
   await batch.commit()
+}
+
+export async function deleteAllClothingItems(userId: string) {
+  const snapshot = await getDocs(clothingItemsCollection(userId))
+  const itemDocs = snapshot.docs
+
+  for (let index = 0; index < itemDocs.length; index += 450) {
+    const batch = writeBatch(requireFirestore())
+
+    itemDocs.slice(index, index + 450).forEach((itemDoc) => {
+      batch.delete(itemDoc.ref)
+    })
+
+    await batch.commit()
+  }
 }
 
 export async function updateClothingItemStatus(

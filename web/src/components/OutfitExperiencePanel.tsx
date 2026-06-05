@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -7,20 +7,32 @@ import {
   CheckCircle2,
   CloudSun,
   Download,
+  Edit3,
   Image as ImageIcon,
   LocateFixed,
   MapPin,
   MessageSquare,
   RefreshCw,
+  Save,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
   Wand2,
+  X,
 } from 'lucide-react'
 import { useClosetItems } from '../hooks/useClosetItems'
 import { useContextStyles } from '../hooks/useContextStyles'
 import { useSavedAvatar } from '../hooks/useSavedAvatar'
 import { generateAvatarPreview, type AvatarPreview } from '../lib/avatar'
+import {
+  categoryOptionsForWearer,
+  clothingStatuses,
+  saveClothingItem,
+  type ClothingCategory,
+  type ClothingItem,
+  type ClothingItemDraft,
+  type ClothingStatus,
+} from '../lib/closet'
 import { contextOptionsFromSettings } from '../lib/contextStyles'
 import { logOutfitWear } from '../lib/history'
 import { categoryName } from '../lib/outfits'
@@ -28,6 +40,7 @@ import {
   defaultWeatherInput,
   generateOutfit,
   saveOutfitFeedback,
+  scoreCustomOutfit,
   weatherSummary,
   type OutfitContext,
   type OutfitFeedbackType,
@@ -35,7 +48,7 @@ import {
   type WeatherInput,
 } from '../lib/outfits'
 import type { UserProfile } from '../lib/profile'
-import { lookupWeatherAtCurrentLocation, lookupWeatherByLocation } from '../lib/weather'
+import { lookupWeatherAtCurrentLocation, lookupWeatherByLocation, todayWeatherDate } from '../lib/weather'
 
 type OutfitExperienceView = 'setup' | 'result'
 
@@ -99,13 +112,13 @@ export function OutfitExperiencePanel({
 
     const timer = window.setTimeout(() => {
       setIsLookingUpWeather(true)
-      setWeatherStatus('Trying current-location weather.')
+      setWeatherStatus("Trying today's current-location forecast.")
       setWeatherError(null)
 
-      lookupWeatherAtCurrentLocation()
+      lookupWeatherAtCurrentLocation(todayWeatherDate())
         .then((nextWeather) => {
           setWeather(nextWeather)
-          setWeatherStatus(`Auto weather loaded: ${weatherSummary(nextWeather)}`)
+          setWeatherStatus(`Today forecast loaded: ${weatherSummary(nextWeather)}`)
         })
         .catch((error: unknown) => {
           setWeatherStatus('Using manual weather until you enter a city or allow location access.')
@@ -156,11 +169,12 @@ export function OutfitExperiencePanel({
     setWeatherError(null)
 
     try {
+      const weatherDate = todayWeatherDate()
       const nextWeather = useCurrentLocation
-        ? await lookupWeatherAtCurrentLocation()
-        : await lookupWeatherByLocation(weather.location)
+        ? await lookupWeatherAtCurrentLocation(weatherDate)
+        : await lookupWeatherByLocation(weather.location, weatherDate)
       setWeather(nextWeather)
-      setWeatherStatus(`Weather updated: ${weatherSummary(nextWeather)}`)
+      setWeatherStatus(`Today forecast updated: ${weatherSummary(nextWeather)}`)
     } catch (error) {
       setWeatherError(error instanceof Error ? error.message : 'Weather lookup failed.')
     } finally {
@@ -234,6 +248,8 @@ export function OutfitExperiencePanel({
           feedbackNote={feedbackNote}
           feedbackError={feedbackError}
           feedbackMessage={feedbackMessage}
+          activeItems={activeItems}
+          context={effectiveContext}
           isSavingFeedback={isSavingFeedback}
           isLoggingWear={isLoggingWear}
           onFeedback={(type) => {
@@ -242,6 +258,7 @@ export function OutfitExperiencePanel({
           onLogWear={(note) => {
             void handleLogWear(note)
           }}
+          onRecommendationChange={setRecommendation}
           onNoteChange={setFeedbackNote}
           profile={profile}
           recommendation={recommendation}
@@ -296,7 +313,7 @@ export function OutfitExperiencePanel({
         </p>
 
         <div className="weather-source-card">
-          <strong>Weather Source</strong>
+          <strong>Today's Forecast Source</strong>
           <span>
             {weather.location.trim()
               ? `${weather.location} - ${weather.temperatureF}F, ${weather.condition}, ${weather.humidityPercent}% humidity`
@@ -494,6 +511,8 @@ function OutfitSubpageHeader({
 }
 
 function OutfitResultCard({
+  activeItems,
+  context,
   feedbackError,
   feedbackMessage,
   feedbackNote,
@@ -502,6 +521,7 @@ function OutfitResultCard({
   onFeedback,
   onLogWear,
   onNoteChange,
+  onRecommendationChange,
   profile,
   recommendation,
   userId,
@@ -509,6 +529,8 @@ function OutfitResultCard({
   wearLogError,
   wearLogMessage,
 }: {
+  activeItems: ClothingItem[]
+  context: OutfitContext
   feedbackError: string | null
   feedbackMessage: string | null
   feedbackNote: string
@@ -517,6 +539,7 @@ function OutfitResultCard({
   onFeedback: (type: OutfitFeedbackType) => void
   onLogWear: (note: string) => void
   onNoteChange: (note: string) => void
+  onRecommendationChange: (recommendation: OutfitRecommendation) => void
   profile: UserProfile | null
   recommendation: OutfitRecommendation
   userId: string
@@ -530,6 +553,88 @@ function OutfitResultCard({
   const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false)
   const [avatarError, setAvatarError] = useState<string | null>(null)
   const [wearNote, setWearNote] = useState('')
+  const [selectedItemIDs, setSelectedItemIDs] = useState(() =>
+    recommendation.items.map((item) => item.id),
+  )
+  const [editMessage, setEditMessage] = useState<string | null>(null)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [editingItem, setEditingItem] = useState<ClothingItem | null>(null)
+  const previousRecommendationId = useRef(recommendation.id)
+
+  useEffect(() => {
+    if (previousRecommendationId.current === recommendation.id) {
+      return
+    }
+
+    previousRecommendationId.current = recommendation.id
+    setSelectedItemIDs(recommendation.items.map((item) => item.id))
+    setEditingItem(null)
+    setEditMessage(null)
+    setEditError(null)
+  }, [recommendation])
+
+  const activeItemsById = useMemo(
+    () => new Map(activeItems.map((item) => [item.id, item])),
+    [activeItems],
+  )
+
+  function toggleSelectedItem(itemId: string) {
+    setSelectedItemIDs((currentIDs) =>
+      currentIDs.includes(itemId)
+        ? currentIDs.filter((currentID) => currentID !== itemId)
+        : [...currentIDs, itemId],
+    )
+  }
+
+  function saveOutfitItemEdits() {
+    const selectedItems = selectedItemIDs
+      .map((itemId) => activeItemsById.get(itemId))
+      .filter((item): item is ClothingItem => Boolean(item))
+
+    if (selectedItems.length === 0) {
+      setEditMessage(null)
+      setEditError('Choose at least one clothing item.')
+      return
+    }
+
+    const rescoredRecommendation = scoreCustomOutfit({
+      context,
+      items: selectedItems,
+      profile,
+      source: recommendation.source,
+      weather,
+    })
+
+    onRecommendationChange({
+      ...rescoredRecommendation,
+      id: recommendation.id,
+      rationale: 'Edited outfit rescored from your selected closet items.',
+    })
+    setEditError(null)
+    setEditMessage('Outfit updated and score recalculated.')
+  }
+
+  function handleItemSaved(updatedItem: ClothingItem) {
+    const updatedItems = recommendation.items.map((item) =>
+      item.id === updatedItem.id ? updatedItem : item,
+    )
+    const rescoredRecommendation = scoreCustomOutfit({
+      context,
+      items: updatedItems,
+      profile,
+      source: recommendation.source,
+      weather,
+    })
+
+    onRecommendationChange({
+      ...rescoredRecommendation,
+      id: recommendation.id,
+      rationale: 'Closet item edited and outfit rescored.',
+    })
+    setEditingItem(updatedItem)
+    setEditError(null)
+    setEditMessage(`${updatedItem.name} saved. Outfit score recalculated.`)
+  }
 
   async function handleAvatarPreview() {
     if (!savedAvatar && !avatarFile) {
@@ -579,12 +684,67 @@ function OutfitResultCard({
               <span>
                 {categoryName(item.category)}
                 {item.brand ? ` - ${item.brand}` : ''}
+                {item.material ? ` - ${item.material}` : ''}
               </span>
             </div>
-            <span className="quantity-chip">Qty {item.quantity}</span>
+            <div className="item-inline-actions">
+              <span className="quantity-chip">Qty {item.quantity}</span>
+              <button
+                type="button"
+                className="ghost-button icon-sized"
+                onClick={() => setEditingItem(item)}
+                aria-label={`Edit ${item.name}`}
+              >
+                <Edit3 size={18} aria-hidden="true" />
+              </button>
+            </div>
           </div>
         ))}
       </div>
+
+      {editMessage ? <p className="success-message">{editMessage}</p> : null}
+      {editError ? <p className="error-message">{editError}</p> : null}
+
+      {editingItem ? (
+        <QuickClothingItemEditor
+          item={editingItem}
+          key={editingItem.id}
+          onCancel={() => setEditingItem(null)}
+          onSaved={handleItemSaved}
+          profile={profile}
+          userId={userId}
+        />
+      ) : null}
+
+      <details className="edit-section">
+        <summary>Edit outfit items</summary>
+        <p className="helper-text">
+          Add or remove owned active items, then save to recalculate the outfit score.
+        </p>
+        <div className="closet-pick-list">
+          {activeItems.map((item) => (
+            <label className="closet-pick-row" key={item.id}>
+              <input
+                checked={selectedItemIDs.includes(item.id)}
+                onChange={() => toggleSelectedItem(item.id)}
+                type="checkbox"
+              />
+              <span>
+                <strong>{item.name}</strong>
+                <small>
+                  {categoryName(item.category)}
+                  {item.brand ? ` - ${item.brand}` : ''}
+                  {item.material ? ` - ${item.material}` : ''}
+                </small>
+              </span>
+            </label>
+          ))}
+        </div>
+        <button type="button" className="secondary-button" onClick={saveOutfitItemEdits}>
+          <Save size={20} aria-hidden="true" />
+          Save Outfit Items
+        </button>
+      </details>
 
       <div className="wear-log-panel">
         <label className="form-field">
@@ -734,6 +894,192 @@ function OutfitResultCard({
       </div>
     </article>
   )
+}
+
+function QuickClothingItemEditor({
+  item,
+  onCancel,
+  onSaved,
+  profile,
+  userId,
+}: {
+  item: ClothingItem
+  onCancel: () => void
+  onSaved: (item: ClothingItem) => void
+  profile: UserProfile | null
+  userId: string
+}) {
+  const [draft, setDraft] = useState<ClothingItemDraft>(() => clothingItemDraftFromItem(item))
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const categoryOptions = categoryOptionsForWearer(profile?.gender ?? 'unspecified')
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setIsSaving(true)
+    setError(null)
+
+    try {
+      await saveClothingItem(userId, draft, item.id)
+      onSaved({
+        ...item,
+        name: draft.name.trim(),
+        brand: draft.brand.trim(),
+        category: draft.category,
+        quantity: Math.max(1, Math.floor(draft.quantity || 1)),
+        color: draft.color.trim(),
+        material: draft.material.trim(),
+        pattern: draft.pattern.trim(),
+        notes: draft.notes.trim(),
+        status: draft.status,
+      })
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save clothing item.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <form className="quick-edit-card" onSubmit={handleSubmit}>
+      <div className="form-title-row">
+        <div>
+          <p className="eyebrow">Closet item</p>
+          <h3>Edit {item.name}</h3>
+        </div>
+        <button type="button" className="icon-button" onClick={onCancel} aria-label="Close item editor">
+          <X size={20} />
+        </button>
+      </div>
+
+      <label className="form-field">
+        <span>Name</span>
+        <input
+          onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+          required
+          type="text"
+          value={draft.name}
+        />
+      </label>
+
+      <div className="two-column-fields">
+        <label className="form-field compact">
+          <span>Category</span>
+          <select
+            onChange={(event) =>
+              setDraft({ ...draft, category: event.target.value as ClothingCategory })
+            }
+            value={draft.category}
+          >
+            {categoryOptions.map((category) => (
+              <option key={category.value} value={category.value}>
+                {category.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="form-field compact">
+          <span>Quantity</span>
+          <input
+            min={1}
+            onChange={(event) =>
+              setDraft({ ...draft, quantity: Number.parseInt(event.target.value, 10) || 1 })
+            }
+            type="number"
+            value={draft.quantity}
+          />
+        </label>
+      </div>
+
+      <div className="two-column-fields">
+        <label className="form-field compact">
+          <span>Brand</span>
+          <input
+            onChange={(event) => setDraft({ ...draft, brand: event.target.value })}
+            type="text"
+            value={draft.brand}
+          />
+        </label>
+
+        <label className="form-field compact">
+          <span>Status</span>
+          <select
+            onChange={(event) =>
+              setDraft({ ...draft, status: event.target.value as ClothingStatus })
+            }
+            value={draft.status}
+          >
+            {clothingStatuses.map((status) => (
+              <option key={status.value} value={status.value}>
+                {status.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="two-column-fields">
+        <label className="form-field compact">
+          <span>Color</span>
+          <input
+            onChange={(event) => setDraft({ ...draft, color: event.target.value })}
+            type="text"
+            value={draft.color}
+          />
+        </label>
+
+        <label className="form-field compact">
+          <span>Pattern</span>
+          <input
+            onChange={(event) => setDraft({ ...draft, pattern: event.target.value })}
+            type="text"
+            value={draft.pattern}
+          />
+        </label>
+      </div>
+
+      <label className="form-field">
+        <span>Material</span>
+        <input
+          onChange={(event) => setDraft({ ...draft, material: event.target.value })}
+          placeholder="Cotton, merino wool, leather"
+          type="text"
+          value={draft.material}
+        />
+      </label>
+
+      <label className="form-field">
+        <span>Notes</span>
+        <textarea
+          onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
+          rows={3}
+          value={draft.notes}
+        />
+      </label>
+
+      {error ? <p className="error-message">{error}</p> : null}
+
+      <button type="submit" className="secondary-button" disabled={isSaving}>
+        {isSaving ? <span className="spinner small" aria-hidden="true" /> : <Save size={20} />}
+        Save Item and Rescore
+      </button>
+    </form>
+  )
+}
+
+function clothingItemDraftFromItem(item: ClothingItem): ClothingItemDraft {
+  return {
+    name: item.name,
+    brand: item.brand,
+    category: item.category,
+    quantity: item.quantity,
+    color: item.color,
+    material: item.material,
+    pattern: item.pattern,
+    notes: item.notes,
+    status: item.status,
+  }
 }
 
 function numberInput(value: string, fallback: number) {

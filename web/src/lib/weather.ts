@@ -62,6 +62,10 @@ export async function lookupWeatherByLocation(location: string, date = todayISO(
   }
 }
 
+export function todayWeatherDate() {
+  return todayISO()
+}
+
 export async function lookupWeatherAtCurrentLocation(date = todayISO()) {
   const position = await currentPosition()
   return lookupWeatherByCoordinates({
@@ -353,7 +357,10 @@ function locationLabel(place: GeocodingResult) {
 }
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10)
+  const now = new Date()
+  const month = `${now.getMonth() + 1}`.padStart(2, '0')
+  const day = `${now.getDate()}`.padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
 }
 
 function weatherCodeLabel(code?: number) {

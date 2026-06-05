@@ -108,6 +108,7 @@ const clothingDescriptionSchema = {
     "name",
     "category",
     "color",
+    "material",
     "pattern",
     "formalityLevel",
     "weatherSuitability",
@@ -124,6 +125,9 @@ const clothingDescriptionSchema = {
       enum: clothingCategories
     },
     color: {
+      type: "string"
+    },
+    material: {
       type: "string"
     },
     pattern: {
@@ -211,6 +215,7 @@ Rules:
 - Return one closet item, not a full outfit.
 - The name should be concise and useful in a closet, like "navy merino wool sweater" or "white leather sneakers".
 - Put color, material, pattern, and clothing type in the name when visible or strongly implied.
+- Return material separately too, such as cotton, merino wool, leather, linen, denim, or synthetic blend.
 - Choose category only from the provided enum.
 - Use comma-separated tags for weatherSuitability, occasionSuitability, and activitySuitability.
 - Prefer practical tags such as hot, mild, cold, rain, casual, work, dinner, date night, travel, gym, running, lifting, walking.
@@ -729,6 +734,7 @@ async function reviewOutfit(requestBody) {
       brand: item.brand,
       category: item.category,
       color: item.color,
+      material: item.material,
       quantity: item.quantity,
       pattern: item.pattern,
       formalityLevel: item.formalityLevel,
@@ -863,6 +869,7 @@ async function describeClothingItem(requestBody) {
     name: String(parsed.name ?? "").trim(),
     category,
     color: String(parsed.color ?? "").trim(),
+    material: String(parsed.material ?? "").trim(),
     pattern: String(parsed.pattern ?? "").trim(),
     formalityLevel: clampInteger(parsed.formalityLevel, 1, 5, 3),
     weatherSuitability: String(parsed.weatherSuitability ?? "").trim(),

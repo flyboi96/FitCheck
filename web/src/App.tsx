@@ -222,7 +222,7 @@ function AuthGate() {
         <div className="panel-heading">
           <UserRound size={28} aria-hidden="true" />
           <div>
-            <p className="eyebrow">PWA phase 07</p>
+            <p className="eyebrow">Personal wardrobe</p>
             <h1 id="auth-title">FitCheck</h1>
           </div>
         </div>
@@ -314,7 +314,7 @@ function AuthenticatedShell({
     <main className="app-shell">
       <section className="top-bar" aria-label="FitCheck PWA status">
         <div>
-          <p className="eyebrow">PWA phase 07</p>
+          <p className="eyebrow">Personal wardrobe</p>
           <h1>FitCheck</h1>
         </div>
         <div className="status-pill ready">

@@ -920,6 +920,13 @@ h3 {
   min-width: 0;
 }
 
+.outfit-item-row .item-inline-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
 .outfit-item-row strong,
 .outfit-item-row span {
   overflow-wrap: anywhere;
@@ -928,6 +935,59 @@ h3 {
 .outfit-item-row span {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.quick-edit-card,
+.edit-section {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.closet-pick-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(460px, 52vh);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.closet-pick-list.compact {
+  max-height: 320px;
+}
+
+.closet-pick-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.closet-pick-row input {
+  margin-top: 3px;
+}
+
+.closet-pick-row span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.closet-pick-row strong,
+.closet-pick-row small {
+  overflow-wrap: anywhere;
+}
+
+.closet-pick-row small {
+  color: var(--muted);
+  font-size: 0.86rem;
 }
 
 .reason-block,

@@ -275,6 +275,7 @@ function itemPayload(item: ClothingItem) {
     category: item.category,
     quantity: item.quantity,
     color: item.color,
+    material: item.material,
     pattern: item.pattern,
     formalityLevel: 3,
     weatherSuitability: '',

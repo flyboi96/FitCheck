@@ -352,7 +352,7 @@ export function PlansPanel({
     setIsLookingUpWeather(true)
     setStatusMessage(null)
     setErrorMessage(null)
-    showAppToast(`Looking up full-day forecast for ${day.date}...`, 'info')
+    showAppToast(`Looking up day weather for ${day.date}...`, 'info')
 
     try {
       const nextWeather = await lookupWeatherByLocation(day.location || day.weather.location, day.date)
@@ -368,8 +368,8 @@ export function PlansPanel({
             : planDay,
         ),
       }))
-      setStatusMessage(`Full-day forecast updated for ${day.date}: ${weatherSummary(nextWeather)}.`)
-      showAppToast(`Forecast updated for ${day.date}.`, 'success')
+      setStatusMessage(`Weather updated for ${day.date}: ${weatherSummary(nextWeather)}.`)
+      showAppToast(`Weather updated for ${day.date}.`, 'success')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Weather lookup failed.'
       setErrorMessage(message)
@@ -387,7 +387,7 @@ export function PlansPanel({
     setIsLookingUpWeather(true)
     setStatusMessage(null)
     setErrorMessage(null)
-    showAppToast('Looking up full-day forecasts for all plan days...', 'info')
+    showAppToast('Looking up day-by-day weather for all plan days...', 'info')
 
     try {
       const nextDays: PlanDay[] = []
@@ -409,11 +409,11 @@ export function PlansPanel({
         ...new Set(nextDays.map((day) => day.weather.source).filter((source): source is string => Boolean(source))),
       ]
       setStatusMessage(
-        `Full-day forecasts updated for ${nextDays.length} day${nextDays.length === 1 ? '' : 's'}${
+        `Weather updated for ${nextDays.length} day${nextDays.length === 1 ? '' : 's'}${
           sources.length > 0 ? ` via ${sources.join(', ')}` : ''
         }.`,
       )
-      showAppToast(`Forecasts updated for ${nextDays.length} day${nextDays.length === 1 ? '' : 's'}.`, 'success')
+      showAppToast(`Weather updated for ${nextDays.length} day${nextDays.length === 1 ? '' : 's'}.`, 'success')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not update all weather.'
       setErrorMessage(message)
@@ -1108,7 +1108,8 @@ function PlanEditor({
         <strong>Plan Weather</strong>
         <span>
           Set the location on each day, then tap Look Up All Weather. FitCheck stores the day-by-day
-          forecast on the plan before generating outfits.
+          weather on the plan before generating outfits. Dates beyond the normal forecast window use
+          historical weather trends for that location.
         </span>
       </div>
 

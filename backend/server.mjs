@@ -55,6 +55,8 @@ const openAIImageQuality = ["low", "medium", "high", "auto"].includes(requestedI
   : "medium";
 const proxyToken = process.env.FITCHECK_PROXY_TOKEN ?? "";
 const maxBodyBytes = 10_000_000;
+const weatherForecastLookaheadDays = 16;
+const historicalTrendYears = 6;
 const clothingCategories = [
   "shirt",
   "blouse",
@@ -424,16 +426,28 @@ async function geocodeNominatimLocation(location) {
 }
 
 async function lookupForecastWithFallback({ date, latitude, locationLabel, longitude }) {
+  if (shouldUseHistoricalWeatherTrend(date)) {
+    try {
+      return await lookupOpenMeteoHistoricalTrend({ date, latitude, locationLabel, longitude });
+    } catch (trendError) {
+      throw httpError(502, `Long-range weather trend failed. Open-Meteo historical archive: ${trendError.message}`);
+    }
+  }
+
   try {
     return await lookupOpenMeteoForecast({ date, latitude, locationLabel, longitude });
   } catch (openMeteoError) {
     try {
       return await lookupMetNorwayForecast({ date, latitude, locationLabel, longitude });
     } catch (metNorwayError) {
-      throw httpError(
-        metNorwayError.statusCode ?? openMeteoError.statusCode ?? 502,
-        `Weather lookup failed. Open-Meteo: ${openMeteoError.message}. MET Norway: ${metNorwayError.message}`
-      );
+      try {
+        return await lookupOpenMeteoHistoricalTrend({ date, latitude, locationLabel, longitude });
+      } catch (trendError) {
+        throw httpError(
+          trendError.statusCode ?? metNorwayError.statusCode ?? openMeteoError.statusCode ?? 502,
+          `Weather lookup failed. Open-Meteo: ${openMeteoError.message}. MET Norway: ${metNorwayError.message}. Historical trend: ${trendError.message}`
+        );
+      }
     }
   }
 }
@@ -478,6 +492,113 @@ async function lookupOpenMeteoForecast({ date, latitude, locationLabel, longitud
   }
 
   throw httpError(404, "No forecast was available for that date.");
+}
+
+async function lookupOpenMeteoHistoricalTrend({ date, latitude, locationLabel, longitude }) {
+  const trendDates = historicalWeatherTrendDates(date);
+
+  if (trendDates.length === 0) {
+    throw httpError(404, "No historical trend dates were available.");
+  }
+
+  const settledRecords = await Promise.allSettled(
+    trendDates.map((trendDate) =>
+      lookupOpenMeteoHistoricalRecord({
+        date: trendDate,
+        latitude,
+        longitude
+      })
+    )
+  );
+  const records = settledRecords
+    .filter((result) => result.status === "fulfilled")
+    .map((result) => result.value);
+
+  if (records.length === 0) {
+    throw httpError(404, "No historical weather trend was available for that location.");
+  }
+
+  const highTemperatureF = Math.round(
+    averageNumber(
+      records.map((record) => record.highTemperatureF).filter((value) => Number.isFinite(value)),
+      75
+    )
+  );
+  const lowTemperatureF = Math.round(
+    averageNumber(
+      records.map((record) => record.lowTemperatureF).filter((value) => Number.isFinite(value)),
+      highTemperatureF
+    )
+  );
+  const wetDayRate =
+    records.filter(
+      (record) =>
+        Number(record.precipitationInches) > 0.02 || weatherCodeIsWet(record.weatherCode)
+    ).length / records.length;
+
+  return {
+    location: locationLabel,
+    temperatureF: Math.round((highTemperatureF + lowTemperatureF) / 2),
+    highTemperatureF,
+    lowTemperatureF,
+    condition: historicalWeatherTrendCondition(records),
+    isRaining: wetDayRate >= 0.35,
+    humidityPercent: Math.round(
+      averageNumber(
+        records.map((record) => record.humidityPercent).filter((value) => Number.isFinite(value)),
+        45
+      )
+    ),
+    windMph: Math.round(
+      averageNumber(
+        records.map((record) => record.windMph).filter((value) => Number.isFinite(value)),
+        5
+      )
+    ),
+    source: `Open-Meteo historical trend (${records.length} years)`
+  };
+}
+
+async function lookupOpenMeteoHistoricalRecord({ date, latitude, longitude }) {
+  const url = new URL("https://archive-api.open-meteo.com/v1/archive");
+  url.searchParams.set("latitude", latitude.toString());
+  url.searchParams.set("longitude", longitude.toString());
+  url.searchParams.set(
+    "daily",
+    "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max"
+  );
+  url.searchParams.set("hourly", "relative_humidity_2m");
+  url.searchParams.set("temperature_unit", "fahrenheit");
+  url.searchParams.set("wind_speed_unit", "mph");
+  url.searchParams.set("precipitation_unit", "inch");
+  url.searchParams.set("timezone", "auto");
+  url.searchParams.set("start_date", date);
+  url.searchParams.set("end_date", date);
+
+  const data = await fetchWeatherJSON(url, "Historical weather trend lookup failed");
+  const dailyTimes = Array.isArray(data.daily?.time) ? data.daily.time : [];
+  const dayIndex = dailyTimes.findIndex((time) => time === date);
+
+  if (dayIndex < 0) {
+    throw httpError(404, `No historical weather was available for ${date}.`);
+  }
+
+  const maxTemperature = Number(data.daily?.temperature_2m_max?.[dayIndex]);
+  const minTemperature = Number(data.daily?.temperature_2m_min?.[dayIndex]);
+
+  if (!Number.isFinite(maxTemperature) || !Number.isFinite(minTemperature)) {
+    throw httpError(404, `Historical weather for ${date} did not include temperatures.`);
+  }
+
+  return {
+    date,
+    highTemperatureF: Math.round(maxTemperature),
+    lowTemperatureF: Math.round(minTemperature),
+    precipitationInches: Number(data.daily?.precipitation_sum?.[dayIndex] ?? 0),
+    humidityPercent: averageWeatherHumidityForDate(data, date),
+    windMph: Math.round(Number(data.daily?.wind_speed_10m_max?.[dayIndex] ?? 5)),
+    weatherCode: Number(data.daily?.weather_code?.[dayIndex])
+  };
 }
 
 async function lookupMetNorwayForecast({ date, latitude, locationLabel, longitude }) {
@@ -634,6 +755,155 @@ function averageWeatherHumidityForDate(data, date) {
   }
 
   return Math.round(humidityValues.reduce((total, value) => total + value, 0) / humidityValues.length);
+}
+
+function shouldUseHistoricalWeatherTrend(date) {
+  const daysAway = weatherDaysFromToday(date);
+  return Number.isFinite(daysAway) && daysAway > weatherForecastLookaheadDays;
+}
+
+function weatherDaysFromToday(date) {
+  const targetDate = parseWeatherISODate(date);
+  const today = parseWeatherISODate(weatherTodayISO());
+
+  if (!targetDate || !today) {
+    return NaN;
+  }
+
+  return Math.ceil((targetDate.getTime() - today.getTime()) / 86_400_000);
+}
+
+function historicalWeatherTrendDates(date) {
+  const targetDate = parseWeatherISODate(date);
+
+  if (!targetDate) {
+    return [];
+  }
+
+  const month = targetDate.getMonth() + 1;
+  const day = targetDate.getDate();
+  const today = parseWeatherISODate(weatherTodayISO());
+  const dates = [];
+
+  if (!today) {
+    return dates;
+  }
+
+  for (
+    let year = today.getFullYear() - 1;
+    year >= 1940 && dates.length < historicalTrendYears;
+    year -= 1
+  ) {
+    const historicalDate = historicalWeatherDateForMonthDay(year, month, day);
+
+    if (historicalDate) {
+      dates.push(historicalDate);
+    }
+  }
+
+  return dates;
+}
+
+function historicalWeatherDateForMonthDay(year, month, day) {
+  const candidate = new Date(year, month - 1, day);
+
+  if (
+    candidate.getFullYear() === year &&
+    candidate.getMonth() === month - 1 &&
+    candidate.getDate() === day
+  ) {
+    return formatWeatherLocalDate(candidate);
+  }
+
+  if (month === 2 && day === 29) {
+    return `${year}-02-28`;
+  }
+
+  return null;
+}
+
+function parseWeatherISODate(date) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date ?? ""));
+
+  if (!match) {
+    return null;
+  }
+
+  const parsedDate = new Date(
+    Number.parseInt(match[1], 10),
+    Number.parseInt(match[2], 10) - 1,
+    Number.parseInt(match[3], 10)
+  );
+
+  if (
+    parsedDate.getFullYear() !== Number.parseInt(match[1], 10) ||
+    parsedDate.getMonth() !== Number.parseInt(match[2], 10) - 1 ||
+    parsedDate.getDate() !== Number.parseInt(match[3], 10)
+  ) {
+    return null;
+  }
+
+  return parsedDate;
+}
+
+function formatWeatherLocalDate(date) {
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function historicalWeatherTrendCondition(records) {
+  const wetDayRate =
+    records.filter(
+      (record) =>
+        Number(record.precipitationInches) > 0.02 || weatherCodeIsWet(record.weatherCode)
+    ).length / records.length;
+  const stormDayRate = records.filter((record) => weatherCodeIsStorm(record.weatherCode)).length / records.length;
+  const snowDayRate = records.filter((record) => weatherCodeIsSnow(record.weatherCode)).length / records.length;
+
+  if (stormDayRate >= 0.2) {
+    return "Storm Risk";
+  }
+
+  if (snowDayRate >= 0.35) {
+    return "Snow Risk";
+  }
+
+  if (wetDayRate >= 0.35) {
+    return "Rain Risk";
+  }
+
+  return mostCommonWeatherLookupLabel(records.map((record) => weatherLookupCodeLabel(record.weatherCode)));
+}
+
+function mostCommonWeatherLookupLabel(labels) {
+  const counts = new Map();
+
+  labels.forEach((label) => {
+    if (label !== "Weather") {
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+  });
+
+  return [...counts.entries()].sort((first, second) => second[1] - first[1])[0]?.[0] ?? "Historical Trend";
+}
+
+function weatherCodeIsWet(code) {
+  const normalizedCode = Number(code);
+  return (
+    (normalizedCode >= 51 && normalizedCode <= 67) ||
+    (normalizedCode >= 80 && normalizedCode <= 82) ||
+    normalizedCode >= 95
+  );
+}
+
+function weatherCodeIsStorm(code) {
+  return Number(code) >= 95;
+}
+
+function weatherCodeIsSnow(code) {
+  const normalizedCode = Number(code);
+  return (normalizedCode >= 71 && normalizedCode <= 77) || normalizedCode === 85 || normalizedCode === 86;
 }
 
 function weatherLocationLabel(place) {

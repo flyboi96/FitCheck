@@ -24,6 +24,16 @@ type OpenMeteoForecast = {
   }
 }
 
+type HistoricalWeatherRecord = {
+  date: string
+  highTemperatureF: number
+  lowTemperatureF: number
+  precipitationInches: number
+  humidityPercent: number
+  windMph: number
+  weatherCode?: number
+}
+
 type WeatherLookupPayload = {
   date: string
   latitude?: number
@@ -31,6 +41,9 @@ type WeatherLookupPayload = {
   locationLabel?: string
   longitude?: number
 }
+
+const forecastLookaheadDays = 16
+const historicalTrendYears = 6
 
 export async function lookupWeatherByLocation(location: string, date = todayISO()) {
   const trimmedLocation = location.trim()
@@ -110,6 +123,15 @@ async function lookupWeatherByCoordinatesDirect({
   locationLabel: string
   longitude: number
 }): Promise<WeatherInput> {
+  if (shouldUseHistoricalTrend(date)) {
+    return lookupHistoricalWeatherTrendDirect({
+      date,
+      latitude,
+      locationLabel,
+      longitude,
+    })
+  }
+
   const url = new URL('https://api.open-meteo.com/v1/forecast')
   url.searchParams.set('latitude', latitude.toString())
   url.searchParams.set('longitude', longitude.toString())
@@ -150,7 +172,135 @@ async function lookupWeatherByCoordinatesDirect({
     }
   }
 
-  throw new Error('No forecast was available for that date.')
+  return lookupHistoricalWeatherTrendDirect({
+    date,
+    latitude,
+    locationLabel,
+    longitude,
+  })
+}
+
+async function lookupHistoricalWeatherTrendDirect({
+  date,
+  latitude,
+  locationLabel,
+  longitude,
+}: {
+  date: string
+  latitude: number
+  locationLabel: string
+  longitude: number
+}): Promise<WeatherInput> {
+  const trendDates = historicalTrendDates(date)
+
+  if (trendDates.length === 0) {
+    throw new Error('No long-range weather trend dates were available.')
+  }
+
+  const settledRecords = await Promise.allSettled(
+    trendDates.map((trendDate) =>
+      lookupHistoricalWeatherRecord({
+        date: trendDate,
+        latitude,
+        longitude,
+      }),
+    ),
+  )
+  const records = settledRecords
+    .filter((result): result is PromiseFulfilledResult<HistoricalWeatherRecord> =>
+      result.status === 'fulfilled',
+    )
+    .map((result) => result.value)
+
+  if (records.length === 0) {
+    throw new Error('No long-range weather trend was available for that location.')
+  }
+
+  const highTemperatureF = averageRounded(
+    records.map((record) => record.highTemperatureF),
+    defaultWeatherInput.highTemperatureF,
+  )
+  const lowTemperatureF = averageRounded(
+    records.map((record) => record.lowTemperatureF),
+    defaultWeatherInput.lowTemperatureF,
+  )
+  const wetDayRate =
+    records.filter(
+      (record) =>
+        record.precipitationInches > 0.02 || isWetWeatherCode(record.weatherCode),
+    ).length / records.length
+
+  return {
+    location: locationLabel,
+    temperatureF: Math.round((highTemperatureF + lowTemperatureF) / 2),
+    highTemperatureF,
+    lowTemperatureF,
+    condition: historicalTrendCondition(records),
+    isRaining: wetDayRate >= 0.35,
+    humidityPercent: averageRounded(
+      records.map((record) => record.humidityPercent),
+      defaultWeatherInput.humidityPercent,
+    ),
+    windMph: averageRounded(
+      records.map((record) => record.windMph),
+      defaultWeatherInput.windMph,
+    ),
+    source: `Open-Meteo historical trend (${records.length} years)`,
+  }
+}
+
+async function lookupHistoricalWeatherRecord({
+  date,
+  latitude,
+  longitude,
+}: {
+  date: string
+  latitude: number
+  longitude: number
+}): Promise<HistoricalWeatherRecord> {
+  const url = new URL('https://archive-api.open-meteo.com/v1/archive')
+  url.searchParams.set('latitude', latitude.toString())
+  url.searchParams.set('longitude', longitude.toString())
+  url.searchParams.set(
+    'daily',
+    'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max',
+  )
+  url.searchParams.set('hourly', 'relative_humidity_2m')
+  url.searchParams.set('temperature_unit', 'fahrenheit')
+  url.searchParams.set('wind_speed_unit', 'mph')
+  url.searchParams.set('precipitation_unit', 'inch')
+  url.searchParams.set('timezone', 'auto')
+  url.searchParams.set('start_date', date)
+  url.searchParams.set('end_date', date)
+
+  const data = await fetchWeatherJSON<OpenMeteoForecast & { reason?: string }>(
+    url,
+    'Historical weather trend lookup failed.',
+  )
+  const dayIndex = data.daily?.time?.findIndex((time) => time === date) ?? -1
+
+  if (dayIndex < 0) {
+    throw new Error(`No historical weather was available for ${date}.`)
+  }
+
+  const maxTemperature = data.daily?.temperature_2m_max?.[dayIndex]
+  const minTemperature = data.daily?.temperature_2m_min?.[dayIndex]
+
+  if (typeof maxTemperature !== 'number' || typeof minTemperature !== 'number') {
+    throw new Error(`Historical weather for ${date} did not include temperatures.`)
+  }
+
+  return {
+    date,
+    highTemperatureF: Math.round(maxTemperature),
+    lowTemperatureF: Math.round(minTemperature),
+    precipitationInches: numberFromUnknown(data.daily?.precipitation_sum?.[dayIndex], 0),
+    humidityPercent: averageHumidityForDate(data, date),
+    windMph: Math.round(
+      numberFromUnknown(data.daily?.wind_speed_10m_max?.[dayIndex], defaultWeatherInput.windMph),
+    ),
+    weatherCode: data.daily?.weather_code?.[dayIndex],
+  }
 }
 
 async function lookupWeatherViaProxy(
@@ -339,6 +489,174 @@ function averageHumidityForDate(data: OpenMeteoForecast, date: string) {
   return Math.round(
     humidityValues.reduce((total, value) => total + value, 0) / humidityValues.length,
   )
+}
+
+function averageRounded(values: number[], fallback: number) {
+  const finiteValues = values.filter((value) => Number.isFinite(value))
+
+  if (finiteValues.length === 0) {
+    return fallback
+  }
+
+  return Math.round(finiteValues.reduce((total, value) => total + value, 0) / finiteValues.length)
+}
+
+function numberFromUnknown(value: unknown, fallback: number) {
+  const parsedValue = Number(value)
+  return Number.isFinite(parsedValue) ? parsedValue : fallback
+}
+
+function shouldUseHistoricalTrend(date: string) {
+  const daysAway = daysFromToday(date)
+  return Number.isFinite(daysAway) && daysAway > forecastLookaheadDays
+}
+
+function daysFromToday(date: string) {
+  const targetDate = parseISODate(date)
+  const currentDate = parseISODate(todayISO())
+
+  if (!targetDate || !currentDate) {
+    return NaN
+  }
+
+  return Math.ceil((targetDate.getTime() - currentDate.getTime()) / 86_400_000)
+}
+
+function historicalTrendDates(date: string) {
+  const targetDate = parseISODate(date)
+
+  if (!targetDate) {
+    return []
+  }
+
+  const month = targetDate.getMonth() + 1
+  const day = targetDate.getDate()
+  const today = parseISODate(todayISO())
+  const dates: string[] = []
+
+  if (!today) {
+    return dates
+  }
+
+  for (
+    let year = today.getFullYear() - 1;
+    year >= 1940 && dates.length < historicalTrendYears;
+    year -= 1
+  ) {
+    const historicalDate = historicalDateForMonthDay(year, month, day)
+
+    if (historicalDate) {
+      dates.push(historicalDate)
+    }
+  }
+
+  return dates
+}
+
+function historicalDateForMonthDay(year: number, month: number, day: number) {
+  const candidate = new Date(year, month - 1, day)
+
+  if (
+    candidate.getFullYear() === year &&
+    candidate.getMonth() === month - 1 &&
+    candidate.getDate() === day
+  ) {
+    return formatLocalDate(candidate)
+  }
+
+  if (month === 2 && day === 29) {
+    return `${year}-02-28`
+  }
+
+  return null
+}
+
+function parseISODate(date: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+
+  if (!match) {
+    return null
+  }
+
+  const parsedDate = new Date(
+    Number.parseInt(match[1], 10),
+    Number.parseInt(match[2], 10) - 1,
+    Number.parseInt(match[3], 10),
+  )
+
+  if (
+    parsedDate.getFullYear() !== Number.parseInt(match[1], 10) ||
+    parsedDate.getMonth() !== Number.parseInt(match[2], 10) - 1 ||
+    parsedDate.getDate() !== Number.parseInt(match[3], 10)
+  ) {
+    return null
+  }
+
+  return parsedDate
+}
+
+function formatLocalDate(date: Date) {
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+function historicalTrendCondition(records: HistoricalWeatherRecord[]) {
+  const wetDayRate =
+    records.filter(
+      (record) =>
+        record.precipitationInches > 0.02 || isWetWeatherCode(record.weatherCode),
+    ).length / records.length
+  const stormDayRate = records.filter((record) => isStormWeatherCode(record.weatherCode)).length / records.length
+  const snowDayRate = records.filter((record) => isSnowWeatherCode(record.weatherCode)).length / records.length
+
+  if (stormDayRate >= 0.2) {
+    return 'Storm Risk'
+  }
+
+  if (snowDayRate >= 0.35) {
+    return 'Snow Risk'
+  }
+
+  if (wetDayRate >= 0.35) {
+    return 'Rain Risk'
+  }
+
+  return mostCommonWeatherLabel(records.map((record) => weatherCodeLabel(record.weatherCode)))
+}
+
+function mostCommonWeatherLabel(labels: string[]) {
+  const counts = new Map<string, number>()
+
+  labels.forEach((label) => {
+    if (label !== 'Weather') {
+      counts.set(label, (counts.get(label) ?? 0) + 1)
+    }
+  })
+
+  return (
+    [...counts.entries()].sort((first, second) => second[1] - first[1])[0]?.[0] ??
+    'Historical Trend'
+  )
+}
+
+function isWetWeatherCode(code?: number) {
+  const normalizedCode = Number(code)
+  return (
+    (normalizedCode >= 51 && normalizedCode <= 67) ||
+    (normalizedCode >= 80 && normalizedCode <= 82) ||
+    normalizedCode >= 95
+  )
+}
+
+function isStormWeatherCode(code?: number) {
+  const normalizedCode = Number(code)
+  return normalizedCode >= 95
+}
+
+function isSnowWeatherCode(code?: number) {
+  const normalizedCode = Number(code)
+  return (normalizedCode >= 71 && normalizedCode <= 77) || normalizedCode === 85 || normalizedCode === 86
 }
 
 function locationLabel(place: GeocodingResult) {

@@ -1022,17 +1022,17 @@ function OutfitResultCard({
         <p className="helper-text">
           {savedAvatar
             ? 'Using your saved avatar from More. You can still upload a one-time reference photo to override it.'
-            : 'Use a full-body reference photo with head, hair, and shoes visible.'}
+            : 'Choose from Photos or take a full-body reference photo with head, hair, and shoes visible.'}
         </p>
         <label className="form-field">
           <span>Reference Photo</span>
           <input
             accept="image/*"
-            capture="user"
             onChange={(event) => setAvatarFile(event.target.files?.[0] ?? null)}
             type="file"
           />
         </label>
+        {avatarFile ? <p className="helper-text">Selected: {avatarFile.name}</p> : null}
         <button
           type="button"
           className="secondary-button"

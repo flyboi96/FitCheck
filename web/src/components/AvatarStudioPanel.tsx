@@ -150,7 +150,7 @@ export function AvatarStudioPanel({
         <div className="empty-state">
           <Camera size={24} aria-hidden="true" />
           <h3>No saved avatar</h3>
-          <p>Add a clear full-body photo with head, hair, and shoes visible.</p>
+          <p>Choose from Photos or take a clear full-body photo with head, hair, and shoes visible.</p>
         </div>
       )}
 
@@ -158,11 +158,11 @@ export function AvatarStudioPanel({
         <span>Reference Photo</span>
         <input
           accept="image/*"
-          capture="user"
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
           type="file"
         />
       </label>
+      {file ? <p className="helper-text">Selected: {file.name}</p> : null}
 
       <label className="form-field">
         <span>Avatar Notes</span>

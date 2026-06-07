@@ -358,6 +358,14 @@ export function OutfitExperiencePanel({
       })
 
       if (status === 'wearing') {
+        await logOutfitWear({
+          context: effectiveContext,
+          contextLabel: effectiveContextLabel,
+          note: 'Marked wearing now.',
+          recommendation,
+          userId,
+          weather,
+        })
         await updateClothingItemsStatus(
           userId,
           recommendation.items.map((item) => item.id),
@@ -898,6 +906,9 @@ function OutfitResultCard({
                 {item.brand ? ` - ${item.brand}` : ''}
                 {item.material ? ` - ${item.material}` : ''}
               </span>
+              <small>
+                {item.wearCount}x overall - {item.wearsSinceClean}x since clean
+              </small>
             </div>
             <div className="item-inline-actions">
               <span className="quantity-chip">Qty {item.quantity}</span>

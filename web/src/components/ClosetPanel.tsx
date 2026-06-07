@@ -26,6 +26,7 @@ import {
   saveClothingItem,
   saveClothingItems,
   statusLabel,
+  updateClothingItemsStatus,
   updateClothingItemStatus,
   type ClothingCategory,
   type ClothingItem,
@@ -227,10 +228,15 @@ export function ClosetPanel({
     }
   }
 
-  async function handleStatusChange(item: ClothingItem, status: ClothingStatus) {
+  async function handleStatusChange(
+    item: ClothingItem,
+    status: ClothingStatus,
+    options: { markClean?: boolean } = {},
+  ) {
     const targetLabel = statusLabel(status).toLowerCase()
+    const isCleanAction = status === 'active' && options.markClean
     const pendingMessage =
-      status === 'active'
+      isCleanAction
         ? `Marking ${item.name} clean...`
         : `Moving ${item.name} to ${targetLabel}...`
 
@@ -240,9 +246,9 @@ export function ClosetPanel({
     showAppToast(pendingMessage, 'info')
 
     try {
-      await updateClothingItemStatus(userId, item.id, status)
+      await updateClothingItemStatus(userId, item.id, status, options)
       const message =
-        status === 'active'
+        isCleanAction
           ? `${item.name} is clean and available.`
           : `${item.name} moved to ${targetLabel}.`
       setActionMessage(message)
@@ -278,8 +284,11 @@ export function ClosetPanel({
     showAppToast(pendingMessage, 'info')
 
     try {
-      await Promise.all(
-        unavailableItems.map((item) => updateClothingItemStatus(userId, item.id, 'active')),
+      await updateClothingItemsStatus(
+        userId,
+        unavailableItems.map((item) => item.id),
+        'active',
+        { markClean: true },
       )
       setStatusFilter('active')
       const message = `${unavailableItems.length} unavailable item${
@@ -784,7 +793,7 @@ export function ClosetPanel({
                   }}
                   onEdit={() => openEditForm(item)}
                   onMarkClean={() => {
-                    void handleStatusChange(item, 'active')
+                    void handleStatusChange(item, 'active', { markClean: true })
                   }}
                   onMarkLaundry={() => {
                     void handleStatusChange(item, 'laundry')
@@ -1135,7 +1144,9 @@ function ClothingItemCard({
 
         <div className="item-footer">
           <span className={`status-chip ${item.status}`}>{statusLabel(item.status)}</span>
-          <span>Worn {item.wearCount}x</span>
+          <span>{item.wearCount}x overall</span>
+          <span>{item.wearsSinceClean}x since clean</span>
+          {item.lastCleanedAt ? <span>Cleaned {formatClosetDate(item.lastCleanedAt)}</span> : null}
         </div>
 
         <div className="item-actions">
@@ -1185,4 +1196,10 @@ function ClothingItemCard({
       </div>
     </article>
   )
+}
+
+function formatClosetDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+  }).format(new Date(value))
 }

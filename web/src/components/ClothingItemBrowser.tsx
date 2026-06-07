@@ -152,6 +152,9 @@ export function ClothingItemBrowser({
                         {item.brand ? ` - ${item.brand}` : ''}
                         {item.material ? ` - ${item.material}` : ''}
                       </small>
+                      <small>
+                        {item.wearCount}x overall - {item.wearsSinceClean}x since clean
+                      </small>
                     </span>
                   </label>
                 ))}

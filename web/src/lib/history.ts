@@ -194,29 +194,30 @@ async function recalculateWearStats(userId: string) {
     getDocs(wearLogsCollection(userId)),
     getDocs(collection(requireFirestore(), 'users', userId, 'clothingItems')),
   ])
-  const stats = new Map<string, { wearCount: number; lastWornAt: string }>()
+  const logsByItem = new Map<string, WearLog[]>()
 
   wearLogs.docs.forEach((logSnapshot) => {
     const log = normalizeWearLog(logSnapshot.id, logSnapshot.data())
-    const current = stats.get(log.itemID)
-
-    if (!current) {
-      stats.set(log.itemID, { wearCount: 1, lastWornAt: log.wornAt })
-      return
-    }
-
-    stats.set(log.itemID, {
-      wearCount: current.wearCount + 1,
-      lastWornAt: log.wornAt > current.lastWornAt ? log.wornAt : current.lastWornAt,
-    })
+    const logs = logsByItem.get(log.itemID) ?? []
+    logsByItem.set(log.itemID, [...logs, log])
   })
 
   const batch = writeBatch(requireFirestore())
   clothingItems.docs.forEach((itemSnapshot) => {
-    const nextStats = stats.get(itemSnapshot.id)
+    const itemLogs = logsByItem.get(itemSnapshot.id) ?? []
+    const lastCleanedAt = stringValue(itemSnapshot.data().lastCleanedAt)
+    const lastWornAt = itemLogs.reduce(
+      (latest, log) => (log.wornAt > latest ? log.wornAt : latest),
+      '',
+    )
+    const wearsSinceClean = lastCleanedAt
+      ? itemLogs.filter((log) => log.wornAt > lastCleanedAt).length
+      : itemLogs.length
+
     batch.update(itemSnapshot.ref, {
-      wearCount: nextStats?.wearCount ?? 0,
-      lastWornAt: nextStats?.lastWornAt ?? '',
+      wearCount: itemLogs.length,
+      lastWornAt,
+      wearsSinceClean,
       updatedAt: serverTimestamp(),
     })
   })
@@ -261,7 +262,8 @@ function normalizeWearLog(id: string, data: Record<string, unknown>): WearLog {
 
 export function wearCountLabel(item: ClothingItem) {
   const lastWorn = item.lastWornAt ? `Last worn ${formatShortDate(item.lastWornAt)}` : 'Never worn'
-  return `${item.wearCount} wear${item.wearCount === 1 ? '' : 's'} - ${lastWorn}`
+  const cleanCycle = `${item.wearsSinceClean} since clean`
+  return `${item.wearCount} wear${item.wearCount === 1 ? '' : 's'} - ${cleanCycle} - ${lastWorn}`
 }
 
 export function formatShortDate(value: string) {

@@ -52,9 +52,18 @@ export type ClothingItem = {
   status: ClothingStatus
   wearCount: number
   lastWornAt: string
+  wearsSinceClean: number
+  lastCleanedAt: string
 }
 
-export type ClothingItemDraft = Omit<ClothingItem, 'id' | 'wearCount' | 'lastWornAt'>
+export type ClothingItemDraft = Omit<
+  ClothingItem,
+  'id' | 'wearCount' | 'lastWornAt' | 'wearsSinceClean' | 'lastCleanedAt'
+>
+
+export type ClothingStatusUpdateOptions = {
+  markClean?: boolean
+}
 
 export const clothingCategories: Array<{
   value: ClothingCategory
@@ -177,6 +186,11 @@ function normalizeItem(id: string, data: Record<string, unknown>): ClothingItem 
     status: statusValue(data.status ?? data.statusRawValue),
     wearCount: Math.max(0, Math.floor(numberValue(data.wearCount, 0))),
     lastWornAt: stringValue(data.lastWornAt),
+    wearsSinceClean: Math.max(
+      0,
+      Math.floor(numberValue(data.wearsSinceClean, numberValue(data.wearCount, 0))),
+    ),
+    lastCleanedAt: stringValue(data.lastCleanedAt),
   }
 }
 
@@ -240,6 +254,9 @@ export async function saveClothingItem(
   await addDoc(clothingItemsCollection(userId), {
     ...payload,
     wearCount: 0,
+    wearsSinceClean: 0,
+    lastWornAt: '',
+    lastCleanedAt: '',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
@@ -266,6 +283,9 @@ export async function saveClothingItems(userId: string, drafts: ClothingItemDraf
     batch.set(itemRef, {
       ...payload,
       wearCount: 0,
+      wearsSinceClean: 0,
+      lastWornAt: '',
+      lastCleanedAt: '',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
@@ -293,9 +313,11 @@ export async function updateClothingItemStatus(
   userId: string,
   itemId: string,
   status: ClothingStatus,
+  options: ClothingStatusUpdateOptions = {},
 ) {
   await updateDoc(clothingItemDoc(userId, itemId), {
     status,
+    ...cleanFields(options),
     updatedAt: serverTimestamp(),
   })
 }
@@ -304,8 +326,10 @@ export async function updateClothingItemsStatus(
   userId: string,
   itemIds: string[],
   status: ClothingStatus,
+  options: ClothingStatusUpdateOptions = {},
 ) {
   const uniqueItemIds = [...new Set(itemIds.filter(Boolean))]
+  const cleanPayload = cleanFields(options)
 
   for (let index = 0; index < uniqueItemIds.length; index += 450) {
     const batch = writeBatch(requireFirestore())
@@ -313,6 +337,7 @@ export async function updateClothingItemsStatus(
     uniqueItemIds.slice(index, index + 450).forEach((itemId) => {
       batch.update(clothingItemDoc(userId, itemId), {
         status,
+        ...cleanPayload,
         updatedAt: serverTimestamp(),
       })
     })
@@ -323,4 +348,15 @@ export async function updateClothingItemsStatus(
 
 export async function deleteClothingItem(userId: string, itemId: string) {
   await deleteDoc(clothingItemDoc(userId, itemId))
+}
+
+function cleanFields(options: ClothingStatusUpdateOptions) {
+  if (!options.markClean) {
+    return {}
+  }
+
+  return {
+    wearsSinceClean: 0,
+    lastCleanedAt: new Date().toISOString(),
+  }
 }

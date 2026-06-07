@@ -591,11 +591,13 @@ h3 {
 }
 
 .object-card strong,
-.object-card span {
+.object-card span,
+.object-card small {
   overflow-wrap: anywhere;
 }
 
-.object-card span {
+.object-card span,
+.object-card small {
   color: var(--muted);
   font-size: 0.88rem;
   line-height: 1.35;
@@ -1175,11 +1177,13 @@ h3 {
 }
 
 .outfit-item-row strong,
-.outfit-item-row span {
+.outfit-item-row span,
+.outfit-item-row small {
   overflow-wrap: anywhere;
 }
 
-.outfit-item-row span {
+.outfit-item-row span,
+.outfit-item-row small {
   color: var(--muted);
   font-size: 0.9rem;
 }

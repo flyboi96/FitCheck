@@ -80,6 +80,7 @@ import {
 } from '../lib/outfits'
 import { contextOptionsFromSettings } from '../lib/contextStyles'
 import { saveDailyOutfit } from '../lib/dailyOutfits'
+import { logOutfitWear } from '../lib/history'
 import type { UserProfile } from '../lib/profile'
 import { lookupWeatherByLocation, todayWeatherDate } from '../lib/weather'
 
@@ -1876,6 +1877,14 @@ function EditableItineraryCard({
         userId,
         weather: weatherForScore,
       })
+      await logOutfitWear({
+        context: outfit.context,
+        contextLabel: label || outfit.label,
+        note: `Marked wearing from plan: ${outfit.label}.`,
+        recommendation,
+        userId,
+        weather: weatherForScore,
+      })
       await updateClothingItemsStatus(
         userId,
         selectedItems.map((item) => item.id),
@@ -1999,6 +2008,9 @@ function EditableItineraryCard({
                 <div className="object-card-main">
                   <strong>{item.name}</strong>
                   <span>{itemDetails.join(' - ')}</span>
+                  <small>
+                    {item.wearCount}x overall - {item.wearsSinceClean}x since clean
+                  </small>
                 </div>
                 <div className="item-inline-actions">
                   <span className="quantity-chip">Qty {item.quantity}</span>

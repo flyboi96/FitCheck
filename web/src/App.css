@@ -532,6 +532,7 @@ h3 {
 
 .error-message {
   color: #ff7b7b;
+  white-space: pre-line;
 }
 
 .success-message {

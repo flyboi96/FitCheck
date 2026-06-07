@@ -72,12 +72,14 @@ import {
   generateOutfit,
   scoreCustomOutfit,
   weatherSummary,
+  validateOutfitRecommendation,
   type OutfitGenerationMode,
   type OutfitContext,
   type OutfitContextOption,
   type OutfitRecommendation,
   type WeatherInput,
 } from '../lib/outfits'
+import { generateAIPlanItinerary } from '../lib/planAI'
 import { contextOptionsFromSettings } from '../lib/contextStyles'
 import { saveDailyOutfit } from '../lib/dailyOutfits'
 import { logOutfitWear } from '../lib/history'
@@ -260,6 +262,34 @@ export function PlansPanel({
     try {
       await savePlan(userId, selectedPlan.id, effectivePlanDraft)
 
+      if (generationMode === 'ai') {
+        const aiResult = await generateAIPlanItinerary({
+          closet: items,
+          draft: effectivePlanDraft,
+          profile,
+          userId,
+        })
+        const packingList = buildPackingList(
+          aiResult.itinerary,
+          items,
+          effectivePlanDraft.laundrySettings,
+        )
+        await saveGeneratedPlan(userId, selectedPlan.id, aiResult.itinerary, packingList)
+        setPlanView('itinerary')
+
+        const message =
+          aiResult.attempts > 1
+            ? 'AI itinerary generated after repair. FitCheck validated every outfit.'
+            : 'AI itinerary generated. FitCheck validated every outfit.'
+        setStatusMessage(
+          aiResult.warnings.length > 0
+            ? `${message} ${aiResult.warnings.length} warning${aiResult.warnings.length === 1 ? '' : 's'} included.`
+            : message,
+        )
+        showAppToast(message, 'success')
+        return
+      }
+
       const itinerary = []
       const usageByItemID = new Map<string, number>()
       let currentDate = ''
@@ -285,7 +315,7 @@ export function PlansPanel({
           const recommendation = await generateOutfit({
             closet: eligibleCloset,
             context: request.context,
-            generationMode: generationMode === 'ai' ? 'aiWithFallback' : generationMode,
+            generationMode,
             profile,
             userId,
             weather: {
@@ -310,7 +340,7 @@ export function PlansPanel({
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not generate itinerary.'
       setErrorMessage(message)
-      showAppToast(message, 'error')
+      showAppToast(message.split('\n')[0] || message, 'error')
     } finally {
       setIsGenerating(false)
     }
@@ -1637,7 +1667,7 @@ function ItinerarySection({
       const recommendation = await generateOutfit({
         closet: closetItems,
         context: outfit.context,
-        generationMode: 'aiWithFallback',
+        generationMode: 'ai',
         profile,
         selectedItemId: lockedItemId || undefined,
         userId,
@@ -1646,6 +1676,25 @@ function ItinerarySection({
           location: outfit.location || day.location || day.weather.location,
         },
       })
+      const qualityGate = validateOutfitRecommendation({
+        context: outfit.context,
+        profile,
+        recommendation,
+        weather: {
+          ...day.weather,
+          location: outfit.location || day.location || day.weather.location,
+        },
+      })
+
+      if (!qualityGate.passed) {
+        throw new Error(
+          [
+            'AI regenerated outfit did not pass FitCheck quality validation.',
+            ...qualityGate.blockers.slice(0, 4),
+          ].join('\n'),
+        )
+      }
+
       const nextOutfit = {
         ...recommendationToItineraryOutfit({
           day: {
@@ -1987,6 +2036,11 @@ function EditableItineraryCard({
           </p>
           <h3>{outfit.label}</h3>
           <p className="helper-text">{outfit.weatherSummary}</p>
+          <p className="helper-text">
+            {outfit.source === 'ai'
+              ? 'Whole-plan AI pick, scored and validated by FitCheck.'
+              : 'Local scorer pick.'}
+          </p>
         </div>
         <div className={`score-badge ${scoreClass(outfit.score)}`}>
           <strong>{outfit.score}</strong>

@@ -86,6 +86,13 @@ export type OutfitRecommendation = {
   cautions: string[]
 }
 
+export type OutfitQualityGate = {
+  blockers: string[]
+  minimumScore: number
+  passed: boolean
+  warnings: string[]
+}
+
 export type OutfitGenerationRequest = {
   closet: ClothingItem[]
   context: OutfitContext
@@ -130,6 +137,13 @@ function normalizedContextText(context: OutfitContext) {
   return context.toLowerCase().replace(/[^a-z]/g, '')
 }
 
+function minimumScoreForContext(context: OutfitContext) {
+  if (isWorkContext(context) || context === 'goingOut') return 68
+  if (context === 'travel' || context === 'exploring' || context === 'outdoorRecreation') return 62
+  if (isExerciseContext(context)) return 60
+  return 56
+}
+
 export const defaultWeatherInput: WeatherInput = {
   location: '',
   temperatureF: 75,
@@ -159,7 +173,7 @@ export async function generateOutfit(
 
   try {
     const aiRecommendation = await requestAIOutfit(requestWithSignals, localRecommendation, {
-      allowLocalCompletion: generationMode === 'ai' || generationMode === 'aiWithFallback',
+      allowLocalCompletion: generationMode === 'aiWithFallback',
     })
     return aiRecommendation
   } catch (error) {
@@ -395,6 +409,113 @@ export function scoreCustomOutfit({
   })
 }
 
+export function validateOutfitRecommendation({
+  context,
+  minimumScore = minimumScoreForContext(context),
+  profile,
+  recommendation,
+  weather,
+}: {
+  context: OutfitContext
+  minimumScore?: number
+  profile: UserProfile | null
+  recommendation: OutfitRecommendation
+  weather: WeatherInput
+}): OutfitQualityGate {
+  const blockers: string[] = []
+  const warnings: string[] = []
+  const items = recommendation.items
+  const roles = items.map(itemRole)
+  const hasTop = roles.includes('top')
+  const hasBottom = roles.includes('bottom')
+  const hasFullBody = roles.includes('fullBody')
+  const hasShoes = roles.includes('shoes')
+  const hasCoreOutfit = ((hasTop && hasBottom) || hasFullBody) && hasShoes
+
+  if (items.length === 0) {
+    blockers.push('No closet items were selected.')
+  }
+
+  if (isExerciseContext(context)) {
+    if (!(hasTop && hasBottom && hasShoes)) {
+      blockers.push('Workout outfits need a workout top, workout bottom, and training/running shoes.')
+    }
+  } else if (!hasCoreOutfit) {
+    blockers.push('Outfit is missing a required role: top plus bottom plus shoes, or dress/full-body plus shoes.')
+  }
+
+  if (recommendation.score < minimumScore) {
+    blockers.push(`Score ${recommendation.score}/100 is below the ${minimumScore}/100 minimum for this context.`)
+  }
+
+  if (isWorkContext(context)) {
+    if (items.some(isShorts)) {
+      blockers.push('Work outfits cannot use shorts.')
+    }
+    if (items.some(isSweatsOrJoggers)) {
+      blockers.push('Work outfits cannot use sweatpants, joggers, track pants, or lounge bottoms.')
+    }
+    if (items.some(isCasualOnlyFootwear)) {
+      blockers.push('Work outfits cannot use casual-only footwear such as Crocs, clogs, slides, slippers, or flip flops.')
+    }
+    if (items.some(isWorkoutTopForWork)) {
+      blockers.push('Work outfits cannot use workout shirts as the main top.')
+    }
+  }
+
+  if (isExerciseContext(context)) {
+    if (items.some((item) => item.category === 'belt' || item.category === 'jewelry')) {
+      blockers.push('Workout outfits cannot include belts or jewelry.')
+    }
+    if (items.some((item) => /button-down|button down|collar|chino|trouser|leather|dress/.test(itemText(item)))) {
+      blockers.push('Workout outfits cannot use office, leather, or dress pieces.')
+    }
+    if (isRunningContext(context) && !items.some((item) => /running shoe|run shoe|runner/.test(itemText(item)))) {
+      warnings.push('Running outfits are better with running-specific shoes.')
+    }
+  }
+
+  if (items.some(isShorts) && items.some(isBoots)) {
+    blockers.push('Shorts with boots is blocked as a fashion rule.')
+  }
+
+  if (items.some(isSweatsOrJoggers) && items.some(isBoots)) {
+    blockers.push('Sweatpants or joggers with leather boots is blocked as a fashion rule.')
+  }
+
+  if (items.some((item) => item.category === 'belt') && items.some(isSweatsOrJoggers)) {
+    blockers.push('A belt cannot be worn with sweatpants, joggers, track pants, or lounge bottoms.')
+  }
+
+  if (collaredShirtNeedsBelt(profile) && hasCollaredTop(items)) {
+    const hasBeltLoopBottom = items.some((item) => itemRole(item) === 'bottom' && hasBeltLoops(item))
+    const hasBelt = items.some((item) => item.category === 'belt')
+
+    if (hasBeltLoopBottom && !hasBelt) {
+      blockers.push('Personal rule requires a belt with collared or buttoned shirts and belt-loop bottoms.')
+    }
+  }
+
+  if (dayHighTemperature(weather) >= 86 && weather.humidityPercent >= 55) {
+    const unnecessaryLayers = items.filter(
+      (item) =>
+        (item.category === 'jacket' || item.category === 'sweater') &&
+        !(weather.isRaining && isRainFriendly(item)),
+    )
+
+    if (unnecessaryLayers.length > 0) {
+      blockers.push('Hot, humid weather blocks unnecessary jackets or sweaters unless they are rain protection.')
+    }
+  }
+
+  return {
+    blockers: [...new Set(blockers)],
+    minimumScore,
+    passed: blockers.length === 0,
+    warnings: [...new Set(warnings)],
+  }
+}
+
 export async function saveOutfitFeedback({
   context,
   feedback,
@@ -523,6 +644,7 @@ async function requestAIOutfit(
         .join('\n\n'),
       selectedItemID: request.selectedItemId ?? null,
       candidateItemIDs: localCandidate.items.map((item) => item.id),
+      allowLocalCompletion,
       localScore: localCandidate.score,
       localNotes: localCandidate.reasons,
       recentFeedback,
@@ -579,7 +701,7 @@ async function requestAIOutfit(
   }
 }
 
-async function loadRecentFeedback(userId: string) {
+export async function loadRecentFeedback(userId: string) {
   if (!db) {
     return []
   }
@@ -1613,6 +1735,11 @@ function hasCollaredTop(items: ClothingItem[]) {
 
 function hasBeltLoops(item: ClothingItem) {
   return item.category === 'pants' || item.category === 'shorts' || /chino|jean|trouser/.test(itemText(item))
+}
+
+function collaredShirtNeedsBelt(profile: UserProfile | null) {
+  const rules = [profile?.rules, profile?.dislikedCombinations].filter(Boolean).join(' ').toLowerCase()
+  return /belt/.test(rules) && /(collar|collared|button|buttoned)/.test(rules)
 }
 
 function colorHarmonyNote(items: ClothingItem[]) {

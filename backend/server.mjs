@@ -103,6 +103,50 @@ const responseSchema = {
   }
 };
 
+const planItinerarySchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["outfits", "overallRationale", "warnings"],
+  properties: {
+    outfits: {
+      type: "array",
+      maxItems: 120,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["requestID", "itemIDs", "rationale", "cautions"],
+        properties: {
+          requestID: {
+            type: "string"
+          },
+          itemIDs: {
+            type: "array",
+            items: { type: "string" },
+            minItems: 3,
+            maxItems: 8
+          },
+          rationale: {
+            type: "string"
+          },
+          cautions: {
+            type: "array",
+            items: { type: "string" },
+            maxItems: 5
+          }
+        }
+      }
+    },
+    overallRationale: {
+      type: "string"
+    },
+    warnings: {
+      type: "array",
+      items: { type: "string" },
+      maxItems: 8
+    }
+  }
+};
+
 const clothingDescriptionSchema = {
   type: "object",
   additionalProperties: false,
@@ -210,6 +254,24 @@ Rules:
 - Put risks or caveats in cautions, not the rationale.
 `;
 
+const planItineraryInstructions = `
+${instructions}
+
+You are now generating a complete trip or planning itinerary, not one isolated outfit.
+
+Additional itinerary rules:
+- Return exactly one outfit object for every requestID in the plan payload.
+- Reason across the full date range before choosing items. Balance outfit quality, weather, location, requested context, laundry limits, packing volume, and variety.
+- Do not use the same single-copy washable item on consecutive days when avoidConsecutiveRepeats is true.
+- Respect maxUsesBeforeLaundry by category. A max value of 0 means unlimited reuse.
+- Use quantity as the number of interchangeable copies the user owns. Do not require more copies than quantity supports.
+- Reuse durable items such as belts, watches, bags, shoes, and outerwear when appropriate to reduce packing volume.
+- Do not default to athletic underwear, running socks, or exercise pieces for non-exercise contexts unless they are explicitly the best match and context-appropriate.
+- For work contexts, prioritize the user's actual business-casual or professional closet items and reject casual-only or gym pieces.
+- For hot and humid days, favor breathable, lightweight pieces and avoid unnecessary layers unless rain protection is clearly needed.
+- Keep each outfit complete and practical for that exact day/request. Do not produce partial outfits.
+`;
+
 const clothingDescriptionInstructions = `
 You are FitCheck's private closet import assistant. Describe one clothing item from a user's photo.
 Use the optional user description as context, but trust the image when it clearly conflicts.
@@ -261,6 +323,7 @@ const server = http.createServer(async (request, response) => {
 
   const supportedPostRoutes = new Set([
     "/outfit-recommendation",
+    "/plan-itinerary",
     "/clothing-item-description",
     "/style-profile-draft",
     "/avatar-outfit-preview",
@@ -308,6 +371,12 @@ const server = http.createServer(async (request, response) => {
     if (pathname === "/style-profile-draft") {
       const profile = await generateStyleProfile(body);
       sendJSON(response, 200, profile);
+      return;
+    }
+
+    if (pathname === "/plan-itinerary") {
+      const itinerary = await reviewPlanItinerary(body);
+      sendJSON(response, 200, itinerary);
       return;
     }
 
@@ -1017,6 +1086,7 @@ async function reviewOutfit(requestBody) {
   const candidateItemIDs = Array.isArray(requestBody.candidateItemIDs)
     ? requestBody.candidateItemIDs.filter((id) => knownIDs.has(id))
     : [];
+  const allowLocalCompletion = requestBody.allowLocalCompletion === true;
   const requiredCoreRoles = requiredCoreRolesForContext(
     requestBody.context ?? "",
     requestBody.contextLabel ?? requestBody.occasion ?? ""
@@ -1077,7 +1147,7 @@ async function reviewOutfit(requestBody) {
       parsed = repairedParsed;
       itemIDs = repairedItemIDs;
       repaired = true;
-    } else if (repairedItemIDs.length > 0) {
+    } else if (allowLocalCompletion && repairedItemIDs.length > 0) {
       parsed = repairedParsed;
       itemIDs = completeItemIDsWithCandidateItemIDs({
         candidateItemIDs,
@@ -1090,7 +1160,7 @@ async function reviewOutfit(requestBody) {
     }
   }
 
-  if (!hasRequiredCoreRolesForIDs(itemIDs, closetByID, requiredCoreRoles)) {
+  if (allowLocalCompletion && !hasRequiredCoreRolesForIDs(itemIDs, closetByID, requiredCoreRoles)) {
     const completedItemIDs = completeItemIDsWithCandidateItemIDs({
       candidateItemIDs,
       closetByID,
@@ -1105,7 +1175,7 @@ async function reviewOutfit(requestBody) {
   }
 
   return {
-    itemIDs: itemIDs.length > 0 ? itemIDs : candidateItemIDs,
+    itemIDs: itemIDs.length > 0 ? itemIDs : allowLocalCompletion ? candidateItemIDs : [],
     rationale: String(parsed.rationale ?? "AI review completed."),
     cautions: [
       ...(repaired ? ["AI repaired an incomplete first pass before returning this outfit."] : []),
@@ -1115,6 +1185,201 @@ async function reviewOutfit(requestBody) {
       ...(Array.isArray(parsed.cautions) ? parsed.cautions.map(String) : [])
     ].slice(0, 5)
   };
+}
+
+async function reviewPlanItinerary(requestBody) {
+  const closet = Array.isArray(requestBody.closet) ? requestBody.closet : [];
+  const days = Array.isArray(requestBody.days) ? requestBody.days : [];
+
+  if (closet.length === 0) {
+    throw httpError(400, "closet is required");
+  }
+
+  if (days.length === 0) {
+    throw httpError(400, "days are required");
+  }
+
+  const knownIDs = new Set(closet.map((item) => item.id).filter(Boolean));
+  const closetByID = new Map(closet.map((item) => [item.id, item]));
+  const expectedRequests = [];
+
+  for (const day of days) {
+    const requests = Array.isArray(day.requests) ? day.requests : [];
+
+    for (const request of requests) {
+      const requestID = String(request.id ?? "").trim();
+
+      if (!requestID) {
+        continue;
+      }
+
+      expectedRequests.push({
+        requestID,
+        date: String(day.date ?? ""),
+        location: String(day.location ?? ""),
+        weatherSummary: String(day.weatherSummary ?? ""),
+        context: String(request.context ?? ""),
+        contextLabel: String(request.label ?? request.context ?? "Outfit"),
+        contextDefinition: String(request.contextDefinition ?? ""),
+        requiredCoreRoles: requiredCoreRolesForContext(
+          request.context ?? "",
+          request.label ?? request.context ?? ""
+        )
+      });
+    }
+  }
+
+  if (expectedRequests.length === 0) {
+    throw httpError(400, "At least one outfit request is required");
+  }
+
+  const promptPayload = {
+    plan: requestBody.plan ?? {},
+    styleDescription: requestBody.styleDescription ?? "",
+    contextDefinitions: requestBody.contextDefinitions ?? "",
+    recentFeedback: Array.isArray(requestBody.recentFeedback) ? requestBody.recentFeedback : [],
+    repairInstruction: requestBody.repairInstruction ?? "",
+    previousOutfits: Array.isArray(requestBody.previousOutfits) ? requestBody.previousOutfits : [],
+    expectedRequests,
+    closet: closet.map((item) => ({
+      id: item.id,
+      name: item.name,
+      brand: item.brand,
+      category: item.category,
+      color: item.color,
+      material: item.material,
+      quantity: item.quantity,
+      pattern: item.pattern,
+      formalityLevel: item.formalityLevel,
+      weatherSuitability: item.weatherSuitability,
+      occasionSuitability: item.occasionSuitability,
+      activitySuitability: item.activitySuitability,
+      outfitRole: outfitRole(item),
+      wearCount: item.wearCount,
+      wearsSinceClean: item.wearsSinceClean,
+      lastWornAt: item.lastWornAt,
+      notes: item.notes
+    }))
+  };
+
+  let parsed = await requestOpenAIPlanItinerary(promptPayload);
+  let outfits = normalizePlanItineraryOutfits(parsed.outfits, knownIDs);
+  let validationIssues = planItineraryIssues(outfits, expectedRequests, closetByID);
+  let repaired = false;
+
+  if (validationIssues.length > 0) {
+    const repairPayload = {
+      ...promptPayload,
+      previousOutfits: outfits,
+      repairInstruction: [
+        "Repair the previous itinerary output.",
+        "Return exactly one outfit for every expected requestID.",
+        "Fix these backend validation issues:",
+        validationIssues.join(" | ")
+      ].join(" ")
+    };
+    const repairedParsed = await requestOpenAIPlanItinerary(repairPayload);
+    const repairedOutfits = normalizePlanItineraryOutfits(repairedParsed.outfits, knownIDs);
+    const repairedIssues = planItineraryIssues(repairedOutfits, expectedRequests, closetByID);
+
+    parsed = repairedParsed;
+    outfits = repairedOutfits;
+    validationIssues = repairedIssues;
+    repaired = true;
+  }
+
+  return {
+    outfits,
+    overallRationale: String(parsed.overallRationale ?? "AI planned the itinerary as a complete set."),
+    warnings: [
+      ...(repaired ? ["AI repaired the first itinerary pass before returning this result."] : []),
+      ...(Array.isArray(parsed.warnings) ? parsed.warnings.map(String) : [])
+    ].slice(0, 8),
+    validationIssues
+  };
+}
+
+async function requestOpenAIPlanItinerary(promptPayload) {
+  const openAIResponse = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${openAIKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: openAIModel,
+      instructions: planItineraryInstructions,
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: JSON.stringify(promptPayload)
+            }
+          ]
+        }
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "fitcheck_plan_itinerary",
+          strict: true,
+          schema: planItinerarySchema
+        }
+      },
+      max_output_tokens: 8000,
+      store: false
+    })
+  });
+
+  const data = await openAIResponse.json().catch(() => ({}));
+  if (!openAIResponse.ok) {
+    throw httpError(openAIResponse.status, data.error?.message ?? "OpenAI request failed");
+  }
+
+  return parseOpenAIJSON(data, "OpenAI plan itinerary");
+}
+
+function normalizePlanItineraryOutfits(value, knownIDs) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((outfit) => ({
+      requestID: String(outfit?.requestID ?? ""),
+      itemIDs: validUniqueItemIDs(outfit?.itemIDs, knownIDs),
+      rationale: String(outfit?.rationale ?? "AI selected this outfit for the requested day."),
+      cautions: Array.isArray(outfit?.cautions) ? outfit.cautions.map(String).slice(0, 5) : []
+    }))
+    .filter((outfit) => outfit.requestID);
+}
+
+function planItineraryIssues(outfits, expectedRequests, closetByID) {
+  const issues = [];
+  const outfitByRequestID = new Map(outfits.map((outfit) => [outfit.requestID, outfit]));
+
+  for (const request of expectedRequests) {
+    const outfit = outfitByRequestID.get(request.requestID);
+
+    if (!outfit) {
+      issues.push(`${request.date} ${request.contextLabel}: missing requestID ${request.requestID}`);
+      continue;
+    }
+
+    if (!hasRequiredCoreRolesForIDs(outfit.itemIDs, closetByID, request.requiredCoreRoles)) {
+      issues.push(
+        `${request.date} ${request.contextLabel}: missing ${missingRequiredCoreRoles(
+          outfit.itemIDs,
+          closetByID,
+          request.requiredCoreRoles
+        ).join(", ")}`
+      );
+    }
+  }
+
+  return issues;
 }
 
 async function requestOpenAIOutfitReview(promptPayload) {

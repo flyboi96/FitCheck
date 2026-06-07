@@ -57,6 +57,7 @@ to browser code. Never put `OPENAI_API_KEY` in `web/`.
 ## Routes
 
 - `POST /outfit-recommendation` reviews a locally generated outfit or chooses an outfit from the closet when no candidate item IDs are supplied.
+- `POST /plan-itinerary` asks AI to generate a full multi-day itinerary in one pass, balancing context, weather, laundry rules, item reuse, packing volume, and closet availability.
 - `POST /clothing-item-description` accepts a compressed base64 image plus optional user notes and returns an editable clothing-item draft.
 - `POST /style-profile-draft` turns guided style answers into editable style-preference fields.
 - `POST /avatar-outfit-preview` accepts a compressed user reference photo plus outfit, weather, location, and style context, then returns a base64 PNG preview.

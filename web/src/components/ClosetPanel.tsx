@@ -120,11 +120,12 @@ export function ClosetPanel({
   }, [categoryOptions, filteredItems])
 
   const activeCount = items.filter((item) => item.status === 'active').length
-  const laundryItems = items.filter((item) => item.status === 'laundry')
+  const unavailableItems = items.filter(
+    (item) =>
+      item.status === 'wearing' || item.status === 'laundry' || item.status === 'unavailable',
+  )
   const totalQuantity = items.reduce((total, item) => total + item.quantity, 0)
-  const unavailableCount = items.filter(
-    (item) => item.status === 'laundry' || item.status === 'unavailable',
-  ).length
+  const unavailableCount = unavailableItems.length
   const setupTasks = useMemo(() => closetSetupTasks(items), [items])
 
   function openNewItemForm() {
@@ -242,7 +243,7 @@ export function ClosetPanel({
   }
 
   async function handleMarkLaundryClean() {
-    if (laundryItems.length === 0) {
+    if (unavailableItems.length === 0) {
       return
     }
 
@@ -252,11 +253,11 @@ export function ClosetPanel({
 
     try {
       await Promise.all(
-        laundryItems.map((item) => updateClothingItemStatus(userId, item.id, 'active')),
+        unavailableItems.map((item) => updateClothingItemStatus(userId, item.id, 'active')),
       )
       setStatusFilter('active')
-      const message = `${laundryItems.length} laundry item${
-        laundryItems.length === 1 ? '' : 's'
+      const message = `${unavailableItems.length} unavailable item${
+        unavailableItems.length === 1 ? '' : 's'
       } marked clean.`
       setActionMessage(message)
       showAppToast(message, 'success')
@@ -634,13 +635,25 @@ export function ClosetPanel({
           <button
             type="button"
             className="secondary-button"
-            disabled={laundryItems.length === 0 || isCleaningLaundry}
+            onClick={() => {
+              setStatusFilter('wearing')
+              setCategoryFilter('all')
+              setSearchTerm('')
+            }}
+          >
+            <CheckCircle2 size={20} aria-hidden="true" />
+            Wearing View
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={unavailableItems.length === 0 || isCleaningLaundry}
             onClick={() => {
               void handleMarkLaundryClean()
             }}
           >
             {isCleaningLaundry ? <span className="spinner small" aria-hidden="true" /> : <CheckCircle2 size={20} />}
-            Mark Laundry Clean
+            Mark Clean
           </button>
           <button
             type="button"
@@ -1107,7 +1120,7 @@ function ClothingItemCard({
               Laundry
             </button>
           ) : null}
-          {item.status === 'laundry' || item.status === 'unavailable' ? (
+          {item.status === 'wearing' || item.status === 'laundry' || item.status === 'unavailable' ? (
             <button type="button" className="ghost-button" onClick={onMarkClean}>
               <CheckCircle2 size={18} aria-hidden="true" />
               Clean

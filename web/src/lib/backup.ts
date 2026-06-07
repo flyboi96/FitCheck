@@ -16,6 +16,7 @@ type BackupDocument = {
   clothingItems: BackupRecord[]
   plans: BackupRecord[]
   outfits: BackupRecord[]
+  dailyOutfits: BackupRecord[]
   wearLogs: BackupRecord[]
   outfitFeedback: BackupRecord[]
   avatars: BackupRecord[]
@@ -31,6 +32,7 @@ const backupSubcollections = [
   'clothingItems',
   'plans',
   'outfits',
+  'dailyOutfits',
   'wearLogs',
   'outfitFeedback',
   'avatars',
@@ -70,6 +72,7 @@ export async function exportFitCheckBackup(userId: string) {
     clothingItems: await exportCollection(userId, 'clothingItems'),
     plans: await exportCollection(userId, 'plans'),
     outfits: await exportCollection(userId, 'outfits'),
+    dailyOutfits: await exportCollection(userId, 'dailyOutfits'),
     wearLogs: await exportCollection(userId, 'wearLogs'),
     outfitFeedback: await exportCollection(userId, 'outfitFeedback'),
     avatars: await exportCollection(userId, 'avatars'),
@@ -131,6 +134,7 @@ async function replaceUserData(userId: string, backup: BackupDocument) {
   addRecordsToBatch(batch, userId, 'clothingItems', backup.clothingItems)
   addRecordsToBatch(batch, userId, 'plans', backup.plans)
   addRecordsToBatch(batch, userId, 'outfits', backup.outfits)
+  addRecordsToBatch(batch, userId, 'dailyOutfits', backup.dailyOutfits)
   addRecordsToBatch(batch, userId, 'wearLogs', backup.wearLogs)
   addRecordsToBatch(batch, userId, 'outfitFeedback', backup.outfitFeedback)
   addRecordsToBatch(batch, userId, 'avatars', backup.avatars)
@@ -164,6 +168,7 @@ function parseBackup(text: string): BackupDocument {
     clothingItems: recordsValue(parsed.clothingItems),
     plans: recordsValue(parsed.plans),
     outfits: recordsValue(parsed.outfits),
+    dailyOutfits: recordsValue(parsed.dailyOutfits),
     wearLogs: recordsValue(parsed.wearLogs),
     outfitFeedback: recordsValue(parsed.outfitFeedback),
     avatars: recordsValue(parsed.avatars),

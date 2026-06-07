@@ -31,12 +31,19 @@ import {
   categoryOptionsForWearer,
   clothingStatuses,
   saveClothingItem,
+  updateClothingItemsStatus,
   type ClothingCategory,
   type ClothingItem,
   type ClothingItemDraft,
   type ClothingStatus,
 } from '../lib/closet'
 import { contextOptionsFromSettings } from '../lib/contextStyles'
+import {
+  saveDailyOutfit,
+  subscribeToDailyOutfit,
+  type DailyOutfit,
+  type DailyOutfitStatus,
+} from '../lib/dailyOutfits'
 import { logOutfitWear } from '../lib/history'
 import { categoryName } from '../lib/outfits'
 import {
@@ -88,13 +95,68 @@ export function OutfitExperiencePanel({
   const [isLoggingWear, setIsLoggingWear] = useState(false)
   const [wearLogMessage, setWearLogMessage] = useState<string | null>(null)
   const [wearLogError, setWearLogError] = useState<string | null>(null)
+  const [dailyOutfit, setDailyOutfit] = useState<DailyOutfit | null>(null)
+  const [dailyOutfitMessage, setDailyOutfitMessage] = useState<string | null>(null)
+  const [dailyOutfitError, setDailyOutfitError] = useState<string | null>(null)
+  const [isSavingDailyOutfit, setIsSavingDailyOutfit] = useState(false)
   const [isLookingUpWeather, setIsLookingUpWeather] = useState(false)
   const [weatherStatus, setWeatherStatus] = useState<string | null>(null)
   const [weatherError, setWeatherError] = useState<string | null>(null)
   const autoWeatherAttempted = useRef(false)
+  const todayDate = todayWeatherDate()
+  const effectiveContextLabel =
+    contextOptions.find((option) => option.value === effectiveContext)?.label ?? effectiveContext
 
   const activeItems = useMemo(() => items.filter((item) => item.status === 'active'), [items])
+  const resultEditableItems = useMemo(() => {
+    const recommendationItemIDs = new Set(recommendation?.items.map((item) => item.id) ?? [])
+    return items.filter((item) => item.status === 'active' || recommendationItemIDs.has(item.id))
+  }, [items, recommendation])
   const selectedItem = activeItems.find((item) => item.id === selectedItemId)
+
+  useEffect(() => {
+    if (mode !== 'today') {
+      return
+    }
+
+    return subscribeToDailyOutfit(
+      userId,
+      todayDate,
+      (nextDailyOutfit) => {
+        setDailyOutfit(nextDailyOutfit)
+        setDailyOutfitError(null)
+      },
+      (error) => {
+        setDailyOutfitError(error.message)
+      },
+    )
+  }, [mode, todayDate, userId])
+
+  useEffect(() => {
+    if (mode !== 'today' || !dailyOutfit || recommendation || items.length === 0) {
+      return
+    }
+
+    const savedRecommendation = recommendationFromDailyOutfit(dailyOutfit, items, weather, profile)
+
+    if (!savedRecommendation) {
+      const errorTimer = window.setTimeout(() => {
+        setDailyOutfitError('Saved outfit has no matching closet items.')
+      }, 0)
+      return () => window.clearTimeout(errorTimer)
+    }
+
+    const restoreTimer = window.setTimeout(() => {
+      setContext(dailyOutfit.context)
+      setRecommendation(savedRecommendation)
+      setDailyOutfitMessage(
+        dailyOutfit.status === 'wearing' ? 'Restored outfit you are wearing today.' : 'Restored planned outfit for today.',
+      )
+      setView('result')
+    }, 0)
+    return () => window.clearTimeout(restoreTimer)
+  }, [dailyOutfit, items, mode, profile, recommendation, weather])
+
   useEffect(() => {
     if (mode !== 'today' || autoWeatherAttempted.current) {
       return
@@ -135,6 +197,8 @@ export function OutfitExperiencePanel({
     setFeedbackError(null)
     setWearLogMessage(null)
     setWearLogError(null)
+    setDailyOutfitMessage(null)
+    setDailyOutfitError(null)
     showAppToast(generationMode === 'ai' ? 'Asking AI for an outfit...' : 'Generating a local outfit...', 'info')
 
     try {
@@ -235,18 +299,33 @@ export function OutfitExperiencePanel({
     setIsLoggingWear(true)
     setWearLogMessage(null)
     setWearLogError(null)
+    setDailyOutfitMessage(null)
+    setDailyOutfitError(null)
 
     try {
       await logOutfitWear({
         context: effectiveContext,
-        contextLabel:
-          contextOptions.find((option) => option.value === effectiveContext)?.label ?? effectiveContext,
+        contextLabel: effectiveContextLabel,
         note,
         recommendation,
         userId,
         weather,
       })
-      setWearLogMessage('Wear logged. Rotation data updated.')
+      await saveDailyOutfit({
+        context: effectiveContext,
+        contextLabel: effectiveContextLabel,
+        date: todayDate,
+        recommendation,
+        status: 'wearing',
+        userId,
+        weather,
+      })
+      await updateClothingItemsStatus(
+        userId,
+        recommendation.items.map((item) => item.id),
+        'wearing',
+      )
+      setWearLogMessage('Wear logged. Items marked wearing and removed from new outfit picks.')
       showAppToast('Wear logged.', 'success')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not log wear.'
@@ -254,6 +333,76 @@ export function OutfitExperiencePanel({
       showAppToast(message, 'error')
     } finally {
       setIsLoggingWear(false)
+    }
+  }
+
+  async function handleSaveDailyOutfit(status: DailyOutfitStatus) {
+    if (!recommendation) {
+      return
+    }
+
+    setIsSavingDailyOutfit(true)
+    setDailyOutfitMessage(null)
+    setDailyOutfitError(null)
+
+    try {
+      await saveDailyOutfit({
+        context: effectiveContext,
+        contextLabel: effectiveContextLabel,
+        date: todayDate,
+        recommendation,
+        status,
+        userId,
+        weather,
+      })
+
+      if (status === 'wearing') {
+        await updateClothingItemsStatus(
+          userId,
+          recommendation.items.map((item) => item.id),
+          'wearing',
+        )
+      }
+
+      const message =
+        status === 'wearing'
+          ? 'Saved as wearing now. Items are unavailable for new outfit picks.'
+          : 'Saved for today. This outfit will restore when you return.'
+      setDailyOutfitMessage(message)
+      showAppToast(message, 'success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not save today outfit.'
+      setDailyOutfitError(message)
+      showAppToast(message, 'error')
+    } finally {
+      setIsSavingDailyOutfit(false)
+    }
+  }
+
+  async function handleMoveRecommendationToLaundry() {
+    if (!recommendation) {
+      return
+    }
+
+    setIsSavingDailyOutfit(true)
+    setDailyOutfitMessage(null)
+    setDailyOutfitError(null)
+
+    try {
+      await updateClothingItemsStatus(
+        userId,
+        recommendation.items.map((item) => item.id),
+        'laundry',
+      )
+      const message = 'Outfit items moved to laundry and removed from new outfit picks.'
+      setDailyOutfitMessage(message)
+      showAppToast(message, 'success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not move outfit to laundry.'
+      setDailyOutfitError(message)
+      showAppToast(message, 'error')
+    } finally {
+      setIsSavingDailyOutfit(false)
     }
   }
 
@@ -269,10 +418,15 @@ export function OutfitExperiencePanel({
           feedbackNote={feedbackNote}
           feedbackError={feedbackError}
           feedbackMessage={feedbackMessage}
-          activeItems={activeItems}
           context={effectiveContext}
+          dailyOutfitError={dailyOutfitError}
+          dailyOutfitMessage={dailyOutfitMessage}
+          isSavingDailyOutfit={isSavingDailyOutfit}
           isSavingFeedback={isSavingFeedback}
           isLoggingWear={isLoggingWear}
+          onMoveToLaundry={() => {
+            void handleMoveRecommendationToLaundry()
+          }}
           onFeedback={(type) => {
             void handleFeedback(type)
           }}
@@ -281,8 +435,12 @@ export function OutfitExperiencePanel({
           }}
           onRecommendationChange={setRecommendation}
           onNoteChange={setFeedbackNote}
+          onSaveDailyOutfit={(status) => {
+            void handleSaveDailyOutfit(status)
+          }}
           profile={profile}
           recommendation={recommendation}
+          resultEditableItems={resultEditableItems}
           userId={userId}
           weather={weather}
           wearLogError={wearLogError}
@@ -538,37 +696,47 @@ function OutfitSubpageHeader({
 }
 
 function OutfitResultCard({
-  activeItems,
   context,
+  dailyOutfitError,
+  dailyOutfitMessage,
   feedbackError,
   feedbackMessage,
   feedbackNote,
+  isSavingDailyOutfit,
   isSavingFeedback,
   isLoggingWear,
+  onMoveToLaundry,
   onFeedback,
   onLogWear,
   onNoteChange,
   onRecommendationChange,
+  onSaveDailyOutfit,
   profile,
   recommendation,
+  resultEditableItems,
   userId,
   weather,
   wearLogError,
   wearLogMessage,
 }: {
-  activeItems: ClothingItem[]
   context: OutfitContext
+  dailyOutfitError: string | null
+  dailyOutfitMessage: string | null
   feedbackError: string | null
   feedbackMessage: string | null
   feedbackNote: string
+  isSavingDailyOutfit: boolean
   isSavingFeedback: boolean
   isLoggingWear: boolean
+  onMoveToLaundry: () => void
   onFeedback: (type: OutfitFeedbackType) => void
   onLogWear: (note: string) => void
   onNoteChange: (note: string) => void
   onRecommendationChange: (recommendation: OutfitRecommendation) => void
+  onSaveDailyOutfit: (status: DailyOutfitStatus) => void
   profile: UserProfile | null
   recommendation: OutfitRecommendation
+  resultEditableItems: ClothingItem[]
   userId: string
   weather: WeatherInput
   wearLogError: string | null
@@ -601,8 +769,8 @@ function OutfitResultCard({
   }, [recommendation])
 
   const activeItemsById = useMemo(
-    () => new Map(activeItems.map((item) => [item.id, item])),
-    [activeItems],
+    () => new Map(resultEditableItems.map((item) => [item.id, item])),
+    [resultEditableItems],
   )
 
   function saveOutfitItemEdits() {
@@ -738,11 +906,11 @@ function OutfitResultCard({
       <details className="edit-section">
         <summary>Edit outfit items</summary>
         <p className="helper-text">
-          Add or remove owned active items, then save to recalculate the outfit score.
+          Add or remove owned items, then save to recalculate the outfit score.
         </p>
         <ClothingItemBrowser
           compact
-          items={activeItems}
+          items={resultEditableItems}
           onSelectionChange={setSelectedItemIDs}
           selectedItemIDs={selectedItemIDs}
           selectionMode="multiple"
@@ -754,6 +922,42 @@ function OutfitResultCard({
       </details>
 
       <div className="wear-log-panel">
+        <div className="generation-actions">
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={isSavingDailyOutfit}
+            onClick={() => onSaveDailyOutfit('planned')}
+          >
+            {isSavingDailyOutfit ? (
+              <span className="spinner small" aria-hidden="true" />
+            ) : (
+              <Save size={20} aria-hidden="true" />
+            )}
+            Save for Today
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={isSavingDailyOutfit}
+            onClick={() => onSaveDailyOutfit('wearing')}
+          >
+            <CalendarCheck size={20} aria-hidden="true" />
+            Wearing Now
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={isSavingDailyOutfit}
+            onClick={onMoveToLaundry}
+          >
+            <RefreshCw size={20} aria-hidden="true" />
+            Move to Laundry
+          </button>
+        </div>
+        {dailyOutfitMessage ? <p className="success-message">{dailyOutfitMessage}</p> : null}
+        {dailyOutfitError ? <p className="error-message">{dailyOutfitError}</p> : null}
+
         <label className="form-field">
           <span>Wear Note</span>
           <textarea
@@ -1089,6 +1293,35 @@ function clothingItemDraftFromItem(item: ClothingItem): ClothingItemDraft {
     pattern: item.pattern,
     notes: item.notes,
     status: item.status,
+  }
+}
+
+function recommendationFromDailyOutfit(
+  dailyOutfit: DailyOutfit,
+  closetItems: ClothingItem[],
+  weather: WeatherInput,
+  profile: UserProfile | null,
+): OutfitRecommendation | null {
+  const selectedItems = dailyOutfit.itemIDs
+    .map((itemId) => closetItems.find((item) => item.id === itemId))
+    .filter((item): item is ClothingItem => Boolean(item))
+
+  if (selectedItems.length === 0) {
+    return null
+  }
+
+  const rescoredRecommendation = scoreCustomOutfit({
+    context: dailyOutfit.context,
+    items: selectedItems,
+    profile,
+    source: dailyOutfit.source,
+    weather,
+  })
+
+  return {
+    ...rescoredRecommendation,
+    id: `daily-${dailyOutfit.date}`,
+    rationale: dailyOutfit.rationale || 'Saved outfit for today.',
   }
 }
 

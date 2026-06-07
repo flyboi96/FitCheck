@@ -1009,6 +1009,11 @@ h3 {
   background: color-mix(in srgb, var(--warning) 12%, var(--panel));
 }
 
+.status-chip.wearing {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+}
+
 .item-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1091,6 +1096,10 @@ h3 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.wear-log-panel .generation-actions {
+  grid-template-columns: 1fr;
 }
 
 .recommendation-header {

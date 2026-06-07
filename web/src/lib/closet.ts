@@ -37,7 +37,7 @@ export type ClothingCategory =
   | 'purse'
   | 'other'
 
-export type ClothingStatus = 'active' | 'archived' | 'laundry' | 'unavailable'
+export type ClothingStatus = 'active' | 'wearing' | 'archived' | 'laundry' | 'unavailable'
 
 export type ClothingItem = {
   id: string
@@ -86,6 +86,7 @@ export const clothingCategories: Array<{
 
 export const clothingStatuses: Array<{ value: ClothingStatus; label: string }> = [
   { value: 'active', label: 'Active' },
+  { value: 'wearing', label: 'Wearing' },
   { value: 'archived', label: 'Archived' },
   { value: 'laundry', label: 'Laundry' },
   { value: 'unavailable', label: 'Unavailable' },
@@ -297,6 +298,27 @@ export async function updateClothingItemStatus(
     status,
     updatedAt: serverTimestamp(),
   })
+}
+
+export async function updateClothingItemsStatus(
+  userId: string,
+  itemIds: string[],
+  status: ClothingStatus,
+) {
+  const uniqueItemIds = [...new Set(itemIds.filter(Boolean))]
+
+  for (let index = 0; index < uniqueItemIds.length; index += 450) {
+    const batch = writeBatch(requireFirestore())
+
+    uniqueItemIds.slice(index, index + 450).forEach((itemId) => {
+      batch.update(clothingItemDoc(userId, itemId), {
+        status,
+        updatedAt: serverTimestamp(),
+      })
+    })
+
+    await batch.commit()
+  }
 }
 
 export async function deleteClothingItem(userId: string, itemId: string) {

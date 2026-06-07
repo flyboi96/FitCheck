@@ -1057,6 +1057,7 @@ async function reviewOutfit(requestBody) {
   let parsed = await requestOpenAIOutfitReview(promptPayload);
   let itemIDs = validUniqueItemIDs(parsed.itemIDs, knownIDs);
   let repaired = false;
+  let completedWithLocalCandidate = false;
 
   if (!hasRequiredCoreRolesForIDs(itemIDs, closetByID, requiredCoreRoles)) {
     const repairPayload = {
@@ -1072,10 +1073,34 @@ async function reviewOutfit(requestBody) {
     const repairedParsed = await requestOpenAIOutfitReview(repairPayload);
     const repairedItemIDs = validUniqueItemIDs(repairedParsed.itemIDs, knownIDs);
 
-    if (repairedItemIDs.length > 0) {
+    if (hasRequiredCoreRolesForIDs(repairedItemIDs, closetByID, requiredCoreRoles)) {
       parsed = repairedParsed;
       itemIDs = repairedItemIDs;
       repaired = true;
+    } else if (repairedItemIDs.length > 0) {
+      parsed = repairedParsed;
+      itemIDs = completeItemIDsWithCandidateItemIDs({
+        candidateItemIDs,
+        closetByID,
+        itemIDs: repairedItemIDs,
+        requiredCoreRoles
+      });
+      repaired = true;
+      completedWithLocalCandidate = itemIDs.length > repairedItemIDs.length;
+    }
+  }
+
+  if (!hasRequiredCoreRolesForIDs(itemIDs, closetByID, requiredCoreRoles)) {
+    const completedItemIDs = completeItemIDsWithCandidateItemIDs({
+      candidateItemIDs,
+      closetByID,
+      itemIDs,
+      requiredCoreRoles
+    });
+
+    if (completedItemIDs.length > itemIDs.length) {
+      itemIDs = completedItemIDs;
+      completedWithLocalCandidate = true;
     }
   }
 
@@ -1084,6 +1109,9 @@ async function reviewOutfit(requestBody) {
     rationale: String(parsed.rationale ?? "AI review completed."),
     cautions: [
       ...(repaired ? ["AI repaired an incomplete first pass before returning this outfit."] : []),
+      ...(completedWithLocalCandidate
+        ? ["FitCheck completed the AI outfit with local scorer picks to cover missing required roles."]
+        : []),
       ...(Array.isArray(parsed.cautions) ? parsed.cautions.map(String) : [])
     ].slice(0, 5)
   };
@@ -1152,6 +1180,48 @@ function validUniqueItemIDs(value, knownIDs) {
   }
 
   return itemIDs;
+}
+
+function completeItemIDsWithCandidateItemIDs({
+  candidateItemIDs,
+  closetByID,
+  itemIDs,
+  requiredCoreRoles
+}) {
+  const completedItemIDs = [...new Set(itemIDs)];
+
+  function addRole(role) {
+    const hasRole = completedItemIDs.some((itemID) => outfitRole(closetByID.get(itemID)) === role);
+
+    if (hasRole) {
+      return;
+    }
+
+    const fallbackItemID = candidateItemIDs.find(
+      (itemID) =>
+        !completedItemIDs.includes(itemID) &&
+        outfitRole(closetByID.get(itemID)) === role
+    );
+
+    if (fallbackItemID) {
+      completedItemIDs.push(fallbackItemID);
+    }
+  }
+
+  if (requiredCoreRoles.type === "exercise") {
+    addRole("top");
+    addRole("bottom");
+    addRole("shoes");
+    return completedItemIDs;
+  }
+
+  if (!completedItemIDs.some((itemID) => outfitRole(closetByID.get(itemID)) === "fullBody")) {
+    addRole("top");
+    addRole("bottom");
+  }
+
+  addRole("shoes");
+  return completedItemIDs;
 }
 
 function requiredCoreRolesForContext(context, contextLabel) {

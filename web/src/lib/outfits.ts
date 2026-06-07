@@ -159,7 +159,7 @@ export async function generateOutfit(
 
   try {
     const aiRecommendation = await requestAIOutfit(requestWithSignals, localRecommendation, {
-      allowLocalCompletion: generationMode === 'aiWithFallback',
+      allowLocalCompletion: generationMode === 'ai' || generationMode === 'aiWithFallback',
     })
     return aiRecommendation
   } catch (error) {
@@ -522,7 +522,7 @@ async function requestAIOutfit(
         .filter(Boolean)
         .join('\n\n'),
       selectedItemID: request.selectedItemId ?? null,
-      candidateItemIDs: [],
+      candidateItemIDs: localCandidate.items.map((item) => item.id),
       localScore: localCandidate.score,
       localNotes: localCandidate.reasons,
       recentFeedback,
@@ -548,13 +548,16 @@ async function requestAIOutfit(
     throw new Error('AI did not return any active closet items.')
   }
 
-  if (!allowLocalCompletion && !hasRequiredCoreRoles(items, request.context)) {
-    throw new Error('AI returned an incomplete outfit even after the proxy repair pass.')
-  }
-
   const completedItems = allowLocalCompletion
     ? completeOutfitWithLocalFallback(items, localCandidate.items, request.context)
     : items
+  const aiReturnedIncomplete = !hasRequiredCoreRoles(items, request.context)
+  const completedByLocalScorer = completedItems.length > items.length || aiReturnedIncomplete
+
+  if (!allowLocalCompletion && aiReturnedIncomplete) {
+    throw new Error('AI returned an incomplete outfit even after the proxy repair pass.')
+  }
+
   const scored = scoreOutfit(completedItems, {
     context: request.context,
     feedbackSignals: request.feedbackSignals ?? [],
@@ -563,8 +566,8 @@ async function requestAIOutfit(
     weather: request.weather,
   })
   const repairCautions =
-    completedItems.length > items.length
-      ? ['AI omitted a required role, so FitCheck completed the outfit with local scorer picks.']
+    completedByLocalScorer
+      ? ['AI omitted a required role, so FitCheck completed the outfit with local scorer picks instead of failing.']
       : []
 
   return {

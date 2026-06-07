@@ -280,7 +280,7 @@ export function PlansPanel({
           const recommendation = await generateOutfit({
             closet: eligibleCloset,
             context: request.context,
-            generationMode,
+            generationMode: generationMode === 'ai' ? 'aiWithFallback' : generationMode,
             profile,
             userId,
             weather: {
@@ -1632,7 +1632,7 @@ function ItinerarySection({
       const recommendation = await generateOutfit({
         closet: closetItems,
         context: outfit.context,
-        generationMode: 'ai',
+        generationMode: 'aiWithFallback',
         profile,
         selectedItemId: lockedItemId || undefined,
         userId,

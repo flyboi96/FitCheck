@@ -418,8 +418,27 @@ async function geocodeLocation(location: string): Promise<GeocodingResult> {
     throw new Error('Enter a city or location first.')
   }
 
+  const candidates = locationSearchCandidates(trimmedLocation)
+  let lastError: unknown
+
+  for (const candidate of candidates) {
+    try {
+      return await geocodeOpenMeteoLocationCandidate(candidate)
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw new Error(
+    `No matching location was found for ${trimmedLocation}. Tried: ${candidates.join('; ')}.${
+      lastError instanceof Error ? ` Last error: ${lastError.message}` : ''
+    }`,
+  )
+}
+
+async function geocodeOpenMeteoLocationCandidate(location: string): Promise<GeocodingResult> {
   const url = new URL('https://geocoding-api.open-meteo.com/v1/search')
-  url.searchParams.set('name', trimmedLocation)
+  url.searchParams.set('name', location)
   url.searchParams.set('count', '1')
   url.searchParams.set('language', 'en')
   url.searchParams.set('format', 'json')
@@ -436,6 +455,40 @@ async function geocodeLocation(location: string): Promise<GeocodingResult> {
   }
 
   return result
+}
+
+function locationSearchCandidates(location: string) {
+  const parts = location
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+  const lastPart = parts[parts.length - 1]
+  const candidates = [
+    location.trim(),
+    parts.length >= 3 ? `${parts[0]}, ${lastPart}` : '',
+    parts.length >= 2 ? `${parts[0]}, ${parts[1]}` : '',
+    parts.length >= 3 ? `${parts[1]}, ${lastPart}` : '',
+    ...parts,
+  ]
+
+  return uniqueStrings(candidates)
+}
+
+function uniqueStrings(values: string[]) {
+  const seenValues = new Set<string>()
+  const uniqueValues: string[] = []
+
+  values.forEach((value) => {
+    const trimmedValue = value.trim()
+    const key = trimmedValue.toLowerCase()
+
+    if (trimmedValue && !seenValues.has(key)) {
+      seenValues.add(key)
+      uniqueValues.push(trimmedValue)
+    }
+  })
+
+  return uniqueValues
 }
 
 function currentPosition() {

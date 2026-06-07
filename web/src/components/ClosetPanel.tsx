@@ -67,6 +67,7 @@ export function ClosetPanel({
   const [isBulkImporting, setIsBulkImporting] = useState(false)
   const [isClearingWardrobe, setIsClearingWardrobe] = useState(false)
   const [isCleaningLaundry, setIsCleaningLaundry] = useState(false)
+  const [updatingStatusItemIds, setUpdatingStatusItemIds] = useState<Set<string>>(() => new Set())
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -227,29 +228,54 @@ export function ClosetPanel({
   }
 
   async function handleStatusChange(item: ClothingItem, status: ClothingStatus) {
-    setActionMessage(null)
+    const targetLabel = statusLabel(status).toLowerCase()
+    const pendingMessage =
+      status === 'active'
+        ? `Marking ${item.name} clean...`
+        : `Moving ${item.name} to ${targetLabel}...`
+
+    setUpdatingStatusItemIds((currentIds) => new Set(currentIds).add(item.id))
+    setActionMessage(pendingMessage)
     setActionError(null)
+    showAppToast(pendingMessage, 'info')
 
     try {
       await updateClothingItemStatus(userId, item.id, status)
-      const message = `${item.name} moved to ${statusLabel(status).toLowerCase()}.`
+      const message =
+        status === 'active'
+          ? `${item.name} is clean and available.`
+          : `${item.name} moved to ${targetLabel}.`
       setActionMessage(message)
       showAppToast(message, 'success')
     } catch (statusError) {
       const message = statusError instanceof Error ? statusError.message : 'Could not update item.'
       setActionError(message)
       showAppToast(message, 'error')
+    } finally {
+      setUpdatingStatusItemIds((currentIds) => {
+        const nextIds = new Set(currentIds)
+        nextIds.delete(item.id)
+        return nextIds
+      })
     }
   }
 
   async function handleMarkLaundryClean() {
     if (unavailableItems.length === 0) {
+      const message = 'No wearing, laundry, or unavailable items to mark clean.'
+      setActionMessage(message)
+      setActionError(null)
+      showAppToast(message, 'info')
       return
     }
 
+    const pendingMessage = `Marking ${unavailableItems.length} item${
+      unavailableItems.length === 1 ? '' : 's'
+    } clean...`
     setIsCleaningLaundry(true)
-    setActionMessage(null)
+    setActionMessage(pendingMessage)
     setActionError(null)
+    showAppToast(pendingMessage, 'info')
 
     try {
       await Promise.all(
@@ -647,7 +673,7 @@ export function ClosetPanel({
           <button
             type="button"
             className="secondary-button"
-            disabled={unavailableItems.length === 0 || isCleaningLaundry}
+            disabled={isCleaningLaundry}
             onClick={() => {
               void handleMarkLaundryClean()
             }}
@@ -747,6 +773,7 @@ export function ClosetPanel({
             <div className="item-list">
               {group.items.map((item) => (
                 <ClothingItemCard
+                  isUpdating={updatingStatusItemIds.has(item.id)}
                   item={item}
                   key={item.id}
                   onArchive={() =>
@@ -1056,6 +1083,7 @@ function ClothingItemForm({
 }
 
 function ClothingItemCard({
+  isUpdating,
   item,
   onArchive,
   onDelete,
@@ -1063,6 +1091,7 @@ function ClothingItemCard({
   onMarkClean,
   onMarkLaundry,
 }: {
+  isUpdating: boolean
   item: ClothingItem
   onArchive: () => void
   onDelete: () => void
@@ -1115,18 +1144,36 @@ function ClothingItemCard({
             Edit
           </button>
           {item.status === 'active' ? (
-            <button type="button" className="ghost-button" onClick={onMarkLaundry}>
-              <Package size={18} aria-hidden="true" />
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={isUpdating}
+              onClick={onMarkLaundry}
+            >
+              {isUpdating ? (
+                <span className="spinner small" aria-hidden="true" />
+              ) : (
+                <Package size={18} aria-hidden="true" />
+              )}
               Laundry
             </button>
           ) : null}
           {item.status === 'wearing' || item.status === 'laundry' || item.status === 'unavailable' ? (
-            <button type="button" className="ghost-button" onClick={onMarkClean}>
-              <CheckCircle2 size={18} aria-hidden="true" />
-              Clean
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={isUpdating}
+              onClick={onMarkClean}
+            >
+              {isUpdating ? (
+                <span className="spinner small" aria-hidden="true" />
+              ) : (
+                <CheckCircle2 size={18} aria-hidden="true" />
+              )}
+              {isUpdating ? 'Marking...' : 'Clean'}
             </button>
           ) : null}
-          <button type="button" className="ghost-button" onClick={onArchive}>
+          <button type="button" className="ghost-button" disabled={isUpdating} onClick={onArchive}>
             <Archive size={18} aria-hidden="true" />
             {item.status === 'archived' ? 'Restore' : 'Archive'}
           </button>

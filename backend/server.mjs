@@ -353,18 +353,27 @@ async function lookupWeather(requestBody) {
 }
 
 async function geocodeWeatherLocation(location) {
-  try {
-    return await geocodeOpenMeteoLocation(location);
-  } catch (openMeteoError) {
+  const candidates = locationSearchCandidates(location);
+  const errors = [];
+
+  for (const candidate of candidates) {
     try {
-      return await geocodeNominatimLocation(location);
-    } catch (nominatimError) {
-      throw httpError(
-        nominatimError.statusCode ?? openMeteoError.statusCode ?? 502,
-        `Location lookup failed. Open-Meteo: ${openMeteoError.message}. Nominatim: ${nominatimError.message}`
-      );
+      return await geocodeOpenMeteoLocation(candidate);
+    } catch (openMeteoError) {
+      try {
+        return await geocodeNominatimLocation(candidate);
+      } catch (nominatimError) {
+        errors.push(
+          `${candidate}: Open-Meteo: ${openMeteoError.message}; Nominatim: ${nominatimError.message}`
+        );
+      }
     }
   }
+
+  throw httpError(
+    404,
+    `Location lookup failed for "${location}". Tried: ${candidates.join("; ")}. ${errors.join(" | ")}`
+  );
 }
 
 async function geocodeOpenMeteoLocation(location) {
@@ -423,6 +432,40 @@ async function geocodeNominatimLocation(location) {
     admin1: address.state ? String(address.state) : "",
     country: address.country ? String(address.country) : ""
   };
+}
+
+function locationSearchCandidates(location) {
+  const parts = String(location ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const lastPart = parts[parts.length - 1];
+  const candidates = [
+    String(location ?? "").trim(),
+    parts.length >= 3 ? `${parts[0]}, ${lastPart}` : "",
+    parts.length >= 2 ? `${parts[0]}, ${parts[1]}` : "",
+    parts.length >= 3 ? `${parts[1]}, ${lastPart}` : "",
+    ...parts
+  ];
+
+  return uniqueLocationStrings(candidates);
+}
+
+function uniqueLocationStrings(values) {
+  const seenValues = new Set();
+  const uniqueValues = [];
+
+  values.forEach((value) => {
+    const trimmedValue = String(value ?? "").trim();
+    const key = trimmedValue.toLowerCase();
+
+    if (trimmedValue && !seenValues.has(key)) {
+      seenValues.add(key);
+      uniqueValues.push(trimmedValue);
+    }
+  });
+
+  return uniqueValues;
 }
 
 async function lookupForecastWithFallback({ date, latitude, locationLabel, longitude }) {

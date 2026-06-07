@@ -12,6 +12,7 @@ import {
   LocateFixed,
   MapPin,
   MessageSquare,
+  Package,
   RefreshCw,
   Save,
   Sparkles,
@@ -406,6 +407,25 @@ export function OutfitExperiencePanel({
     }
   }
 
+  async function handleMoveItemToLaundry(item: ClothingItem) {
+    setIsSavingDailyOutfit(true)
+    setDailyOutfitMessage(null)
+    setDailyOutfitError(null)
+
+    try {
+      await updateClothingItemsStatus(userId, [item.id], 'laundry')
+      const message = `${item.name} moved to laundry.`
+      setDailyOutfitMessage(message)
+      showAppToast(message, 'success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not move item to laundry.'
+      setDailyOutfitError(message)
+      showAppToast(message, 'error')
+    } finally {
+      setIsSavingDailyOutfit(false)
+    }
+  }
+
   if (view === 'result' && recommendation) {
     return (
       <div className="outfit-panel">
@@ -426,6 +446,9 @@ export function OutfitExperiencePanel({
           isLoggingWear={isLoggingWear}
           onMoveToLaundry={() => {
             void handleMoveRecommendationToLaundry()
+          }}
+          onMoveItemToLaundry={(item) => {
+            void handleMoveItemToLaundry(item)
           }}
           onFeedback={(type) => {
             void handleFeedback(type)
@@ -706,6 +729,7 @@ function OutfitResultCard({
   isSavingFeedback,
   isLoggingWear,
   onMoveToLaundry,
+  onMoveItemToLaundry,
   onFeedback,
   onLogWear,
   onNoteChange,
@@ -729,6 +753,7 @@ function OutfitResultCard({
   isSavingFeedback: boolean
   isLoggingWear: boolean
   onMoveToLaundry: () => void
+  onMoveItemToLaundry: (item: ClothingItem) => void
   onFeedback: (type: OutfitFeedbackType) => void
   onLogWear: (note: string) => void
   onNoteChange: (note: string) => void
@@ -884,6 +909,15 @@ function OutfitResultCard({
               >
                 <Edit3 size={18} aria-hidden="true" />
               </button>
+              <button
+                type="button"
+                className="ghost-button icon-sized"
+                disabled={isSavingDailyOutfit}
+                onClick={() => onMoveItemToLaundry(item)}
+                aria-label={`Move ${item.name} to laundry`}
+              >
+                <Package size={18} aria-hidden="true" />
+              </button>
             </div>
           </div>
         ))}
@@ -952,7 +986,7 @@ function OutfitResultCard({
             onClick={onMoveToLaundry}
           >
             <RefreshCw size={20} aria-hidden="true" />
-            Move to Laundry
+            All to Laundry
           </button>
         </div>
         {dailyOutfitMessage ? <p className="success-message">{dailyOutfitMessage}</p> : null}

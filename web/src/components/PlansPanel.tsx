@@ -4,12 +4,14 @@ import {
   ArrowDown,
   ArrowUp,
   CalendarDays,
+  CalendarCheck,
   ChevronRight,
   Clipboard,
   Copy,
   Download,
   Image as ImageIcon,
   MapPin,
+  Package,
   Plus,
   Save,
   Sparkles,
@@ -33,6 +35,7 @@ import {
   clothingStatuses,
   saveClothingItem,
   statusLabel,
+  updateClothingItemsStatus,
   type ClothingCategory,
   type ClothingItem,
   type ClothingItemDraft,
@@ -76,8 +79,9 @@ import {
   type WeatherInput,
 } from '../lib/outfits'
 import { contextOptionsFromSettings } from '../lib/contextStyles'
+import { saveDailyOutfit } from '../lib/dailyOutfits'
 import type { UserProfile } from '../lib/profile'
-import { lookupWeatherByLocation } from '../lib/weather'
+import { lookupWeatherByLocation, todayWeatherDate } from '../lib/weather'
 
 type PlanView = 'home' | 'new' | 'setup' | 'itinerary' | 'packing'
 
@@ -1750,6 +1754,7 @@ function EditableItineraryCard({
   const [editError, setEditError] = useState<string | null>(null)
   const [editMessage, setEditMessage] = useState<string | null>(null)
   const [isSavingOutfit, setIsSavingOutfit] = useState(false)
+  const [isUpdatingClosetState, setIsUpdatingClosetState] = useState(false)
   const [avatarPreview, setAvatarPreview] = useState<AvatarPreview | null>(null)
   const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false)
   const [avatarError, setAvatarError] = useState<string | null>(null)
@@ -1769,13 +1774,15 @@ function EditableItineraryCard({
         .filter((item): item is ClothingItem => Boolean(item)),
     [closetItemsById, selectedItemIDs],
   )
-
-  async function saveEdits() {
-    const weatherForScore = {
+  const weatherForScore = useMemo(
+    () => ({
       ...weather,
       location: location || weather.location,
-    }
+    }),
+    [location, weather],
+  )
 
+  async function saveEdits() {
     if (selectedItems.length === 0) {
       setEditMessage(null)
       setEditError('Choose at least one closet item.')
@@ -1823,6 +1830,91 @@ function EditableItineraryCard({
     }
   }
 
+  function recommendationFromSelectedItems(): OutfitRecommendation | null {
+    if (selectedItems.length === 0) {
+      return null
+    }
+
+    const rescoredOutfit = scoreCustomOutfit({
+      context: outfit.context,
+      items: selectedItems,
+      profile,
+      source: outfit.source,
+      weather: weatherForScore,
+    })
+
+    return {
+      ...rescoredOutfit,
+      id: outfit.id,
+      rationale: outfit.rationale || 'Planned outfit marked from itinerary.',
+    }
+  }
+
+  async function handleMarkWearingToday() {
+    const recommendation = recommendationFromSelectedItems()
+
+    if (!recommendation) {
+      const message = 'Choose outfit items before marking this as wearing today.'
+      setEditMessage(null)
+      setEditError(message)
+      showAppToast(message, 'error')
+      return
+    }
+
+    setIsUpdatingClosetState(true)
+    setEditError(null)
+    setEditMessage('Saving this itinerary outfit as wearing today...')
+    showAppToast('Saving this itinerary outfit as wearing today...', 'info')
+
+    try {
+      await saveDailyOutfit({
+        context: outfit.context,
+        contextLabel: label || outfit.label,
+        date: todayWeatherDate(),
+        recommendation,
+        status: 'wearing',
+        userId,
+        weather: weatherForScore,
+      })
+      await updateClothingItemsStatus(
+        userId,
+        selectedItems.map((item) => item.id),
+        'wearing',
+      )
+      const message = 'Saved as wearing today. These items are unavailable for new outfit picks.'
+      setEditMessage(message)
+      showAppToast(message, 'success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not mark outfit as wearing today.'
+      setEditMessage(null)
+      setEditError(message)
+      showAppToast(message, 'error')
+    } finally {
+      setIsUpdatingClosetState(false)
+    }
+  }
+
+  async function handleMoveItemToLaundry(item: ClothingItem) {
+    setIsUpdatingClosetState(true)
+    setEditError(null)
+    setEditMessage(`Moving ${item.name} to laundry...`)
+    showAppToast(`Moving ${item.name} to laundry...`, 'info')
+
+    try {
+      await updateClothingItemsStatus(userId, [item.id], 'laundry')
+      const message = `${item.name} moved to laundry.`
+      setEditMessage(message)
+      showAppToast(message, 'success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not move item to laundry.'
+      setEditMessage(null)
+      setEditError(message)
+      showAppToast(message, 'error')
+    } finally {
+      setIsUpdatingClosetState(false)
+    }
+  }
+
   async function handleAvatarPreview() {
     if (!savedAvatar) {
       setAvatarError('Save a full-body avatar reference in More before generating plan previews.')
@@ -1841,10 +1933,7 @@ function EditableItineraryCard({
       items: selectedItems,
       profile,
       source: outfit.source,
-      weather: {
-        ...weather,
-        location: location || weather.location,
-      },
+      weather: weatherForScore,
     })
     const recommendation: OutfitRecommendation = {
       id: outfit.id,
@@ -1867,10 +1956,7 @@ function EditableItineraryCard({
           profile,
           recommendation,
           savedAvatar,
-          weather: {
-            ...weather,
-            location: location || weather.location,
-          },
+          weather: weatherForScore,
         }),
       )
       showAppToast('Plan avatar generated.', 'success')
@@ -1914,7 +2000,20 @@ function EditableItineraryCard({
                   <strong>{item.name}</strong>
                   <span>{itemDetails.join(' - ')}</span>
                 </div>
-                <span className="quantity-chip">Qty {item.quantity}</span>
+                <div className="item-inline-actions">
+                  <span className="quantity-chip">Qty {item.quantity}</span>
+                  <button
+                    type="button"
+                    className="ghost-button icon-sized"
+                    disabled={isUpdatingClosetState}
+                    onClick={() => {
+                      void handleMoveItemToLaundry(item)
+                    }}
+                    aria-label={`Move ${item.name} to laundry`}
+                  >
+                    <Package size={18} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
             )
           })}
@@ -1926,6 +2025,23 @@ function EditableItineraryCard({
           ))}
         </ul>
       )}
+      <div className="generation-actions">
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={isUpdatingClosetState || selectedItems.length === 0}
+          onClick={() => {
+            void handleMarkWearingToday()
+          }}
+        >
+          {isUpdatingClosetState ? (
+            <span className="spinner small" aria-hidden="true" />
+          ) : (
+            <CalendarCheck size={20} aria-hidden="true" />
+          )}
+          Wearing Today
+        </button>
+      </div>
       <details>
         <summary>Why this scored this way</summary>
         <p>{outfit.rationale}</p>

@@ -273,7 +273,6 @@ function evaluateAIPlanResponse({
       const recommendation = repairOutfitDraftWithLocalScorer({
         aiCautions: aiOutfit.cautions,
         aiItems: selectedItems,
-        aiRationale: aiOutfit.rationale,
         closet: eligibleCloset,
         context: request.context,
         includeUnavailableItems: draft.packingSettings.closetScope !== 'available',

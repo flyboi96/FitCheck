@@ -524,7 +524,6 @@ export function validateOutfitRecommendation({
 export function repairOutfitDraftWithLocalScorer({
   aiCautions = [],
   aiItems,
-  aiRationale,
   closet,
   context,
   includeUnavailableItems = false,
@@ -534,7 +533,6 @@ export function repairOutfitDraftWithLocalScorer({
 }: {
   aiCautions?: string[]
   aiItems: ClothingItem[]
-  aiRationale: string
   closet: ClothingItem[]
   context: OutfitContext
   includeUnavailableItems?: boolean
@@ -568,7 +566,7 @@ export function repairOutfitDraftWithLocalScorer({
     candidates.push({
       ...scored,
       cautions: [...aiCautions, ...scored.cautions].filter(Boolean).slice(0, 6),
-      rationale: aiRationale || repairNote,
+      rationale: itemFaithfulRationale(items, { context, prefix: repairNote, profile }),
       reasons: [repairNote, ...scored.reasons].slice(0, 7),
     })
   }
@@ -828,7 +826,11 @@ async function requestAIOutfit(
 
   return {
     ...scored,
-    rationale: String(data.rationale ?? 'AI selected this from your closet.'),
+    rationale: itemFaithfulRationale(scored.items, {
+      context: request.context,
+      prefix: 'AI selected this from your closet; FitCheck scored the exact selected items.',
+      profile: request.profile,
+    }),
     cautions: Array.isArray(data.cautions)
       ? [...repairCautions, ...data.cautions.map(String), ...scored.cautions].slice(0, 5)
       : [...repairCautions, ...scored.cautions].slice(0, 5),
@@ -1010,6 +1012,12 @@ function scoreOutfit(
       capOutfitScore(52, 'Work outfit capped: workout tops are not appropriate work shirts')
       cautions.push('Workout shirts do not work with business-casual work outfits.')
     }
+    const plainTShirtTop = items.find(isPlainTShirtTop)
+    if (plainTShirtTop && !profileAllowsTShirtsForWork(profile)) {
+      addOutfitScore(-12, 'Work context penalty: plain T-shirt is more casual than ideal')
+      capOutfitScore(80, 'Work outfit capped: plain T-shirt is more casual than ideal')
+      cautions.push(`${plainTShirtTop.name} is more casual than an ideal Work top.`)
+    }
   }
 
   if (isExerciseContext(context)) {
@@ -1147,10 +1155,7 @@ function scoreOutfit(
     },
     scoreLabel: scoreLabel(boundedScore),
     source,
-    rationale:
-      source === 'ai'
-        ? 'AI selected this from your closet; FitCheck scored the result locally.'
-        : 'FitCheck built this from your active closet with local scoring.',
+    rationale: itemFaithfulRationale(items, { context, profile }),
     reasons: uniqueReasons.length > 0 ? uniqueReasons : ['Best available match from your closet.'],
     cautions: uniqueCautions,
   }
@@ -1581,6 +1586,9 @@ function scoreItemBreakdown(
     if (isWorkoutTopForWork(item)) {
       addItemScore(-46, 'Work context penalty: workout top is not a work shirt')
     }
+    if (isPlainTShirtTop(item) && !profileAllowsTShirtsForWork(profile)) {
+      addItemScore(-10, 'Work context penalty: plain T-shirt is more casual than ideal')
+    }
     if (/sweat|jogger|track|gym|running|workout|training|crocs|clog|slide|slipper/.test(text)) {
       addItemScore(-28, 'Work context penalty: too casual or athletic')
     }
@@ -1818,6 +1826,19 @@ function isWorkoutTopForWork(item: ClothingItem) {
   return hasAthleticConstruction && !isPolishedWorkTop(item)
 }
 
+function isPlainTShirtTop(item: ClothingItem) {
+  if (itemRole(item) !== 'top') {
+    return false
+  }
+
+  const text = itemText(item)
+
+  return (
+    /\b(t-shirt|t shirt|tee)\b/.test(text) &&
+    !/button(?:ed)?(?:[- ]?down)?|collar|collared|polo|oxford|dress shirt|woven/.test(text)
+  )
+}
+
 function isPolishedWorkTop(item: ClothingItem) {
   const text = itemText(item)
 
@@ -1831,6 +1852,49 @@ function itemText(item: ClothingItem) {
   return [item.name, item.brand, item.color, item.material, item.pattern, categoryLabel(item.category), item.notes]
     .join(' ')
     .toLowerCase()
+}
+
+function itemFaithfulRationale(
+  items: ClothingItem[],
+  {
+    context,
+    prefix,
+    profile,
+  }: {
+    context: OutfitContext
+    prefix?: string
+    profile: UserProfile | null
+  },
+) {
+  if (items.length === 0) {
+    return prefix ? `${prefix} No closet items were selected.` : 'No closet items were selected.'
+  }
+
+  const sentences = [
+    prefix,
+    `Selected exact items: ${formatItemNameList(items.map((item) => item.name))}.`,
+  ].filter(Boolean)
+  const plainTShirtTop = items.find(isPlainTShirtTop)
+
+  if (isWorkContext(context) && plainTShirtTop && !profileAllowsTShirtsForWork(profile)) {
+    sentences.push(
+      `${plainTShirtTop.name} is a plain T-shirt, so this is more casual than an ideal Work top.`,
+    )
+  }
+
+  return sentences.join(' ')
+}
+
+function formatItemNameList(itemNames: string[]) {
+  if (itemNames.length <= 1) {
+    return itemNames[0] ?? ''
+  }
+
+  if (itemNames.length === 2) {
+    return `${itemNames[0]} and ${itemNames[1]}`
+  }
+
+  return `${itemNames.slice(0, -1).join(', ')}, and ${itemNames[itemNames.length - 1]}`
 }
 
 function isHeatFriendly(item: ClothingItem) {
@@ -1874,6 +1938,31 @@ function hasBeltLoops(item: ClothingItem) {
 function collaredShirtNeedsBelt(profile: UserProfile | null) {
   const rules = [profile?.rules, profile?.dislikedCombinations].filter(Boolean).join(' ').toLowerCase()
   return /belt/.test(rules) && /(collar|collared|button|buttoned)/.test(rules)
+}
+
+function profileAllowsTShirtsForWork(profile: UserProfile | null) {
+  const text = [
+    profile?.styleDescription,
+    profile?.favoriteLooks,
+    profile?.preferredFit,
+    profile?.dislikedCombinations,
+    profile?.rules,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  if (
+    /(no|avoid|never).{0,24}(t-shirt|t shirt|tee).{0,24}(work|office)|(?:work|office).{0,24}(no|avoid|never).{0,24}(t-shirt|t shirt|tee)/.test(
+      text,
+    )
+  ) {
+    return false
+  }
+
+  return /(t-shirts?|t shirts?|tees?).{0,40}(work|office)|(?:work|office).{0,40}(t-shirts?|t shirts?|tees?)/.test(
+    text,
+  )
 }
 
 function colorHarmonyNote(items: ClothingItem[]) {

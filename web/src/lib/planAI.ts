@@ -1,4 +1,4 @@
-import type { ClothingCategory, ClothingItem } from './closet'
+import { categoryLabel, type ClothingCategory, type ClothingItem } from './closet'
 import { contextOptionsFromSettings, contextStylesPrompt, loadContextStyles } from './contextStyles'
 import {
   loadRecentFeedback,
@@ -11,6 +11,7 @@ import type { UserProfile } from './profile'
 import { profileStyleSummary } from './profile'
 import {
   defaultPlanLaundrySettings,
+  closetForPlanPackingSettings,
   recommendationToItineraryOutfit,
   type ItineraryOutfit,
   type PlanDraft,
@@ -49,10 +50,10 @@ export async function generateAIPlanItinerary({
   profile: UserProfile | null
   userId: string
 }): Promise<AIPlanItineraryResult> {
-  const activeCloset = closet.filter((item) => item.status === 'active')
+  const activeCloset = closetForPlanPackingSettings(closet, draft.packingSettings)
 
   if (activeCloset.length === 0) {
-    throw new Error('Add active closet items before generating an AI itinerary.')
+    throw new Error('No closet items match the plan constraints.')
   }
 
   const settings = getAIProxySettings()
@@ -158,6 +159,7 @@ async function requestAIPlanItinerary({
         wearCount: item.wearCount,
         wearsSinceClean: item.wearsSinceClean,
         lastWornAt: item.lastWornAt,
+        status: item.status,
       })),
       contextDefinitions,
       days: draft.days.map((day) => ({
@@ -182,6 +184,7 @@ async function requestAIPlanItinerary({
       plan: {
         endDate: draft.endDate,
         laundrySettings: draft.laundrySettings,
+        packingSettings: draft.packingSettings,
         name: draft.name,
         notes: draft.notes,
         startDate: draft.startDate,
@@ -224,6 +227,7 @@ function evaluateAIPlanResponse({
   const blockers: string[] = [...response.validationIssues]
   const warnings: string[] = []
   const itinerary: ItineraryOutfit[] = []
+  const usedItemIDs = new Set<string>()
   const usageByItemID = new Map<string, number>()
   let currentDate = ''
   let previousDayItemIDs = new Set<string>()
@@ -289,6 +293,7 @@ function evaluateAIPlanResponse({
       warnings.push(...qualityGate.warnings.map((warning) => `${day.date} ${request.label}: ${warning}`))
 
       selectedItems.forEach((item) => {
+        usedItemIDs.add(item.id)
         usageByItemID.set(item.id, (usageByItemID.get(item.id) ?? 0) + 1)
         currentDayItemIDs.add(item.id)
       })
@@ -323,11 +328,70 @@ function evaluateAIPlanResponse({
     }
   }
 
+  blockers.push(...validateRequiredItems(activeCloset, draft.packingSettings.requiredItemIDs, usedItemIDs))
+  blockers.push(...validateCategoryTargets(activeCloset, draft.packingSettings.categoryTargets, usedItemIDs))
+
   return {
     blockers: [...new Set(blockers)],
     itinerary,
     warnings: [...new Set(warnings)],
   }
+}
+
+function validateRequiredItems(
+  closet: ClothingItem[],
+  requiredItemIDs: string[],
+  usedItemIDs: Set<string>,
+) {
+  const blockers: string[] = []
+
+  requiredItemIDs.forEach((itemID) => {
+    const item = closet.find((closetItem) => closetItem.id === itemID)
+
+    if (!item) {
+      blockers.push('A required item is outside the current planning closet.')
+      return
+    }
+
+    if (!usedItemIDs.has(itemID)) {
+      blockers.push(`Required item was not used: ${item.name}.`)
+    }
+  })
+
+  return blockers
+}
+
+function validateCategoryTargets(
+  closet: ClothingItem[],
+  categoryTargets: Record<ClothingCategory, number>,
+  usedItemIDs: Set<string>,
+) {
+  const blockers: string[] = []
+
+  Object.entries(categoryTargets).forEach(([category, target]) => {
+    const normalizedTarget = Math.max(0, Math.floor(Number(target)))
+
+    if (normalizedTarget === 0) {
+      return
+    }
+
+    const availableCount = closet.filter((item) => item.category === category).length
+    const usedCount = closet.filter(
+      (item) => item.category === category && usedItemIDs.has(item.id),
+    ).length
+    const label = categoryLabel(category as ClothingCategory)
+
+    if (availableCount < normalizedTarget) {
+      blockers.push(`Target asks for ${normalizedTarget} ${label}, but only ${availableCount} are in scope.`)
+      return
+    }
+
+    if (usedCount !== normalizedTarget) {
+      blockers.push(`Target asks for ${normalizedTarget} ${label}; itinerary used ${usedCount}.`)
+    }
+  })
+
+  return blockers
 }
 
 function validatePlanReuse({

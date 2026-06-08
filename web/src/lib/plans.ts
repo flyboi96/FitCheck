@@ -23,7 +23,7 @@ import {
   type OutfitSource,
   type WeatherInput,
 } from './outfits'
-import type { ClothingCategory, ClothingItem } from './closet'
+import { itemCanBeUsedForOutfits, type ClothingCategory, type ClothingItem } from './closet'
 
 export type PlanOutfitRequest = {
   id: string
@@ -72,6 +72,15 @@ export type PlanLaundrySettings = {
   maxUsesBeforeLaundry: Record<ClothingCategory, number>
 }
 
+export type PlanClosetScope = 'available' | 'entire' | 'selected'
+
+export type PlanPackingSettings = {
+  categoryTargets: Record<ClothingCategory, number>
+  closetScope: PlanClosetScope
+  requiredItemIDs: string[]
+  selectedItemIDs: string[]
+}
+
 export type Plan = {
   id: string
   name: string
@@ -79,12 +88,16 @@ export type Plan = {
   endDate: string
   notes: string
   laundrySettings: PlanLaundrySettings
+  packingSettings: PlanPackingSettings
   days: PlanDay[]
   itinerary: ItineraryOutfit[]
   packingList: PackingListItem[]
 }
 
-export type PlanDraft = Pick<Plan, 'name' | 'startDate' | 'endDate' | 'notes' | 'laundrySettings' | 'days'>
+export type PlanDraft = Pick<
+  Plan,
+  'name' | 'startDate' | 'endDate' | 'notes' | 'laundrySettings' | 'packingSettings' | 'days'
+>
 
 export type NewPlanDraft = {
   name: string
@@ -124,6 +137,15 @@ export const defaultPlanLaundrySettings: PlanLaundrySettings = {
     purse: unlimitedLaundryUses,
     other: 1,
   },
+}
+
+export const defaultPlanPackingSettings: PlanPackingSettings = {
+  categoryTargets: Object.fromEntries(
+    Object.keys(defaultPlanLaundrySettings.maxUsesBeforeLaundry).map((category) => [category, 0]),
+  ) as Record<ClothingCategory, number>,
+  closetScope: 'available',
+  requiredItemIDs: [],
+  selectedItemIDs: [],
 }
 
 function requireFirestore() {
@@ -250,6 +272,7 @@ export async function createPlan(userId: string, draft: NewPlanDraft) {
     days: createDaysFromRange(normalizedDraft).map(serializePlanDay),
     itinerary: [],
     laundrySettings: serializeLaundrySettings(defaultPlanLaundrySettings),
+    packingSettings: serializePackingSettings(defaultPlanPackingSettings),
     packingList: [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -264,6 +287,7 @@ export async function savePlan(userId: string, planId: string, draft: PlanDraft)
     endDate: draft.endDate,
     notes: draft.notes.trim(),
     laundrySettings: serializeLaundrySettings(draft.laundrySettings),
+    packingSettings: serializePackingSettings(draft.packingSettings),
     days: draft.days.map(serializePlanDay),
     updatedAt: serverTimestamp(),
   })
@@ -391,18 +415,20 @@ export function packingListShareText(plan: Plan) {
 }
 
 export function closetAvailableForPlanRequest({
+  includeUnavailableItems = false,
   closet,
   laundrySettings,
   previousDayItemIDs,
   usageByItemID,
 }: {
   closet: ClothingItem[]
+  includeUnavailableItems?: boolean
   laundrySettings: PlanLaundrySettings
   previousDayItemIDs: Set<string>
   usageByItemID: Map<string, number>
 }) {
   return closet.filter((item) => {
-    if (item.status !== 'active') {
+    if (!itemCanBeUsedForOutfits(item, includeUnavailableItems)) {
       return false
     }
 
@@ -421,6 +447,23 @@ export function closetAvailableForPlanRequest({
 
     return true
   })
+}
+
+export function closetForPlanPackingSettings(
+  closet: ClothingItem[],
+  settings: PlanPackingSettings = defaultPlanPackingSettings,
+) {
+  const selectedItemIDs = new Set(settings.selectedItemIDs)
+
+  if (settings.closetScope === 'selected') {
+    return closet.filter((item) => selectedItemIDs.has(item.id) && item.status !== 'archived')
+  }
+
+  if (settings.closetScope === 'entire') {
+    return closet.filter((item) => item.status !== 'archived')
+  }
+
+  return closet.filter((item) => itemCanBeUsedForOutfits(item))
 }
 
 function normalizeNewPlanDraft(draft: NewPlanDraft): NewPlanDraft {
@@ -466,6 +509,7 @@ function normalizePlan(id: string, data: Record<string, unknown>): Plan {
     endDate,
     notes: stringValue(data.notes),
     laundrySettings: normalizeLaundrySettings(data.laundrySettings),
+    packingSettings: normalizePackingSettings(data.packingSettings),
     days: normalizePlanDays(data.days, startDate),
     itinerary: normalizeItinerary(data.itinerary),
     packingList: normalizePackingList(data.packingList),
@@ -751,6 +795,26 @@ function serializeLaundrySettings(settings: PlanLaundrySettings) {
   }
 }
 
+function serializePackingSettings(settings: PlanPackingSettings = defaultPlanPackingSettings) {
+  return {
+    categoryTargets: Object.fromEntries(
+      Object.entries(defaultPlanPackingSettings.categoryTargets).map(([category]) => [
+        category,
+        Math.max(
+          0,
+          Math.floor(settings.categoryTargets[category as ClothingCategory] ?? 0),
+        ),
+      ]),
+    ),
+    closetScope:
+      settings.closetScope === 'entire' || settings.closetScope === 'selected'
+        ? settings.closetScope
+        : 'available',
+    requiredItemIDs: uniqueStrings(settings.requiredItemIDs),
+    selectedItemIDs: uniqueStrings(settings.selectedItemIDs),
+  }
+}
+
 function normalizeLaundrySettings(value: unknown): PlanLaundrySettings {
   if (!value || typeof value !== 'object') {
     return defaultPlanLaundrySettings
@@ -774,6 +838,36 @@ function normalizeLaundrySettings(value: unknown): PlanLaundrySettings {
       ]),
     ) as Record<ClothingCategory, number>,
   }
+}
+
+function normalizePackingSettings(value: unknown): PlanPackingSettings {
+  if (!value || typeof value !== 'object') {
+    return defaultPlanPackingSettings
+  }
+
+  const data = value as Record<string, unknown>
+  const categoryTargetsData =
+    data.categoryTargets && typeof data.categoryTargets === 'object'
+      ? (data.categoryTargets as Record<string, unknown>)
+      : {}
+  const closetScope = stringValue(data.closetScope, 'available')
+
+  return {
+    categoryTargets: Object.fromEntries(
+      Object.entries(defaultPlanPackingSettings.categoryTargets).map(([category]) => [
+        category,
+        Math.max(0, Math.floor(numberValue(categoryTargetsData[category], 0))),
+      ]),
+    ) as Record<ClothingCategory, number>,
+    closetScope:
+      closetScope === 'entire' || closetScope === 'selected' ? closetScope : 'available',
+    requiredItemIDs: uniqueStrings(stringArray(data.requiredItemIDs)),
+    selectedItemIDs: uniqueStrings(stringArray(data.selectedItemIDs)),
+  }
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))]
 }
 
 function contextValue(value: unknown): OutfitContext {

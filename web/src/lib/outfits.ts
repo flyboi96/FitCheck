@@ -2,6 +2,7 @@ import { addDoc, collection, getDocs, serverTimestamp } from 'firebase/firestore
 import { db } from './firebase'
 import {
   categoryLabel,
+  itemCanBeUsedForOutfits,
   type ClothingCategory,
   type ClothingItem,
 } from './closet'
@@ -102,6 +103,7 @@ export type OutfitGenerationRequest = {
   userId: string
   selectedItemId?: string
   generationMode?: OutfitGenerationMode
+  includeUnavailableItems?: boolean
 }
 
 type ItemRole = 'top' | 'bottom' | 'fullBody' | 'shoes' | 'outerwear' | 'belt' | 'socks' | 'accessory'
@@ -201,11 +203,14 @@ export function generateLocalOutfit({
   closet,
   context,
   feedbackSignals = [],
+  includeUnavailableItems = false,
   profile,
   selectedItemId,
   weather,
 }: OutfitGenerationRequest): OutfitRecommendation {
-  const availableItems = closet.filter((item) => item.status === 'active')
+  const availableItems = closet.filter((item) =>
+    itemCanBeUsedForOutfits(item, includeUnavailableItems),
+  )
   const selectedItem = availableItems.find((item) => item.id === selectedItemId)
   const selectedRole = selectedItem ? itemRole(selectedItem) : null
   const candidates: ClothingItem[][] = []
@@ -611,7 +616,7 @@ async function requestAIOutfit(
     },
     body: JSON.stringify({
       closet: request.closet
-        .filter((item) => item.status === 'active')
+        .filter((item) => itemCanBeUsedForOutfits(item, Boolean(request.includeUnavailableItems)))
         .map((item) => ({
           id: item.id,
           name: item.name,
@@ -662,7 +667,9 @@ async function requestAIOutfit(
     : []
   const items = itemIDs
     .map((id: string) =>
-      request.closet.find((item: ClothingItem) => item.id === id && item.status === 'active'),
+      request.closet.find((item: ClothingItem) =>
+        item.id === id && itemCanBeUsedForOutfits(item, Boolean(request.includeUnavailableItems)),
+      ),
     )
     .filter((item): item is ClothingItem => Boolean(item))
 

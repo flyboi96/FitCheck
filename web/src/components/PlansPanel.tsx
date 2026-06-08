@@ -33,6 +33,7 @@ import {
   categoryOptionsForWearer,
   clothingCategories,
   clothingStatuses,
+  itemCanBeUsedForOutfits,
   saveClothingItem,
   statusLabel,
   updateClothingItemsStatus,
@@ -44,6 +45,7 @@ import {
 import {
   addDaysISO,
   buildPackingList,
+  closetForPlanPackingSettings,
   closetAvailableForPlanRequest,
   createDaysFromRange,
   createPlanDay,
@@ -52,6 +54,7 @@ import {
   dateRangeDayCount,
   defaultNewPlanDraft,
   defaultPlanLaundrySettings,
+  defaultPlanPackingSettings,
   deletePlan,
   itineraryShareText,
   MAX_EXPANDED_PLAN_DAYS,
@@ -64,6 +67,7 @@ import {
   type Plan,
   type PlanDay,
   type PlanDraft,
+  type PlanPackingSettings,
   type PlanLaundrySettings,
   type PackingListItem,
 } from '../lib/plans'
@@ -120,7 +124,7 @@ export function PlansPanel({
   const effectiveSelectedPlanId = selectedPlanId || plans[0]?.id || ''
   const selectedPlan = plans.find((plan) => plan.id === effectiveSelectedPlanId) ?? null
   const effectivePlanDraft = planDraft ?? (selectedPlan ? planToDraft(selectedPlan) : null)
-  const activeClosetCount = items.filter((item) => item.status === 'active').length
+  const activeClosetCount = items.filter((item) => itemCanBeUsedForOutfits(item)).length
 
   const groupedPackingList = useMemo(() => {
     const groups = new Map<string, PackingListItem[]>()
@@ -290,6 +294,8 @@ export function PlansPanel({
         return
       }
 
+      const planCloset = closetForPlanPackingSettings(items, effectivePlanDraft.packingSettings)
+      const includeUnavailableItems = effectivePlanDraft.packingSettings.closetScope !== 'available'
       const itinerary = []
       const usageByItemID = new Map<string, number>()
       let currentDate = ''
@@ -307,7 +313,8 @@ export function PlansPanel({
 
         for (const request of day.requests) {
           const eligibleCloset = closetAvailableForPlanRequest({
-            closet: items,
+            closet: planCloset,
+            includeUnavailableItems,
             laundrySettings: effectivePlanDraft.laundrySettings,
             previousDayItemIDs,
             usageByItemID,
@@ -316,6 +323,7 @@ export function PlansPanel({
             closet: eligibleCloset,
             context: request.context,
             generationMode,
+            includeUnavailableItems,
             profile,
             userId,
             weather: {
@@ -732,6 +740,7 @@ export function PlansPanel({
           activeClosetCount={activeClosetCount}
           bulkContext={effectiveBulkContext}
           bulkLocation={bulkLocation}
+          closetItems={items}
           contextOptions={contextOptions}
           createRequest={newOutfitRequest}
           draft={effectivePlanDraft}
@@ -942,6 +951,7 @@ function PlanEditor({
   activeClosetCount,
   bulkContext,
   bulkLocation,
+  closetItems,
   contextOptions,
   createRequest,
   draft,
@@ -962,6 +972,7 @@ function PlanEditor({
   activeClosetCount: number
   bulkContext: OutfitContext
   bulkLocation: string
+  closetItems: ClothingItem[]
   contextOptions: OutfitContextOption[]
   createRequest: (context: OutfitContext) => ReturnType<typeof createOutfitRequest>
   draft: PlanDraft
@@ -981,6 +992,9 @@ function PlanEditor({
 }) {
   const rangeDayCount = dateRangeDayCount(draft.startDate, draft.endDate)
   const cappedRangeCount = Math.min(rangeDayCount, MAX_EXPANDED_PLAN_DAYS)
+  const planningClosetCount = closetForPlanPackingSettings(closetItems, draft.packingSettings).length
+  const generationClosetCount =
+    draft.packingSettings.closetScope === 'available' ? activeClosetCount : planningClosetCount
 
   function updateDay(dayId: string, updater: (day: PlanDay) => PlanDay) {
     onChange({
@@ -1204,6 +1218,12 @@ function PlanEditor({
         settings={draft.laundrySettings}
       />
 
+      <PlanPackingSettingsEditor
+        closetItems={closetItems}
+        onChange={(packingSettings) => onChange({ ...draft, packingSettings })}
+        settings={draft.packingSettings}
+      />
+
       <div className="generation-actions sticky-action-bar">
         <button type="button" className="secondary-button" onClick={addDay}>
           <Plus size={20} aria-hidden="true" />
@@ -1257,7 +1277,7 @@ function PlanEditor({
         <button
           type="button"
           className="secondary-button"
-          disabled={isGenerating || activeClosetCount === 0}
+          disabled={isGenerating || generationClosetCount === 0}
           onClick={onGenerateLocal}
         >
           <Wand2 size={20} aria-hidden="true" />
@@ -1266,7 +1286,7 @@ function PlanEditor({
         <button
           type="button"
           className="primary-button"
-          disabled={isGenerating || activeClosetCount === 0}
+          disabled={isGenerating || generationClosetCount === 0}
           onClick={onGenerateAI}
         >
           {isGenerating ? <span className="spinner small" aria-hidden="true" /> : <Sparkles size={20} />}
@@ -1342,6 +1362,125 @@ function LaundrySettingsEditor({
   )
 }
 
+function PlanPackingSettingsEditor({
+  closetItems,
+  onChange,
+  settings,
+}: {
+  closetItems: ClothingItem[]
+  onChange: (settings: PlanPackingSettings) => void
+  settings: PlanPackingSettings
+}) {
+  const effectiveSettings = settings ?? defaultPlanPackingSettings
+  const planningCloset = closetForPlanPackingSettings(closetItems, effectiveSettings)
+  const nonArchivedItems = closetItems.filter((item) => item.status !== 'archived')
+  const usableItems = closetItems.filter((item) => itemCanBeUsedForOutfits(item))
+  const targetCategories = clothingCategories.filter((category) =>
+    ['shirt', 'blouse', 'pants', 'shorts', 'dress', 'skirt', 'shoes', 'activewear', 'socks'].includes(
+      category.value,
+    ),
+  )
+
+  function updateSettings(nextSettings: Partial<PlanPackingSettings>) {
+    onChange({
+      ...effectiveSettings,
+      ...nextSettings,
+    })
+  }
+
+  function updateCategoryTarget(category: ClothingCategory, value: string) {
+    updateSettings({
+      categoryTargets: {
+        ...effectiveSettings.categoryTargets,
+        [category]: Math.max(0, numberInput(value, 0)),
+      },
+    })
+  }
+
+  return (
+    <details className="collapsible-card">
+      <summary>Closet and packing constraints</summary>
+      <p className="helper-text">
+        Use these when you want AI to plan from a specific subset, force an item into the
+        itinerary, or target a packing volume such as 2 pants and 4 shirts.
+      </p>
+      <p className="helper-text">
+        AI itinerary validates these constraints before saving. Local itinerary uses the selected
+        closet scope and laundry rules, but does not optimize exact category targets.
+      </p>
+
+      <label className="form-field compact">
+        <span>Planning closet</span>
+        <select
+          onChange={(event) =>
+            updateSettings({ closetScope: event.target.value as PlanPackingSettings['closetScope'] })
+          }
+          value={effectiveSettings.closetScope}
+        >
+          <option value="available">Available + Wearing ({usableItems.length})</option>
+          <option value="entire">Entire non-archived closet ({nonArchivedItems.length})</option>
+          <option value="selected">Selected items only ({effectiveSettings.selectedItemIDs.length})</option>
+        </select>
+      </label>
+
+      {effectiveSettings.closetScope === 'selected' ? (
+        <label className="form-field">
+          <span>Selected planning items</span>
+          <ClothingItemBrowser
+            compact
+            items={nonArchivedItems}
+            onSelectionChange={(selectedItemIDs) => updateSettings({ selectedItemIDs })}
+            selectedItemIDs={effectiveSettings.selectedItemIDs}
+            selectionMode="multiple"
+          />
+        </label>
+      ) : null}
+
+      <label className="form-field">
+        <span>Must bring / must use at least once</span>
+        <ClothingItemBrowser
+          compact
+          items={planningCloset}
+          onSelectionChange={(requiredItemIDs) => updateSettings({ requiredItemIDs })}
+          selectedItemIDs={effectiveSettings.requiredItemIDs}
+          selectionMode="multiple"
+        />
+      </label>
+
+      <div className="plan-summary-card">
+        <strong>{planningCloset.length}</strong>
+        <span>items available to itinerary generation with the current scope.</span>
+      </div>
+
+      <details className="nested-details">
+        <summary>Target unique items by type</summary>
+        <p className="helper-text">0 means no target. These are planning targets, not clothing quantities.</p>
+        <div className="laundry-settings-grid">
+          {targetCategories.map((category) => (
+            <label className="form-field compact" key={category.value}>
+              <span>{category.label}</span>
+              <input
+                min={0}
+                onChange={(event) => updateCategoryTarget(category.value, event.target.value)}
+                type="number"
+                value={effectiveSettings.categoryTargets[category.value]}
+              />
+            </label>
+          ))}
+        </div>
+      </details>
+
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={() => onChange(defaultPlanPackingSettings)}
+      >
+        Reset Constraints
+      </button>
+    </details>
+  )
+}
+
 function planToDraft(plan: Plan): PlanDraft {
   return {
     name: plan.name,
@@ -1349,6 +1488,7 @@ function planToDraft(plan: Plan): PlanDraft {
     endDate: plan.endDate,
     notes: plan.notes,
     laundrySettings: plan.laundrySettings,
+    packingSettings: plan.packingSettings,
     days: plan.days,
   }
 }
@@ -1814,7 +1954,7 @@ function EditableItineraryCard({
     [closetItems],
   )
   const selectableItems = useMemo(
-    () => closetItems.filter((item) => item.status === 'active' || selectedItemIDs.includes(item.id)),
+    () => closetItems.filter((item) => itemCanBeUsedForOutfits(item) || selectedItemIDs.includes(item.id)),
     [closetItems, selectedItemIDs],
   )
   const selectedItems = useMemo(
@@ -1939,7 +2079,7 @@ function EditableItineraryCard({
         selectedItems.map((item) => item.id),
         'wearing',
       )
-      const message = 'Saved as wearing today. These items are unavailable for new outfit picks.'
+      const message = 'Saved as wearing today. These items remain available for outfit planning.'
       setEditMessage(message)
       showAppToast(message, 'success')
     } catch (error) {

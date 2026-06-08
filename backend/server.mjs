@@ -265,6 +265,9 @@ Additional itinerary rules:
 - Do not use the same single-copy washable item on consecutive days when avoidConsecutiveRepeats is true.
 - Respect maxUsesBeforeLaundry by category. A max value of 0 means unlimited reuse.
 - Use quantity as the number of interchangeable copies the user owns. Do not require more copies than quantity supports.
+- Treat plan.packingSettings.requiredItemIDs as hard constraints. Every required item must appear in at least one outfit unless it is impossible.
+- Treat plan.packingSettings.categoryTargets as target unique item counts by category across the whole itinerary. A target of 0 means no target for that category.
+- Respect plan.packingSettings.closetScope. The closet payload has already been filtered to the items allowed for this plan.
 - Reuse durable items such as belts, watches, bags, shoes, and outerwear when appropriate to reduce packing volume.
 - Do not default to athletic underwear, running socks, or exercise pieces for non-exercise contexts unless they are explicitly the best match and context-appropriate.
 - For work contexts, prioritize the user's actual business-casual or professional closet items and reject casual-only or gym pieces.

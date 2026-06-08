@@ -210,6 +210,14 @@ export function statusLabel(status: ClothingStatus) {
   return clothingStatuses.find((option) => option.value === status)?.label ?? 'Active'
 }
 
+export function itemCanBeUsedForOutfits(item: ClothingItem, includeUnavailable = false) {
+  if (includeUnavailable) {
+    return item.status !== 'archived'
+  }
+
+  return item.status === 'active' || item.status === 'wearing'
+}
+
 export function subscribeToClothingItems(
   userId: string,
   onItems: (items: ClothingItem[]) => void,

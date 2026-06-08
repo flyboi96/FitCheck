@@ -31,6 +31,7 @@ import { generateAvatarPreview, type AvatarPreview } from '../lib/avatar'
 import {
   categoryOptionsForWearer,
   clothingStatuses,
+  itemCanBeUsedForOutfits,
   saveClothingItem,
   updateClothingItemsStatus,
   type ClothingCategory,
@@ -108,10 +109,10 @@ export function OutfitExperiencePanel({
   const effectiveContextLabel =
     contextOptions.find((option) => option.value === effectiveContext)?.label ?? effectiveContext
 
-  const activeItems = useMemo(() => items.filter((item) => item.status === 'active'), [items])
+  const activeItems = useMemo(() => items.filter((item) => itemCanBeUsedForOutfits(item)), [items])
   const resultEditableItems = useMemo(() => {
     const recommendationItemIDs = new Set(recommendation?.items.map((item) => item.id) ?? [])
-    return items.filter((item) => item.status === 'active' || recommendationItemIDs.has(item.id))
+    return items.filter((item) => itemCanBeUsedForOutfits(item) || recommendationItemIDs.has(item.id))
   }, [items, recommendation])
   const selectedItem = activeItems.find((item) => item.id === selectedItemId)
 
@@ -326,7 +327,7 @@ export function OutfitExperiencePanel({
         recommendation.items.map((item) => item.id),
         'wearing',
       )
-      setWearLogMessage('Wear logged. Items marked wearing and removed from new outfit picks.')
+      setWearLogMessage('Wear logged. Items marked wearing and still available for outfit planning.')
       showAppToast('Wear logged.', 'success')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not log wear.'
@@ -375,7 +376,7 @@ export function OutfitExperiencePanel({
 
       const message =
         status === 'wearing'
-          ? 'Saved as wearing now. Items are unavailable for new outfit picks.'
+          ? 'Saved as wearing now. Items remain available for outfit planning.'
           : 'Saved for today. This outfit will restore when you return.'
       setDailyOutfitMessage(message)
       showAppToast(message, 'success')

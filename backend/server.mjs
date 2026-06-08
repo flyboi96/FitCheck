@@ -46,7 +46,9 @@ loadDotEnv();
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "0.0.0.0";
 const openAIKey = process.env.OPENAI_API_KEY;
-const openAIModel = process.env.OPENAI_MODEL ?? "gpt-5-mini";
+const openAIModel = process.env.OPENAI_MODEL ?? "gpt-5.4-mini";
+const openAIGeneratorModel = process.env.OPENAI_GENERATOR_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-5.4-mini";
+const openAIEvaluatorModel = process.env.OPENAI_EVALUATOR_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-5.5";
 const openAIVisionModel = process.env.OPENAI_VISION_MODEL ?? openAIModel;
 const openAIImageModel = process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1";
 const requestedImageQuality = String(process.env.OPENAI_IMAGE_QUALITY ?? "medium").toLowerCase();
@@ -81,24 +83,61 @@ const clothingCategories = [
   "other"
 ];
 
-const responseSchema = {
+const outfitCandidateSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["itemIDs", "rationale", "cautions"],
+  required: ["candidates"],
   properties: {
-    itemIDs: {
+    candidates: {
       type: "array",
-      items: { type: "string" },
       minItems: 3,
-      maxItems: 8
+      maxItems: 3,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["itemIDs"],
+        properties: {
+          itemIDs: {
+            type: "array",
+            items: { type: "string" },
+            minItems: 3,
+            maxItems: 8
+          }
+        }
+      }
+    }
+  }
+};
+
+const outfitEvaluationSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["score", "rating", "context_fit", "strengths", "weaknesses", "why"],
+  properties: {
+    score: {
+      type: "number",
+      minimum: 0,
+      maximum: 100
     },
-    rationale: {
+    rating: {
+      type: "string",
+      enum: ["Excellent", "Very Good", "Good", "Acceptable", "Poor"]
+    },
+    context_fit: {
       type: "string"
     },
-    cautions: {
+    strengths: {
       type: "array",
       items: { type: "string" },
       maxItems: 5
+    },
+    weaknesses: {
+      type: "array",
+      items: { type: "string" },
+      maxItems: 5
+    },
+    why: {
+      type: "string"
     }
   }
 };
@@ -226,8 +265,8 @@ const styleProfileSchema = {
   }
 };
 
-const instructions = `
-You are FitCheck's private outfit reviewer. Review outfits for a single user's real closet.
+const outfitSelectionRules = `
+You are FitCheck's private outfit generator. Select outfits for a single user's real closet.
 Use practical, modern personal style judgment: color harmony, silhouette, material, selected outfit context,
 weather, location, user style preferences, outfit rotation, trends that fit the user's taste, and prior negative feedback.
 
@@ -250,12 +289,51 @@ Rules:
 - Coastal Casual is distinct from Casual: it allows relaxed beach-town pieces such as flip flops, shorts, tanks, T-shirts, linen, cotton, and swimsuit-adjacent casual pieces.
 - For Lifting or Running contexts, do not add belts, dress accessories, or non-exercise clothing. Prefer running socks and running shoes for Running; prefer training shoes and lifting/training socks for Lifting.
 - Always return a complete outfit. For Lifting or Running, include at least a workout top, workout bottom, and training/running shoes. For all other contexts, include either a top plus bottom plus shoes, or a dress/full-body item plus shoes. Socks, belts, watches, jewelry, bags, and outerwear are optional additions; they do not replace the required core roles.
-- Keep the rationale concise and specific.
-- Put risks or caveats in cautions, not the rationale.
+`;
+
+const outfitGeneratorInstructions = `
+${outfitSelectionRules}
+
+Generate exactly 3 candidate outfits.
+Return candidate item IDs only.
+Do not assign a final score.
+Do not write the final user-facing explanation.
+Do not return rationale, cautions, strengths, weaknesses, or commentary.
+`;
+
+const outfitEvaluatorInstructions = `
+You are FitCheck's outfit evaluator. Your job is to score outfits honestly, not flatter the user.
+
+Evaluate the outfit against:
+1. Context appropriateness
+2. Weather and comfort
+3. Color harmony
+4. Formality
+5. Item accuracy
+
+Rules:
+- Describe only the exact selected items.
+- Do not call an outfit Excellent unless it strongly fits the selected context.
+- For Work, collared tops are preferred.
+- Henleys are smart casual, not polished workwear.
+- Plain T-shirts are casual.
+- Chinos, boots, and a belt can improve polish but do not fully convert a casual top into a strong Work outfit.
+- Mention meaningful weaknesses when they affect the score.
+- Never mention internal repair, validation, model behavior, or AI drafting.
+
+Return JSON only:
+{
+  "score": number,
+  "rating": "Excellent" | "Very Good" | "Good" | "Acceptable" | "Poor",
+  "context_fit": string,
+  "strengths": string[],
+  "weaknesses": string[],
+  "why": string
+}
 `;
 
 const planItineraryInstructions = `
-${instructions}
+${outfitSelectionRules}
 
 You are now generating a complete trip or planning itinerary, not one isolated outfit.
 
@@ -317,6 +395,8 @@ const server = http.createServer(async (request, response) => {
     sendJSON(response, 200, {
       ok: true,
       model: openAIModel,
+      generatorModel: openAIGeneratorModel,
+      evaluatorModel: openAIEvaluatorModel,
       visionModel: openAIVisionModel,
       imageModel: openAIImageModel,
       imageQuality: openAIImageQuality
@@ -1127,66 +1207,53 @@ async function reviewOutfit(requestBody) {
     }))
   };
 
-  let parsed = await requestOpenAIOutfitReview(promptPayload);
-  let itemIDs = validUniqueItemIDs(parsed.itemIDs, knownIDs);
-  let repaired = false;
-  let completedWithLocalCandidate = false;
+  const generatedCandidates = await generateOutfitCandidates(promptPayload, knownIDs);
+  const candidateOutfits = candidateOutfitsForEvaluation({
+    allowLocalCompletion,
+    candidateItemIDs,
+    closetByID,
+    generatedCandidates,
+    requiredCoreRoles
+  });
 
-  if (!hasRequiredCoreRolesForIDs(itemIDs, closetByID, requiredCoreRoles)) {
-    const repairPayload = {
-      ...promptPayload,
-      previousItemIDs: itemIDs,
-      repairInstruction: [
-        "The previous itemIDs were incomplete.",
-        `Missing required core roles: ${missingRequiredCoreRoles(itemIDs, closetByID, requiredCoreRoles).join(", ")}.`,
-        "Return a complete outfit using only closet IDs. Keep any previous items that still make sense, but add or swap items until the required core roles are present."
-      ].join(" ")
-    };
-
-    const repairedParsed = await requestOpenAIOutfitReview(repairPayload);
-    const repairedItemIDs = validUniqueItemIDs(repairedParsed.itemIDs, knownIDs);
-
-    if (hasRequiredCoreRolesForIDs(repairedItemIDs, closetByID, requiredCoreRoles)) {
-      parsed = repairedParsed;
-      itemIDs = repairedItemIDs;
-      repaired = true;
-    } else if (allowLocalCompletion && repairedItemIDs.length > 0) {
-      parsed = repairedParsed;
-      itemIDs = completeItemIDsWithCandidateItemIDs({
-        candidateItemIDs,
-        closetByID,
-        itemIDs: repairedItemIDs,
-        requiredCoreRoles
-      });
-      repaired = true;
-      completedWithLocalCandidate = itemIDs.length > repairedItemIDs.length;
-    }
+  if (candidateOutfits.length === 0) {
+    throw httpError(422, "AI did not return any complete outfit candidates. Try again or use Local outfit.");
   }
 
-  if (allowLocalCompletion && !hasRequiredCoreRolesForIDs(itemIDs, closetByID, requiredCoreRoles)) {
-    const completedItemIDs = completeItemIDsWithCandidateItemIDs({
-      candidateItemIDs,
-      closetByID,
-      itemIDs,
-      requiredCoreRoles
-    });
+  const evaluatedCandidates = [];
 
-    if (completedItemIDs.length > itemIDs.length) {
-      itemIDs = completedItemIDs;
-      completedWithLocalCandidate = true;
-    }
+  for (const itemIDs of candidateOutfits) {
+    const evaluation = await evaluateOutfit({
+      ...promptPayload,
+      selectedItemIDs: itemIDs,
+      selectedItems: itemIDs.map((itemID) => outfitEvaluationItem(closetByID.get(itemID))).filter(Boolean)
+    });
+    const cappedEvaluation = applyContextScoreCaps(evaluation, itemIDs, closetByID, promptPayload);
+
+    evaluatedCandidates.push({
+      itemIDs,
+      evaluation: cappedEvaluation
+    });
+  }
+
+  const bestCandidate = evaluatedCandidates.sort(
+    (first, second) => second.evaluation.score - first.evaluation.score
+  )[0];
+
+  if (!bestCandidate) {
+    throw httpError(422, "AI could not evaluate any complete outfit candidates.");
   }
 
   return {
-    itemIDs: itemIDs.length > 0 ? itemIDs : allowLocalCompletion ? candidateItemIDs : [],
-    rationale: String(parsed.rationale ?? "AI review completed."),
-    cautions: [
-      ...(repaired ? ["AI repaired an incomplete first pass before returning this outfit."] : []),
-      ...(completedWithLocalCandidate
-        ? ["FitCheck completed the AI outfit with local scorer picks to cover missing required roles."]
-        : []),
-      ...(Array.isArray(parsed.cautions) ? parsed.cautions.map(String) : [])
-    ].slice(0, 5)
+    itemIDs: bestCandidate.itemIDs,
+    rationale: bestCandidate.evaluation.why,
+    cautions: bestCandidate.evaluation.weaknesses.slice(0, 5),
+    score: bestCandidate.evaluation.score,
+    rating: bestCandidate.evaluation.rating,
+    context_fit: bestCandidate.evaluation.context_fit,
+    strengths: bestCandidate.evaluation.strengths,
+    weaknesses: bestCandidate.evaluation.weaknesses,
+    why: bestCandidate.evaluation.why
   };
 }
 
@@ -1295,7 +1362,7 @@ async function reviewPlanItinerary(requestBody) {
     outfits,
     overallRationale: String(parsed.overallRationale ?? "AI planned the itinerary as a complete set."),
     warnings: [
-      ...(repaired ? ["AI repaired the first itinerary pass before returning this result."] : []),
+      ...(repaired ? ["The itinerary was retried once because the first pass missed plan constraints."] : []),
       ...(Array.isArray(parsed.warnings) ? parsed.warnings.map(String) : [])
     ].slice(0, 8),
     validationIssues
@@ -1310,7 +1377,7 @@ async function requestOpenAIPlanItinerary(promptPayload) {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: openAIModel,
+      model: openAIGeneratorModel,
       instructions: planItineraryInstructions,
       input: [
         {
@@ -1353,7 +1420,7 @@ function normalizePlanItineraryOutfits(value, knownIDs) {
     .map((outfit) => ({
       requestID: String(outfit?.requestID ?? ""),
       itemIDs: validUniqueItemIDs(outfit?.itemIDs, knownIDs),
-      rationale: String(outfit?.rationale ?? "AI selected this outfit for the requested day."),
+      rationale: String(outfit?.rationale ?? "This outfit was selected for the requested day."),
       cautions: Array.isArray(outfit?.cautions) ? outfit.cautions.map(String).slice(0, 5) : []
     }))
     .filter((outfit) => outfit.requestID);
@@ -1385,7 +1452,82 @@ function planItineraryIssues(outfits, expectedRequests, closetByID) {
   return issues;
 }
 
-async function requestOpenAIOutfitReview(promptPayload) {
+function candidateOutfitsForEvaluation({
+  allowLocalCompletion,
+  candidateItemIDs,
+  closetByID,
+  generatedCandidates,
+  requiredCoreRoles
+}) {
+  const candidates = [];
+  const seenKeys = new Set();
+  const rawCandidates = [...generatedCandidates, candidateItemIDs];
+
+  for (const rawItemIDs of rawCandidates) {
+    let itemIDs = [...new Set(rawItemIDs)].filter((itemID) => closetByID.has(itemID));
+
+    if (allowLocalCompletion && !hasRequiredCoreRolesForIDs(itemIDs, closetByID, requiredCoreRoles)) {
+      itemIDs = completeItemIDsWithCandidateItemIDs({
+        candidateItemIDs,
+        closetByID,
+        itemIDs,
+        requiredCoreRoles
+      });
+    }
+
+    if (!hasRequiredCoreRolesForIDs(itemIDs, closetByID, requiredCoreRoles)) {
+      continue;
+    }
+
+    const key = itemIDs.slice().sort().join("::");
+    if (!key || seenKeys.has(key)) {
+      continue;
+    }
+
+    seenKeys.add(key);
+    candidates.push(itemIDs.slice(0, 8));
+  }
+
+  return candidates.slice(0, 4);
+}
+
+async function generateOutfitCandidates(promptPayload, knownIDs) {
+  const parsed = await requestOpenAIJSON({
+    contextLabel: "OpenAI outfit generator",
+    instructions: outfitGeneratorInstructions,
+    maxOutputTokens: 2500,
+    model: openAIGeneratorModel,
+    schema: outfitCandidateSchema,
+    schemaName: "fitcheck_outfit_candidates",
+    promptPayload
+  });
+
+  return normalizeOutfitCandidates(parsed.candidates, knownIDs);
+}
+
+async function evaluateOutfit(promptPayload) {
+  const parsed = await requestOpenAIJSON({
+    contextLabel: "OpenAI outfit evaluator",
+    instructions: outfitEvaluatorInstructions,
+    maxOutputTokens: 1800,
+    model: openAIEvaluatorModel,
+    schema: outfitEvaluationSchema,
+    schemaName: "fitcheck_outfit_evaluation",
+    promptPayload
+  });
+
+  return normalizeOutfitEvaluation(parsed);
+}
+
+async function requestOpenAIJSON({
+  contextLabel,
+  instructions,
+  maxOutputTokens,
+  model,
+  promptPayload,
+  schema,
+  schemaName
+}) {
   const openAIResponse = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -1393,7 +1535,7 @@ async function requestOpenAIOutfitReview(promptPayload) {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: openAIModel,
+      model,
       instructions,
       input: [
         {
@@ -1409,23 +1551,250 @@ async function requestOpenAIOutfitReview(promptPayload) {
       text: {
         format: {
           type: "json_schema",
-          name: "fitcheck_outfit_review",
+          name: schemaName,
           strict: true,
-          schema: responseSchema
+          schema
         }
       },
-      max_output_tokens: 2000,
+      max_output_tokens: maxOutputTokens,
       store: false
     })
   });
-
 
   const data = await openAIResponse.json().catch(() => ({}));
   if (!openAIResponse.ok) {
     throw httpError(openAIResponse.status, data.error?.message ?? "OpenAI request failed");
   }
 
-  return parseOpenAIJSON(data, "OpenAI outfit review");
+  return parseOpenAIJSON(data, contextLabel);
+}
+
+function normalizeOutfitCandidates(value, knownIDs) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((candidate) => validUniqueItemIDs(candidate?.itemIDs, knownIDs))
+    .filter((itemIDs) => itemIDs.length > 0);
+}
+
+function normalizeOutfitEvaluation(value) {
+  const score = clampScore(value?.score, 0);
+
+  return {
+    score,
+    rating: getRatingFromScore(score),
+    context_fit: cleanUserFacingText(value?.context_fit),
+    strengths: stringArrayValue(value?.strengths).map(cleanUserFacingText).filter(Boolean).slice(0, 5),
+    weaknesses: stringArrayValue(value?.weaknesses).map(cleanUserFacingText).filter(Boolean).slice(0, 5),
+    why: cleanUserFacingText(value?.why)
+  };
+}
+
+function applyContextScoreCaps(evaluation, itemIDs, closetByID, promptPayload) {
+  const cappedEvaluation = normalizeOutfitEvaluation(evaluation);
+  const topItem = getTopItem(itemIDs, closetByID);
+  let maxScore = 100;
+  let capWeakness = "";
+  let workTopExplanation = "";
+
+  if (isWorkContextText(promptPayload.context, promptPayload.contextLabel) && topItem) {
+    if (isPlainTShirtTopItem(topItem) && !styleExplicitlyAllowsWorkTShirts(promptPayload.styleDescription)) {
+      maxScore = 80;
+      capWeakness = `${topItem.name} is a plain T-shirt, so this is more casual than an ideal Work top.`;
+      workTopExplanation = workTopEvaluationWhy(itemIDs, closetByID, topItem, "plain T-shirt");
+    } else if (isHenleyTopItem(topItem)) {
+      maxScore = 84;
+      capWeakness = `${topItem.name} is a henley, which reads smart casual rather than polished Work.`;
+      workTopExplanation = workTopEvaluationWhy(itemIDs, closetByID, topItem, "henley");
+    } else if (isCollarlessNonWorkwearTop(topItem)) {
+      maxScore = 88;
+      capWeakness = `${topItem.name} is collarless and not clearly workwear, so this should not score as a top-tier Work outfit.`;
+      workTopExplanation = workTopEvaluationWhy(itemIDs, closetByID, topItem, "collarless top");
+    }
+  }
+
+  if (cappedEvaluation.score > maxScore) {
+    cappedEvaluation.score = maxScore;
+  }
+
+  if (capWeakness && !cappedEvaluation.weaknesses.includes(capWeakness)) {
+    cappedEvaluation.weaknesses = [capWeakness, ...cappedEvaluation.weaknesses].slice(0, 5);
+  }
+  if (!cappedEvaluation.context_fit && capWeakness) {
+    cappedEvaluation.context_fit = capWeakness;
+  }
+  if (workTopExplanation) {
+    cappedEvaluation.why = workTopExplanation;
+  }
+
+  if (cappedEvaluation.score >= 100 && cappedEvaluation.weaknesses.length > 0) {
+    cappedEvaluation.score = 99;
+  }
+
+  cappedEvaluation.rating = getRatingFromScore(cappedEvaluation.score);
+
+  if (!cappedEvaluation.why) {
+    cappedEvaluation.why = fallbackEvaluationWhy(itemIDs, closetByID, cappedEvaluation);
+  }
+
+  return cappedEvaluation;
+}
+
+function getTopItem(itemIDs, closetByID) {
+  return itemIDs
+    .map((itemID) => closetByID.get(itemID))
+    .find((item) => outfitRole(item) === "top") ?? null;
+}
+
+function getRatingFromScore(score) {
+  if (score >= 95) return "Excellent";
+  if (score >= 85) return "Very Good";
+  if (score >= 75) return "Good";
+  if (score >= 60) return "Acceptable";
+  return "Poor";
+}
+
+function outfitEvaluationItem(item) {
+  if (!item) {
+    return null;
+  }
+
+  return {
+    id: item.id,
+    name: item.name,
+    brand: item.brand,
+    category: item.category,
+    color: item.color,
+    material: item.material,
+    pattern: item.pattern,
+    outfitRole: outfitRole(item),
+    notes: item.notes
+  };
+}
+
+function isWorkContextText(context, contextLabel) {
+  return `${context ?? ""} ${contextLabel ?? ""}`.toLowerCase().replace(/[^a-z]/g, "").match(/work|office|business|pilot|meeting|briefing|tdy/) !== null;
+}
+
+function isPlainTShirtTopItem(item) {
+  const text = outfitItemText(item);
+  return (
+    outfitRole(item) === "top" &&
+    /\b(t-shirt|t shirt|tee)\b/.test(text) &&
+    !/button(?:ed)?(?:[- ]?down)?|collar|collared|polo|oxford|dress shirt|woven/.test(text)
+  );
+}
+
+function isHenleyTopItem(item) {
+  return outfitRole(item) === "top" && /\bhenley\b/.test(outfitItemText(item));
+}
+
+function isCollarlessNonWorkwearTop(item) {
+  if (outfitRole(item) !== "top") {
+    return false;
+  }
+
+  const text = outfitItemText(item);
+  const isCollaredWorkTop =
+    item.category === "blouse" ||
+    /button(?:ed)?(?:[- ]?down)?|collar|collared|polo|oxford|dress shirt|woven|work shirt|office blouse/.test(text);
+
+  return !isCollaredWorkTop;
+}
+
+function styleExplicitlyAllowsWorkTShirts(styleDescription) {
+  const text = String(styleDescription ?? "").toLowerCase();
+
+  if (
+    /(no|avoid|never).{0,24}(t-shirt|t shirt|tee).{0,24}(work|office)|(?:work|office).{0,24}(no|avoid|never).{0,24}(t-shirt|t shirt|tee)/.test(
+      text
+    )
+  ) {
+    return false;
+  }
+
+  return /(t-shirts?|t shirts?|tees?).{0,40}(work|office)|(?:work|office).{0,40}(t-shirts?|t shirts?|tees?)/.test(
+    text
+  );
+}
+
+function fallbackEvaluationWhy(itemIDs, closetByID, evaluation) {
+  const itemNames = itemIDs
+    .map((itemID) => closetByID.get(itemID)?.name)
+    .filter(Boolean);
+  const itemSentence = itemNames.length > 0
+    ? `This outfit uses ${formatNameList(itemNames)}.`
+    : "This outfit uses the selected closet items.";
+  const contextFit = evaluation.context_fit ? ` ${evaluation.context_fit}` : "";
+
+  return `${itemSentence}${contextFit}`.trim();
+}
+
+function workTopEvaluationWhy(itemIDs, closetByID, topItem, topType) {
+  const itemNames = itemIDs
+    .map((itemID) => closetByID.get(itemID)?.name)
+    .filter(Boolean);
+  const supportNames = itemIDs
+    .map((itemID) => closetByID.get(itemID))
+    .filter((item) => item && item.id !== topItem.id && ["bottom", "shoes", "belt"].includes(outfitRole(item)))
+    .map((item) => item.name);
+  const outfitSentence = itemNames.length > 0
+    ? `This outfit uses ${formatNameList(itemNames)}.`
+    : "This outfit uses the selected closet items.";
+  const supportSentence = supportNames.length > 0
+    ? ` ${formatNameList(supportNames)} add polish and structure,`
+    : " The rest of the outfit adds some polish,";
+  const topSentence =
+    topType === "plain T-shirt"
+      ? ` but ${topItem.name} is a plain T-shirt and is more casual than ideal for Work.`
+      : topType === "henley"
+        ? ` but ${topItem.name} is a henley, which reads smart casual rather than polished Work.`
+        : ` but ${topItem.name} is collarless and not clearly workwear.`;
+
+  return `${outfitSentence}${supportSentence}${topSentence} This is a strong smart-casual outfit, not a polished work outfit.`;
+}
+
+function formatNameList(names) {
+  if (names.length <= 1) {
+    return names[0] ?? "";
+  }
+
+  if (names.length === 2) {
+    return `${names[0]} and ${names[1]}`;
+  }
+
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+function cleanUserFacingText(value) {
+  const text = String(value ?? "").trim();
+
+  if (!text) {
+    return "";
+  }
+
+  return text
+    .replace(/\bFitCheck repaired[^.]*\.\s*/gi, "")
+    .replace(/\bSelected exact items:\s*/gi, "This outfit uses ")
+    .replace(/\brepaired around\b/gi, "built around")
+    .replace(/\bAI draft\b/gi, "outfit")
+    .replace(/\bvalidator\b/gi, "quality check")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stringArrayValue(value) {
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+}
+
+function clampScore(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+  return Math.min(100, Math.max(0, Math.round(number)));
 }
 
 function validUniqueItemIDs(value, knownIDs) {

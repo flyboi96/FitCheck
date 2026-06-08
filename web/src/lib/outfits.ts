@@ -571,10 +571,10 @@ export function repairOutfitDraftWithLocalScorer({
     })
   }
 
-  addCandidate(aiItems, 'AI draft was scored directly by FitCheck.')
+  addCandidate(aiItems, 'Scored the selected closet items for this context.')
   addCandidate(
     completeOutfitWithLocalFallback(aiItems, localBest.items, context),
-    'FitCheck completed the AI draft with missing closet roles before saving.',
+    'Added available closet pieces to complete the required outfit roles.',
   )
 
   aiItems.forEach((item) => {
@@ -589,13 +589,13 @@ export function repairOutfitDraftWithLocalScorer({
     })
     addCandidate(
       lockedCandidate.items,
-      `FitCheck repaired the AI draft around ${item.name}.`,
+      `Built a complete outfit around ${item.name}.`,
     )
   })
 
   addCandidate(
     localBest.items,
-    'FitCheck replaced an incomplete AI draft with the best validated closet outfit.',
+    'Selected the strongest complete closet outfit for this request.',
   )
 
   const uniqueCandidates = uniqueRecommendations(candidates)
@@ -809,7 +809,7 @@ async function requestAIOutfit(
   const completedByLocalScorer = completedItems.length > items.length || aiReturnedIncomplete
 
   if (!allowLocalCompletion && aiReturnedIncomplete) {
-    throw new Error('AI returned an incomplete outfit even after the proxy repair pass.')
+    throw new Error('The outfit response was missing a required clothing role.')
   }
 
   const scored = scoreOutfit(completedItems, {
@@ -819,21 +819,43 @@ async function requestAIOutfit(
     source: 'ai',
     weather: request.weather,
   })
+  const evaluatorScore = scoreNumber(data.score, scored.score)
+  const evaluatorRating = ratingValue(data.rating, evaluatorScore)
+  const evaluatorStrengths = stringArray(data.strengths)
+  const evaluatorWeaknesses = stringArray(data.weaknesses)
+  const evaluatorContextFit = stringValue(data.context_fit)
+  const evaluatorWhy = cleanUserFacingRationale(stringValue(data.why) || stringValue(data.rationale))
   const repairCautions =
     completedByLocalScorer
-      ? ['AI omitted a required role, so FitCheck completed the outfit with local scorer picks instead of failing.']
+      ? ['A required clothing role was missing, so this was completed with the best available closet match.']
       : []
+  const legacyCautions = stringArray(data.cautions)
 
   return {
     ...scored,
-    rationale: itemFaithfulRationale(scored.items, {
-      context: request.context,
-      prefix: 'AI selected this from your closet; FitCheck scored the exact selected items.',
-      profile: request.profile,
-    }),
-    cautions: Array.isArray(data.cautions)
-      ? [...repairCautions, ...data.cautions.map(String), ...scored.cautions].slice(0, 5)
-      : [...repairCautions, ...scored.cautions].slice(0, 5),
+    score: evaluatorScore,
+    scoreBreakdown: {
+      ...scored.scoreBreakdown,
+      finalScore: evaluatorScore,
+    },
+    scoreLabel: evaluatorRating,
+    rationale:
+      evaluatorWhy ||
+      itemFaithfulRationale(scored.items, {
+        context: request.context,
+        profile: request.profile,
+      }),
+    reasons: [
+      evaluatorContextFit,
+      ...evaluatorStrengths,
+      ...scored.reasons,
+    ].filter(Boolean).slice(0, 7),
+    cautions: [
+      ...repairCautions,
+      ...evaluatorWeaknesses,
+      ...legacyCautions,
+      ...scored.cautions,
+    ].filter(Boolean).slice(0, 5),
   }
 }
 
@@ -913,6 +935,44 @@ function itemPairKeys(itemIDs: string[]) {
 
 function stringArray(value: unknown) {
   return Array.isArray(value) ? value.map(String).filter(Boolean) : []
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function scoreNumber(value: unknown, fallback: number) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) {
+    return fallback
+  }
+  return Math.max(0, Math.min(100, Math.round(number)))
+}
+
+function ratingValue(value: unknown, score: number) {
+  const rating = stringValue(value)
+  if (
+    rating === 'Excellent' ||
+    rating === 'Very Good' ||
+    rating === 'Good' ||
+    rating === 'Acceptable' ||
+    rating === 'Poor'
+  ) {
+    return rating
+  }
+
+  return scoreLabel(score)
+}
+
+function cleanUserFacingRationale(value: string) {
+  return value
+    .replace(/\bFitCheck repaired[^.]*\.\s*/gi, '')
+    .replace(/\bSelected exact items:\s*/gi, 'This outfit uses ')
+    .replace(/\brepaired around\b/gi, 'built around')
+    .replace(/\bAI draft\b/gi, 'outfit')
+    .replace(/\bvalidator\b/gi, 'quality check')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function roundScore(value: number) {
@@ -1017,6 +1077,18 @@ function scoreOutfit(
       addOutfitScore(-12, 'Work context penalty: plain T-shirt is more casual than ideal')
       capOutfitScore(80, 'Work outfit capped: plain T-shirt is more casual than ideal')
       cautions.push(`${plainTShirtTop.name} is more casual than an ideal Work top.`)
+    }
+    const henleyTop = items.find(isHenleyTop)
+    if (henleyTop) {
+      addOutfitScore(-8, 'Work context penalty: henley is smart casual, not polished workwear')
+      capOutfitScore(84, 'Work outfit capped: henley is smart casual, not polished workwear')
+      cautions.push(`${henleyTop.name} is smart casual rather than polished Work.`)
+    }
+    const collarlessNonWorkwearTop = items.find(isCollarlessNonWorkwearTop)
+    if (collarlessNonWorkwearTop && !plainTShirtTop && !henleyTop) {
+      addOutfitScore(-6, 'Work context penalty: collarless top is not clearly workwear')
+      capOutfitScore(88, 'Work outfit capped: collarless tops are not top-tier Work pieces')
+      cautions.push(`${collarlessNonWorkwearTop.name} is not clearly a polished Work top.`)
     }
   }
 
@@ -1839,6 +1911,25 @@ function isPlainTShirtTop(item: ClothingItem) {
   )
 }
 
+function isHenleyTop(item: ClothingItem) {
+  return itemRole(item) === 'top' && /\bhenley\b/.test(itemText(item))
+}
+
+function isCollarlessNonWorkwearTop(item: ClothingItem) {
+  if (itemRole(item) !== 'top') {
+    return false
+  }
+
+  const text = itemText(item)
+  const isCollaredWorkTop =
+    item.category === 'blouse' ||
+    /button(?:ed)?(?:[- ]?down)?|collar|collared|polo|oxford|dress shirt|woven|work shirt|office blouse/.test(
+      text,
+    )
+
+  return !isCollaredWorkTop
+}
+
 function isPolishedWorkTop(item: ClothingItem) {
   const text = itemText(item)
 
@@ -1871,8 +1962,8 @@ function itemFaithfulRationale(
   }
 
   const sentences = [
-    prefix,
-    `Selected exact items: ${formatItemNameList(items.map((item) => item.name))}.`,
+    cleanUserFacingRationale(prefix ?? ''),
+    `This outfit uses ${formatItemNameList(items.map((item) => item.name))}.`,
   ].filter(Boolean)
   const plainTShirtTop = items.find(isPlainTShirtTop)
 
@@ -1880,6 +1971,14 @@ function itemFaithfulRationale(
     sentences.push(
       `${plainTShirtTop.name} is a plain T-shirt, so this is more casual than an ideal Work top.`,
     )
+  }
+  const henleyTop = items.find(isHenleyTop)
+  if (isWorkContext(context) && henleyTop) {
+    sentences.push(`${henleyTop.name} is a henley, so this reads smart casual rather than polished Work.`)
+  }
+  const collarlessNonWorkwearTop = items.find(isCollarlessNonWorkwearTop)
+  if (isWorkContext(context) && collarlessNonWorkwearTop && !plainTShirtTop && !henleyTop) {
+    sentences.push(`${collarlessNonWorkwearTop.name} is collarless and not clearly a polished Work top.`)
   }
 
   return sentences.join(' ')
@@ -2056,10 +2155,11 @@ function inferredActivitySuitability(item: ClothingItem) {
 }
 
 function scoreLabel(score: number) {
-  if (score >= 84) return 'Excellent'
-  if (score >= 70) return 'Strong'
-  if (score >= 54) return 'Usable'
-  return 'Weak'
+  if (score >= 95) return 'Excellent'
+  if (score >= 85) return 'Very Good'
+  if (score >= 75) return 'Good'
+  if (score >= 60) return 'Acceptable'
+  return 'Poor'
 }
 
 export function categoryName(category: ClothingCategory) {

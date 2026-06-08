@@ -112,7 +112,7 @@ export async function generateAIPlanItinerary({
   throw new Error(
     [
       'AI itinerary did not pass FitCheck quality validation.',
-      'FitCheck tried to repair the AI draft, but the repaired itinerary still violated the constraints.',
+      'FitCheck asked for a corrected itinerary, but the result still violated the constraints.',
       'No bad itinerary was saved.',
       ...lastBlockers.slice(0, 8),
     ].join('\n'),
@@ -230,7 +230,7 @@ function evaluateAIPlanResponse({
 }) {
   const outfitByRequestID = new Map(response.outfits.map((outfit) => [outfit.requestID, outfit]))
   const blockers: string[] = []
-  const warnings: string[] = response.validationIssues.map((issue) => `AI draft repair note: ${issue}`)
+  const warnings: string[] = response.validationIssues.map((issue) => `Planning note: ${issue}`)
   const itinerary: ItineraryOutfit[] = []
   const usedItemIDs = new Set<string>()
   const usageByItemID = new Map<string, number>()
@@ -249,7 +249,7 @@ function evaluateAIPlanResponse({
 
     for (const request of day.requests) {
       const aiOutfit = outfitByRequestID.get(request.id) ?? {
-        cautions: ['AI omitted this request, so FitCheck repaired it locally.'],
+        cautions: ['This request was missing from the plan response, so FitCheck filled it with the best available closet match.'],
         itemIDs: [],
         rationale: '',
         requestID: request.id,
@@ -314,9 +314,9 @@ function evaluateAIPlanResponse({
         rationale:
           recommendation.rationale ||
           aiOutfit.rationale ||
-          `AI planned this ${request.label || context?.label || 'outfit'} as part of the whole itinerary.`,
+          `This ${request.label || context?.label || 'outfit'} was planned as part of the whole itinerary.`,
         reasons: [
-          'AI drafted the itinerary as a full plan; FitCheck repaired and validated this outfit before saving.',
+          'Planned as part of the full itinerary with context, weather, and packing constraints in mind.',
           ...recommendation.reasons,
         ].slice(0, 7),
       }

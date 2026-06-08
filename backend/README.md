@@ -7,10 +7,12 @@ Small backend for FitCheck AI outfit review, AI-first outfit selection, clothing
 1. Copy `backend/.env.example` to `backend/.env`.
 2. Put your OpenAI API key in `OPENAI_API_KEY`.
 3. Optional but recommended: set `FITCHECK_PROXY_TOKEN`.
-4. Optional: set `OPENAI_VISION_MODEL` if you want clothing photo import to use a different model than outfit review.
-5. Optional: set `OPENAI_IMAGE_MODEL` for avatar/outfit image previews. The default is `gpt-image-1`.
-6. Optional: set `OPENAI_IMAGE_QUALITY=low` for faster draft avatar previews, or keep `medium` for better detail.
-7. Run:
+4. Optional: set `OPENAI_GENERATOR_MODEL` for the cheaper outfit-candidate model. Default: `gpt-5.4-mini`.
+5. Optional: set `OPENAI_EVALUATOR_MODEL` for the stronger outfit-scoring model. Default: `gpt-5.5`.
+6. Optional: set `OPENAI_VISION_MODEL` if you want clothing photo import to use a different model than outfit review.
+7. Optional: set `OPENAI_IMAGE_MODEL` for avatar/outfit image previews. The default is `gpt-image-1`.
+8. Optional: set `OPENAI_IMAGE_QUALITY=low` for faster draft avatar previews, or keep `medium` for better detail.
+9. Run:
 
 ```sh
 cd backend
@@ -37,6 +39,8 @@ On Render, configure environment variables:
 
 ```text
 OPENAI_API_KEY=...
+OPENAI_GENERATOR_MODEL=gpt-5.4-mini
+OPENAI_EVALUATOR_MODEL=gpt-5.5
 FITCHECK_PROXY_TOKEN=...
 HOST=0.0.0.0
 PORT=8787

@@ -1377,7 +1377,7 @@ function numberInput(value: string, fallback: number) {
 }
 
 function scoreClass(score: number) {
-  if (score >= 70) return 'strong'
-  if (score >= 54) return 'usable'
+  if (score >= 75) return 'strong'
+  if (score >= 60) return 'usable'
   return 'weak'
 }

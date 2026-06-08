@@ -2,7 +2,7 @@ import { categoryLabel, type ClothingCategory, type ClothingItem } from './close
 import { contextOptionsFromSettings, contextStylesPrompt, loadContextStyles } from './contextStyles'
 import {
   loadRecentFeedback,
-  scoreCustomOutfit,
+  repairOutfitDraftWithLocalScorer,
   validateOutfitRecommendation,
   weatherSummary,
   type OutfitContextOption,
@@ -12,6 +12,7 @@ import { profileStyleSummary } from './profile'
 import {
   defaultPlanLaundrySettings,
   closetForPlanPackingSettings,
+  closetAvailableForPlanRequest,
   recommendationToItineraryOutfit,
   type ItineraryOutfit,
   type PlanDraft,
@@ -89,6 +90,7 @@ export async function generateAIPlanItinerary({
       draft,
       profile,
       response,
+      userId,
     })
 
     if (evaluated.blockers.length === 0) {
@@ -110,6 +112,7 @@ export async function generateAIPlanItinerary({
   throw new Error(
     [
       'AI itinerary did not pass FitCheck quality validation.',
+      'FitCheck tried to repair the AI draft, but the repaired itinerary still violated the constraints.',
       'No bad itinerary was saved.',
       ...lastBlockers.slice(0, 8),
     ].join('\n'),
@@ -216,16 +219,18 @@ function evaluateAIPlanResponse({
   draft,
   profile,
   response,
+  userId,
 }: {
   activeCloset: ClothingItem[]
   contextOptions: OutfitContextOption[]
   draft: PlanDraft
   profile: UserProfile | null
   response: AIPlanResponse
+  userId: string
 }) {
   const outfitByRequestID = new Map(response.outfits.map((outfit) => [outfit.requestID, outfit]))
-  const blockers: string[] = [...response.validationIssues]
-  const warnings: string[] = []
+  const blockers: string[] = []
+  const warnings: string[] = response.validationIssues.map((issue) => `AI draft repair note: ${issue}`)
   const itinerary: ItineraryOutfit[] = []
   const usedItemIDs = new Set<string>()
   const usageByItemID = new Map<string, number>()
@@ -243,43 +248,49 @@ function evaluateAIPlanResponse({
     }
 
     for (const request of day.requests) {
-      const aiOutfit = outfitByRequestID.get(request.id)
-
-      if (!aiOutfit) {
-        blockers.push(`${day.date} ${request.label}: AI did not return an outfit.`)
-        continue
+      const aiOutfit = outfitByRequestID.get(request.id) ?? {
+        cautions: ['AI omitted this request, so FitCheck repaired it locally.'],
+        itemIDs: [],
+        rationale: '',
+        requestID: request.id,
       }
+      const eligibleCloset = closetAvailableForPlanRequest({
+        closet: activeCloset,
+        includeUnavailableItems: draft.packingSettings.closetScope !== 'available',
+        laundrySettings: draft.laundrySettings,
+        previousDayItemIDs,
+        usageByItemID,
+      })
 
       const selectedItems = aiOutfit.itemIDs
-        .map((itemID) => activeCloset.find((item) => item.id === itemID))
+        .map((itemID) => eligibleCloset.find((item) => item.id === itemID))
         .filter((item): item is ClothingItem => Boolean(item))
-
-      if (selectedItems.length === 0) {
-        blockers.push(`${day.date} ${request.label}: AI returned no active closet items.`)
-        continue
-      }
 
       const weather = {
         ...day.weather,
         location: day.location || day.weather.location,
       }
-      const scored = scoreCustomOutfit({
+      const recommendation = repairOutfitDraftWithLocalScorer({
+        aiCautions: aiOutfit.cautions,
+        aiItems: selectedItems,
+        aiRationale: aiOutfit.rationale,
+        closet: eligibleCloset,
         context: request.context,
-        items: selectedItems,
+        includeUnavailableItems: draft.packingSettings.closetScope !== 'available',
         profile,
-        source: 'ai',
+        userId,
         weather,
       })
       const qualityGate = validateOutfitRecommendation({
         context: request.context,
         profile,
-        recommendation: scored,
+        recommendation,
         weather,
       })
       const reuseBlockers = validatePlanReuse({
         currentDayItemIDs,
         dayDate: day.date,
-        items: selectedItems,
+        items: recommendation.items,
         laundrySettings: draft.laundrySettings,
         previousDayItemIDs,
         requestLabel: request.label,
@@ -292,33 +303,29 @@ function evaluateAIPlanResponse({
       )
       warnings.push(...qualityGate.warnings.map((warning) => `${day.date} ${request.label}: ${warning}`))
 
-      selectedItems.forEach((item) => {
+      recommendation.items.forEach((item) => {
         usedItemIDs.add(item.id)
         usageByItemID.set(item.id, (usageByItemID.get(item.id) ?? 0) + 1)
         currentDayItemIDs.add(item.id)
       })
 
       const context = contextOptions.find((option) => option.value === request.context)
-      const recommendation = {
-        ...scored,
-        cautions: [
-          ...aiOutfit.cautions,
-          ...qualityGate.warnings,
-          ...scored.cautions,
-        ].filter(Boolean),
+      const repairedRecommendation = {
+        ...recommendation,
         rationale:
+          recommendation.rationale ||
           aiOutfit.rationale ||
           `AI planned this ${request.label || context?.label || 'outfit'} as part of the whole itinerary.`,
         reasons: [
-          'AI planned this as part of the full itinerary, not as an isolated outfit.',
-          ...scored.reasons,
+          'AI drafted the itinerary as a full plan; FitCheck repaired and validated this outfit before saving.',
+          ...recommendation.reasons,
         ].slice(0, 7),
       }
 
       itinerary.push(
         recommendationToItineraryOutfit({
           day,
-          recommendation,
+          recommendation: repairedRecommendation,
           request: {
             ...request,
             label: request.label || context?.label || request.context,

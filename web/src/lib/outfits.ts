@@ -521,6 +521,133 @@ export function validateOutfitRecommendation({
   }
 }
 
+export function repairOutfitDraftWithLocalScorer({
+  aiCautions = [],
+  aiItems,
+  aiRationale,
+  closet,
+  context,
+  includeUnavailableItems = false,
+  profile,
+  userId,
+  weather,
+}: {
+  aiCautions?: string[]
+  aiItems: ClothingItem[]
+  aiRationale: string
+  closet: ClothingItem[]
+  context: OutfitContext
+  includeUnavailableItems?: boolean
+  profile: UserProfile | null
+  userId: string
+  weather: WeatherInput
+}) {
+  const localBest = generateLocalOutfit({
+    closet,
+    context,
+    includeUnavailableItems,
+    profile,
+    userId,
+    weather,
+  })
+  const candidates: OutfitRecommendation[] = []
+
+  function addCandidate(items: ClothingItem[], repairNote: string) {
+    if (items.length === 0) {
+      return
+    }
+
+    const scored = scoreCustomOutfit({
+      context,
+      items,
+      profile,
+      source: 'ai',
+      weather,
+    })
+
+    candidates.push({
+      ...scored,
+      cautions: [...aiCautions, ...scored.cautions].filter(Boolean).slice(0, 6),
+      rationale: aiRationale || repairNote,
+      reasons: [repairNote, ...scored.reasons].slice(0, 7),
+    })
+  }
+
+  addCandidate(aiItems, 'AI draft was scored directly by FitCheck.')
+  addCandidate(
+    completeOutfitWithLocalFallback(aiItems, localBest.items, context),
+    'FitCheck completed the AI draft with missing closet roles before saving.',
+  )
+
+  aiItems.forEach((item) => {
+    const lockedCandidate = generateLocalOutfit({
+      closet,
+      context,
+      includeUnavailableItems,
+      profile,
+      selectedItemId: item.id,
+      userId,
+      weather,
+    })
+    addCandidate(
+      lockedCandidate.items,
+      `FitCheck repaired the AI draft around ${item.name}.`,
+    )
+  })
+
+  addCandidate(
+    localBest.items,
+    'FitCheck replaced an incomplete AI draft with the best validated closet outfit.',
+  )
+
+  const uniqueCandidates = uniqueRecommendations(candidates)
+  const validCandidates = uniqueCandidates.filter(
+    (candidate) =>
+      validateOutfitRecommendation({
+        context,
+        profile,
+        recommendation: candidate,
+        weather,
+      }).passed,
+  )
+  const candidatesToRank = validCandidates.length > 0 ? validCandidates : uniqueCandidates
+  const bestCandidate = candidatesToRank.sort(compareRecommendations)[0]
+
+  return bestCandidate ?? scoreCustomOutfit({
+    context,
+    items: [],
+    profile,
+    source: 'ai',
+    weather,
+  })
+}
+
+function uniqueRecommendations(recommendations: OutfitRecommendation[]) {
+  const seenKeys = new Set<string>()
+  const uniqueRecommendations: OutfitRecommendation[] = []
+
+  recommendations.forEach((recommendation) => {
+    const key = recommendation.items.map((item) => item.id).sort().join('::')
+
+    if (!key || seenKeys.has(key)) {
+      return
+    }
+
+    seenKeys.add(key)
+    uniqueRecommendations.push(recommendation)
+  })
+
+  return uniqueRecommendations
+}
+
+function compareRecommendations(first: OutfitRecommendation, second: OutfitRecommendation) {
+  if (second.score !== first.score) {
+    return second.score - first.score
+  }
+
+  return second.scoreBreakdown.rawScore - first.scoreBreakdown.rawScore
+}
+
 export async function saveOutfitFeedback({
   context,
   feedback,

@@ -15,6 +15,7 @@ import {
 import { useClosetItems } from '../hooks/useClosetItems'
 import { useSwipeBack } from '../hooks/useSwipeBack'
 import { showAppToast } from '../lib/appToasts'
+import { formatDateTimeWithWeekday } from '../lib/dateFormatting'
 import {
   categoryLabel,
   categoryOptionsForWearer,
@@ -1199,7 +1200,5 @@ function ClothingItemCard({
 }
 
 function formatClosetDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-  }).format(new Date(value))
+  return formatDateTimeWithWeekday(value)
 }

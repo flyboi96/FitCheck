@@ -85,6 +85,7 @@ import {
 } from '../lib/outfits'
 import { generateAIPlanItinerary } from '../lib/planAI'
 import { contextOptionsFromSettings } from '../lib/contextStyles'
+import { formatDateRangeWithWeekdays, formatDateWithWeekday } from '../lib/dateFormatting'
 import { saveDailyOutfit } from '../lib/dailyOutfits'
 import { logOutfitWear } from '../lib/history'
 import type { UserProfile } from '../lib/profile'
@@ -395,7 +396,7 @@ export function PlansPanel({
     setIsLookingUpWeather(true)
     setStatusMessage(null)
     setErrorMessage(null)
-    showAppToast(`Looking up day weather for ${day.date}...`, 'info')
+    showAppToast(`Looking up day weather for ${formatDateWithWeekday(day.date)}...`, 'info')
 
     try {
       const nextWeather = await lookupWeatherByLocation(day.location || day.weather.location, day.date)
@@ -411,8 +412,8 @@ export function PlansPanel({
             : planDay,
         ),
       }))
-      setStatusMessage(`Weather updated for ${day.date}: ${weatherSummary(nextWeather)}.`)
-      showAppToast(`Weather updated for ${day.date}.`, 'success')
+      setStatusMessage(`Weather updated for ${formatDateWithWeekday(day.date)}: ${weatherSummary(nextWeather)}.`)
+      showAppToast(`Weather updated for ${formatDateWithWeekday(day.date)}.`, 'success')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Weather lookup failed.'
       setErrorMessage(message)
@@ -646,6 +647,7 @@ export function PlansPanel({
                 type="date"
                 value={newPlanDraft.startDate}
               />
+              <small>{formatDateWithWeekday(newPlanDraft.startDate)}</small>
             </label>
 
             <label className="form-field">
@@ -658,6 +660,7 @@ export function PlansPanel({
                 type="date"
                 value={newPlanDraft.endDate}
               />
+              <small>{formatDateWithWeekday(newPlanDraft.endDate)}</small>
             </label>
           </div>
 
@@ -885,7 +888,7 @@ export function PlansPanel({
             {plans.map((plan) => (
               <PlanMenuRow
                 badge={`${plan.days.length}d`}
-                description={`${plan.startDate} to ${plan.endDate} - ${plan.itinerary.length} outfits`}
+                description={`${formatDateRangeWithWeekdays(plan.startDate, plan.endDate)} - ${plan.itinerary.length} outfits`}
                 icon={<CalendarDays size={20} aria-hidden="true" />}
                 key={plan.id}
                 onClick={() => openPlan(plan)}
@@ -1044,7 +1047,7 @@ function PlanEditor({
   function expandDateRange() {
     if (rangeDayCount > MAX_EXPANDED_PLAN_DAYS) {
       const confirmedLargeRange = window.confirm(
-        `This date range has ${rangeDayCount} dates. FitCheck will create the first ${MAX_EXPANDED_PLAN_DAYS} day cards so the editor stays usable. Continue?`,
+        `This date range has ${rangeDayCount} dates. FitCheck will create the first ${MAX_EXPANDED_PLAN_DAYS} day cards from ${formatDateWithWeekday(draft.startDate)} so the editor stays usable. Continue?`,
       )
 
       if (!confirmedLargeRange) {
@@ -1055,7 +1058,7 @@ function PlanEditor({
     const confirmed =
       draft.days.length <= 1 ||
       window.confirm(
-        `Replace the current ${draft.days.length} day card${draft.days.length === 1 ? '' : 's'} with ${cappedRangeCount} card${cappedRangeCount === 1 ? '' : 's'} from ${draft.startDate} to ${draft.endDate}?`,
+        `Replace the current ${draft.days.length} day card${draft.days.length === 1 ? '' : 's'} with ${cappedRangeCount} card${cappedRangeCount === 1 ? '' : 's'} from ${formatDateRangeWithWeekdays(draft.startDate, draft.endDate)}?`,
       )
 
     if (!confirmed) {
@@ -1120,6 +1123,7 @@ function PlanEditor({
             type="date"
             value={draft.startDate}
           />
+          <small>{formatDateWithWeekday(draft.startDate)}</small>
         </label>
         <label className="form-field compact">
           <span>End</span>
@@ -1129,6 +1133,7 @@ function PlanEditor({
             type="date"
             value={draft.endDate}
           />
+          <small>{formatDateWithWeekday(draft.endDate)}</small>
         </label>
       </div>
 
@@ -1136,7 +1141,8 @@ function PlanEditor({
         <strong>{draft.days.length}</strong>
         <span>
           editable day card{draft.days.length === 1 ? '' : 's'}. The selected date range is{' '}
-          {rangeDayCount} day{rangeDayCount === 1 ? '' : 's'}.
+          {rangeDayCount} day{rangeDayCount === 1 ? '' : 's'}:{' '}
+          {formatDateRangeWithWeekdays(draft.startDate, draft.endDate)}.
         </span>
       </div>
 
@@ -1582,7 +1588,7 @@ function PlanDayEditor({
     <article className="day-card">
       <div className="day-card-header">
         <div>
-          <p className="eyebrow">{day.date}</p>
+          <p className="eyebrow">{formatDateWithWeekday(day.date)}</p>
           <h3>{day.location || 'Location TBD'}</h3>
         </div>
         <div className="compact-icon-actions">
@@ -1618,6 +1624,7 @@ function PlanDayEditor({
             type="date"
             value={day.date}
           />
+          <small>{formatDateWithWeekday(day.date)}</small>
         </label>
         <label className="form-field compact">
           <span>Location</span>
@@ -2172,7 +2179,7 @@ function EditableItineraryCard({
       <div className="recommendation-header">
         <div>
           <p className="eyebrow">
-            {outfit.date} - {outfit.location || 'Location TBD'}
+            {formatDateWithWeekday(outfit.date)} - {outfit.location || 'Location TBD'}
           </p>
           <h3>{outfit.label}</h3>
           <p className="helper-text">{outfit.weatherSummary}</p>
@@ -2265,6 +2272,7 @@ function EditableItineraryCard({
           <label className="form-field compact">
             <span>Date</span>
             <input onChange={(event) => setDate(event.target.value)} type="date" value={date} />
+            <small>{formatDateWithWeekday(date)}</small>
           </label>
           <label className="form-field compact">
             <span>Location</span>

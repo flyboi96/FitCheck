@@ -1,5 +1,6 @@
 import { categoryLabel, type ClothingCategory, type ClothingItem } from './closet'
 import { contextOptionsFromSettings, contextStylesPrompt, loadContextStyles } from './contextStyles'
+import { formatDateWithWeekday } from './dateFormatting'
 import {
   loadRecentFeedback,
   repairOutfitDraftWithLocalScorer,
@@ -288,7 +289,7 @@ function evaluateAIPlanResponse({
       })
       const reuseBlockers = validatePlanReuse({
         currentDayItemIDs,
-        dayDate: day.date,
+        dayDate: formatDateWithWeekday(day.date),
         items: recommendation.items,
         laundrySettings: draft.laundrySettings,
         previousDayItemIDs,
@@ -297,10 +298,16 @@ function evaluateAIPlanResponse({
       })
 
       blockers.push(
-        ...qualityGate.blockers.map((blocker) => `${day.date} ${request.label}: ${blocker}`),
+        ...qualityGate.blockers.map(
+          (blocker) => `${formatDateWithWeekday(day.date)} ${request.label}: ${blocker}`,
+        ),
         ...reuseBlockers,
       )
-      warnings.push(...qualityGate.warnings.map((warning) => `${day.date} ${request.label}: ${warning}`))
+      warnings.push(
+        ...qualityGate.warnings.map(
+          (warning) => `${formatDateWithWeekday(day.date)} ${request.label}: ${warning}`,
+        ),
+      )
 
       recommendation.items.forEach((item) => {
         usedItemIDs.add(item.id)

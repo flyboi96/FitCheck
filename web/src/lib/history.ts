@@ -10,6 +10,7 @@ import {
   type FirestoreError,
   type Unsubscribe,
 } from 'firebase/firestore'
+import { formatDateTimeWithWeekday } from './dateFormatting'
 import { db } from './firebase'
 import type { ClothingItem } from './closet'
 import {
@@ -271,10 +272,7 @@ export function formatShortDate(value: string) {
     return 'Never'
   }
 
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
+  return formatDateTimeWithWeekday(value)
 }
 
 function stringValue(value: unknown, fallback = '') {

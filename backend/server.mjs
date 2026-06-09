@@ -1047,6 +1047,34 @@ function formatWeatherLocalDate(date) {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+function formatDateWithWeekday(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ""));
+
+  if (!match) {
+    return String(value ?? "");
+  }
+
+  const date = new Date(
+    Date.UTC(
+      Number.parseInt(match[1], 10),
+      Number.parseInt(match[2], 10) - 1,
+      Number.parseInt(match[3], 10)
+    )
+  );
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value ?? "");
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+    weekday: "short",
+    year: "numeric"
+  }).format(date);
+}
+
 function historicalWeatherTrendCondition(records) {
   const wetDayRate =
     records.filter(
@@ -1434,13 +1462,13 @@ function planItineraryIssues(outfits, expectedRequests, closetByID) {
     const outfit = outfitByRequestID.get(request.requestID);
 
     if (!outfit) {
-      issues.push(`${request.date} ${request.contextLabel}: missing requestID ${request.requestID}`);
+      issues.push(`${formatDateWithWeekday(request.date)} ${request.contextLabel}: missing requestID ${request.requestID}`);
       continue;
     }
 
     if (!hasRequiredCoreRolesForIDs(outfit.itemIDs, closetByID, request.requiredCoreRoles)) {
       issues.push(
-        `${request.date} ${request.contextLabel}: missing ${missingRequiredCoreRoles(
+        `${formatDateWithWeekday(request.date)} ${request.contextLabel}: missing ${missingRequiredCoreRoles(
           outfit.itemIDs,
           closetByID,
           request.requiredCoreRoles

@@ -10,6 +10,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from './firebase'
+import { formatDateRangeWithWeekdays, formatDateWithWeekday } from './dateFormatting'
 import {
   isDefaultOutfitContext,
   categoryName,
@@ -377,14 +378,20 @@ export function buildPackingList(
 }
 
 export function itineraryShareText(plan: Plan) {
-  const lines = [`FitCheck Itinerary - ${plan.name}`, `${plan.startDate} to ${plan.endDate}`, '']
+  const lines = [
+    `FitCheck Itinerary - ${plan.name}`,
+    formatDateRangeWithWeekdays(plan.startDate, plan.endDate),
+    '',
+  ]
 
   if (plan.notes) {
     lines.push(`Notes: ${plan.notes}`, '')
   }
 
   plan.itinerary.forEach((outfit) => {
-    lines.push(`${outfit.date} - ${outfit.location || 'Location TBD'} - ${outfit.label}`)
+    lines.push(
+      `${formatDateWithWeekday(outfit.date)} - ${outfit.location || 'Location TBD'} - ${outfit.label}`,
+    )
     lines.push(`Score: ${outfit.score}/100 ${outfit.scoreLabel}`)
     outfit.itemNames.forEach((itemName) => lines.push(`- ${itemName}`))
     if (outfit.rationale) {
@@ -397,7 +404,11 @@ export function itineraryShareText(plan: Plan) {
 }
 
 export function packingListShareText(plan: Plan) {
-  const lines = [`FitCheck Packing List - ${plan.name}`, `${plan.startDate} to ${plan.endDate}`, '']
+  const lines = [
+    `FitCheck Packing List - ${plan.name}`,
+    formatDateRangeWithWeekdays(plan.startDate, plan.endDate),
+    '',
+  ]
   let currentCategory = ''
 
   plan.packingList.forEach((item) => {

@@ -418,6 +418,38 @@ h3 {
   gap: 10px;
 }
 
+.file-action-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 50px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--accent);
+  background: var(--surface);
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.file-action-button:has(input:disabled) {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.file-action-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.file-action-button input:disabled {
+  cursor: wait;
+}
+
 .form-field {
   display: grid;
   gap: 7px;
@@ -981,6 +1013,30 @@ h3 {
   height: 72px;
   border-radius: 8px;
   object-fit: cover;
+}
+
+.item-image-tools {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 72%, var(--panel));
+}
+
+.image-tool-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.compact-button {
+  min-height: 44px;
+  padding: 0 12px;
 }
 
 .item-title-row h3,

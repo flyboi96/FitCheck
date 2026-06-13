@@ -356,9 +356,11 @@ Additional itinerary rules:
 const clothingDescriptionInstructions = `
 You are FitCheck's private closet import assistant. Describe one clothing item from a user's photo.
 Use the optional user description as context, but trust the image when it clearly conflicts.
+If the request includes targetItem, focus on that exact existing closet item and ignore other visible clothes.
 
 Rules:
 - Return one closet item, not a full outfit.
+- If targetItem is present, do not rename or reclassify the target unless the photo clearly proves the saved details are wrong.
 - The name should be concise and useful in a closet, like "navy merino wool sweater" or "white leather sneakers".
 - Put color, material, pattern, and clothing type in the name when visible or strongly implied.
 - Return material separately too, such as cotton, merino wool, leather, linen, denim, or synthetic blend.
@@ -2011,6 +2013,7 @@ async function describeClothingItem(requestBody) {
   const userDescription = String(requestBody.userDescription ?? "").trim();
 
   const promptPayload = {
+    targetItem: requestBody.targetItem ?? null,
     userDescription,
     wearerProfile: requestBody.wearerProfile ?? "",
     allowedCategories: clothingCategories
@@ -2068,6 +2071,7 @@ async function describeClothingItem(requestBody) {
       imageBase64,
       itemName: String(parsed.name ?? "").trim(),
       mimeType,
+      targetItem: requestBody.targetItem ?? null,
       userDescription
     });
   } catch (imageError) {
@@ -2096,15 +2100,18 @@ async function generateCleanClothingItemImage({
   imageBase64,
   itemName,
   mimeType,
+  targetItem,
   userDescription
 }) {
   const imageBuffer = Buffer.from(imageBase64, "base64");
-  const itemLabel = itemName || userDescription || category || "clothing item";
+  const targetItemLabel = targetItemDescription(targetItem);
+  const itemLabel = targetItemLabel || itemName || userDescription || category || "clothing item";
   const prompt = `
 Edit the uploaded clothing photo into a clean product-style closet image.
 
 Goal:
 - Isolate only this clothing item: ${itemLabel}.
+- If the photo shows a person wearing an outfit, extract only the target item and remove the person plus every other garment.
 - Remove any person, body parts, other clothes, clutter, hangers, mirrors, room background, and shadows that distract from the item.
 - Preserve the actual color, material, pattern, cut, shape, and visible construction details.
 - Show the complete item, not cropped.
@@ -2144,6 +2151,24 @@ Goal:
     mimeType: "image/png",
     promptSummary: `Clean closet image generated for ${itemLabel}.`
   };
+}
+
+function targetItemDescription(targetItem) {
+  if (!targetItem || typeof targetItem !== "object") {
+    return "";
+  }
+
+  return [
+    targetItem.name,
+    targetItem.brand,
+    targetItem.category,
+    targetItem.color,
+    targetItem.material,
+    targetItem.pattern
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
 }
 
 async function generateStyleProfile(requestBody) {

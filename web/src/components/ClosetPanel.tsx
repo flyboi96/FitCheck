@@ -40,7 +40,7 @@ import {
   clothingItemInsight,
   starterClosetImportTemplate,
 } from '../lib/closetIntelligence'
-import { describeClothingPhoto } from '../lib/photoImport'
+import { cleanClothingPhotoForItem, describeClothingPhoto } from '../lib/photoImport'
 import type { WearerProfile } from '../lib/profile'
 
 type StatusFilter = 'all' | ClothingStatus
@@ -63,6 +63,7 @@ export function ClosetPanel({
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [draft, setDraft] = useState<ClothingItemDraft>(defaultClothingItemDraft)
   const [isSaving, setIsSaving] = useState(false)
+  const [isGeneratingItemImage, setIsGeneratingItemImage] = useState(false)
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoDescription, setPhotoDescription] = useState('')
   const [isImportingPhoto, setIsImportingPhoto] = useState(false)
@@ -167,6 +168,7 @@ export function ClosetPanel({
     setClosetView('list')
     setEditingItemId(null)
     setDraft(defaultClothingItemDraft)
+    setIsGeneratingItemImage(false)
   }
 
   function backFromClosetView() {
@@ -229,6 +231,36 @@ export function ClosetPanel({
       showAppToast(message, 'error')
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  async function handleGenerateItemImageFromPhoto(file: File) {
+    setIsGeneratingItemImage(true)
+    setActionMessage('Cleaning clothing image...')
+    setActionError(null)
+    showAppToast('Cleaning clothing image...', 'info')
+
+    try {
+      const cleanedImage = await cleanClothingPhotoForItem({
+        file,
+        item: draft,
+        wearerProfile,
+      })
+      setDraft((currentDraft) => ({
+        ...currentDraft,
+        imageBase64: cleanedImage.imageBase64,
+        imageMimeType: cleanedImage.imageMimeType,
+      }))
+      const message = 'Cleaned clothing image added. Save the item to keep it.'
+      setActionMessage(message)
+      showAppToast(message, 'success')
+    } catch (imageError) {
+      const message =
+        imageError instanceof Error ? imageError.message : 'Could not clean clothing image.'
+      setActionError(message)
+      showAppToast(message, 'error')
+    } finally {
+      setIsGeneratingItemImage(false)
     }
   }
 
@@ -444,10 +476,23 @@ export function ClosetPanel({
         <ClothingItemForm
           categoryOptions={categoryOptions}
           draft={draft}
+          isGeneratingItemImage={isGeneratingItemImage}
           isEditing={Boolean(editingItemId)}
           isSaving={isSaving}
           onCancel={closeForm}
           onChange={setDraft}
+          onGenerateItemImage={(file) => {
+            void handleGenerateItemImageFromPhoto(file)
+          }}
+          onRemoveImage={() => {
+            setDraft((currentDraft) => ({
+              ...currentDraft,
+              imageBase64: '',
+              imageMimeType: '',
+            }))
+            setActionMessage('Item image removed. Save the item to keep this change.')
+            showAppToast('Item image removed. Save the item to keep this change.', 'info')
+          }}
           onSubmit={handleSave}
         />
       </div>
@@ -946,21 +991,40 @@ function inferCategoryFromName(name: string): ClothingCategory | null {
 function ClothingItemForm({
   categoryOptions,
   draft,
+  isGeneratingItemImage,
   isEditing,
   isSaving,
   onCancel,
   onChange,
+  onGenerateItemImage,
+  onRemoveImage,
   onSubmit,
 }: {
   categoryOptions: ReturnType<typeof categoryOptionsForWearer>
   draft: ClothingItemDraft
+  isGeneratingItemImage: boolean
   isEditing: boolean
   isSaving: boolean
   onCancel?: () => void
   onChange: (draft: ClothingItemDraft) => void
+  onGenerateItemImage: (file: File) => void
+  onRemoveImage: () => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
   const draftImageURL = clothingItemImageURL(draft)
+  const imageStatusText = isGeneratingItemImage
+    ? 'Cleaning image...'
+    : draftImageURL
+      ? 'Saved item image'
+      : 'No item image saved yet'
+
+  function handlePhotoInputChange(file: File | undefined, input: HTMLInputElement) {
+    if (file) {
+      onGenerateItemImage(file)
+    }
+
+    input.value = ''
+  }
 
   return (
     <form className="closet-form" onSubmit={onSubmit}>
@@ -979,9 +1043,65 @@ function ClothingItemForm({
       {draftImageURL ? (
         <div className="clothing-image-preview">
           <img alt={`${draft.name || 'Clothing item'} preview`} src={draftImageURL} />
-          <span>Saved item image</span>
+          <span>{imageStatusText}</span>
         </div>
       ) : null}
+
+      <section className="item-image-tools" aria-label="Clothing item image">
+        <div>
+          <p className="eyebrow">Item image</p>
+          <h3>Clean photo for avatar previews</h3>
+          <p className="helper-text">
+            Choose a photo of this item by itself or worn in an outfit. FitCheck will isolate the
+            garment and save the cleaned image after you save this item.
+          </p>
+        </div>
+
+        <div className="split-action-row">
+          <label className="file-action-button">
+            <Camera size={18} aria-hidden="true" />
+            Take Photo
+            <input
+              accept="image/*"
+              capture="environment"
+              disabled={isGeneratingItemImage}
+              onChange={(event) =>
+                handlePhotoInputChange(event.target.files?.[0], event.currentTarget)
+              }
+              type="file"
+            />
+          </label>
+
+          <label className="file-action-button">
+            <Package size={18} aria-hidden="true" />
+            Choose Photo
+            <input
+              accept="image/*"
+              disabled={isGeneratingItemImage}
+              onChange={(event) =>
+                handlePhotoInputChange(event.target.files?.[0], event.currentTarget)
+              }
+              type="file"
+            />
+          </label>
+        </div>
+
+        <div className="image-tool-status">
+          {isGeneratingItemImage ? <span className="spinner small" aria-hidden="true" /> : null}
+          <span>{imageStatusText}</span>
+        </div>
+
+        {draftImageURL ? (
+          <button
+            type="button"
+            className="secondary-button compact-button"
+            disabled={isGeneratingItemImage}
+            onClick={onRemoveImage}
+          >
+            Remove Saved Image
+          </button>
+        ) : null}
+      </section>
 
       <label className="form-field">
         <span>Name</span>

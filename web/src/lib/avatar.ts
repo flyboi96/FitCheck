@@ -279,6 +279,8 @@ function itemPayload(item: ClothingItem) {
     color: item.color,
     material: item.material,
     pattern: item.pattern,
+    imageBase64: item.imageBase64,
+    imageMimeType: item.imageMimeType,
     formalityLevel: 3,
     weatherSuitability: '',
     occasionSuitability: '',

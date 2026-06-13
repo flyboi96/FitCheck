@@ -31,6 +31,7 @@ import { generateAvatarPreview, type AvatarPreview } from '../lib/avatar'
 import {
   categoryLabel,
   categoryOptionsForWearer,
+  clothingItemImageURL,
   clothingCategories,
   clothingStatuses,
   itemCanBeUsedForOutfits,
@@ -2203,9 +2204,11 @@ function EditableItineraryCard({
               item.material || null,
               item.status !== 'active' ? statusLabel(item.status) : null,
             ].filter(Boolean)
+            const imageURL = clothingItemImageURL(item)
 
             return (
-              <div className="object-card" key={item.id}>
+              <div className={`object-card${imageURL ? ' has-thumbnail' : ''}`} key={item.id}>
+                {imageURL ? <img className="item-photo-thumb small" alt="" src={imageURL} /> : null}
                 <div className="object-card-main">
                   <strong>{item.name}</strong>
                   <span>{itemDetails.join(' - ')}</span>
@@ -2548,6 +2551,8 @@ function PackingClosetItemEditor({
         material: draft.material.trim(),
         pattern: draft.pattern.trim(),
         notes: draft.notes.trim(),
+        imageBase64: draft.imageBase64.trim(),
+        imageMimeType: draft.imageMimeType.trim(),
         status: draft.status,
       })
     } catch (saveError) {
@@ -2591,10 +2596,10 @@ function PackingClosetItemEditor({
           <input
             min={1}
             onChange={(event) =>
-              setDraft({ ...draft, quantity: Number.parseInt(event.target.value, 10) || 1 })
+              setDraft({ ...draft, quantity: quantityInputValue(event.target.value) })
             }
             type="number"
-            value={draft.quantity}
+            value={draft.quantity || ''}
           />
         </label>
       </div>
@@ -2675,6 +2680,8 @@ function clothingItemDraftFromItem(item: ClothingItem): ClothingItemDraft {
     material: item.material,
     pattern: item.pattern,
     notes: item.notes,
+    imageBase64: item.imageBase64,
+    imageMimeType: item.imageMimeType,
     status: item.status,
   }
 }
@@ -2682,6 +2689,15 @@ function clothingItemDraftFromItem(item: ClothingItem): ClothingItemDraft {
 function numberInput(value: string, fallback: number) {
   const parsed = Number.parseInt(value, 10)
   return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function quantityInputValue(value: string) {
+  if (value.trim() === '') {
+    return 0
+  }
+
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
 }
 
 function scoreClass(score: number) {

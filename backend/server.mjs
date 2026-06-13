@@ -2060,6 +2060,19 @@ async function describeClothingItem(requestBody) {
 
   const parsed = parseOpenAIJSON(data, "OpenAI clothing import");
   const category = clothingCategories.includes(parsed.category) ? parsed.category : "other";
+  let cleanedImage = null;
+
+  try {
+    cleanedImage = await generateCleanClothingItemImage({
+      category,
+      imageBase64,
+      itemName: String(parsed.name ?? "").trim(),
+      mimeType,
+      userDescription
+    });
+  } catch (imageError) {
+    console.error("Clothing item image cleanup failed:", imageError.message ?? imageError);
+  }
 
   return {
     name: String(parsed.name ?? "").trim(),
@@ -2071,7 +2084,65 @@ async function describeClothingItem(requestBody) {
     weatherSuitability: String(parsed.weatherSuitability ?? "").trim(),
     occasionSuitability: String(parsed.occasionSuitability ?? "").trim(),
     activitySuitability: String(parsed.activitySuitability ?? "").trim(),
-    notes: String(parsed.notes ?? "").trim()
+    notes: String(parsed.notes ?? "").trim(),
+    imageBase64: cleanedImage?.imageBase64 ?? "",
+    imageMimeType: cleanedImage?.mimeType ?? "",
+    imagePromptSummary: cleanedImage?.promptSummary ?? ""
+  };
+}
+
+async function generateCleanClothingItemImage({
+  category,
+  imageBase64,
+  itemName,
+  mimeType,
+  userDescription
+}) {
+  const imageBuffer = Buffer.from(imageBase64, "base64");
+  const itemLabel = itemName || userDescription || category || "clothing item";
+  const prompt = `
+Edit the uploaded clothing photo into a clean product-style closet image.
+
+Goal:
+- Isolate only this clothing item: ${itemLabel}.
+- Remove any person, body parts, other clothes, clutter, hangers, mirrors, room background, and shadows that distract from the item.
+- Preserve the actual color, material, pattern, cut, shape, and visible construction details.
+- Show the complete item, not cropped.
+- Use a plain light neutral background.
+- Do not add logos, text, labels, watermarks, mannequins, or extra accessories.
+`.trim();
+
+  const formData = new FormData();
+  formData.set("model", openAIImageModel);
+  formData.set("prompt", prompt);
+  formData.set("size", "1024x1024");
+  formData.set("quality", openAIImageQuality);
+  formData.set("background", "opaque");
+  formData.set("output_format", "png");
+  formData.append("image", new Blob([imageBuffer], { type: mimeType }), `fitcheck-clothing-source.${fileExtension(mimeType)}`);
+
+  const openAIResponse = await fetch("https://api.openai.com/v1/images/edits", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${openAIKey}`
+    },
+    body: formData
+  });
+
+  const data = await openAIResponse.json().catch(() => ({}));
+  if (!openAIResponse.ok) {
+    throw httpError(openAIResponse.status, data.error?.message ?? "OpenAI clothing image request failed");
+  }
+
+  const imageData = data.data?.[0]?.b64_json;
+  if (typeof imageData !== "string" || !imageData.trim()) {
+    throw new Error("OpenAI clothing image response did not include image data");
+  }
+
+  return {
+    imageBase64: imageData,
+    mimeType: "image/png",
+    promptSummary: `Clean closet image generated for ${itemLabel}.`
   };
 }
 
@@ -2162,6 +2233,10 @@ async function generateAvatarOutfitPreview(requestBody) {
     : "image/jpeg";
   const imageBuffer = Buffer.from(imageBase64, "base64");
   const outfitItems = Array.isArray(requestBody.outfitItems) ? requestBody.outfitItems : [];
+  const clothingImageReferences = outfitItems
+    .map((item, index) => clothingImageReference(item, index))
+    .filter(Boolean)
+    .slice(0, 6);
   const promptSummary = outfitItems.length > 0
     ? `Avatar outfit preview with ${outfitItems.map((item) => item.name).join(", ")}`
     : "Base realistic FitCheck avatar";
@@ -2179,9 +2254,52 @@ async function generateAvatarOutfitPreview(requestBody) {
     isRaining: requestBody.isRaining,
     windMph: requestBody.windMph,
     humidityPercent: requestBody.humidityPercent,
-    usesSavedAvatar: Boolean(requestBody.usesSavedAvatar)
+    usesSavedAvatar: Boolean(requestBody.usesSavedAvatar),
+    clothingImageReferenceCount: clothingImageReferences.length
   });
 
+  let data;
+
+  try {
+    data = await requestAvatarImageEdit({
+      clothingImageReferences,
+      imageBuffer,
+      mimeType,
+      prompt
+    });
+  } catch (error) {
+    if (clothingImageReferences.length === 0) {
+      throw error;
+    }
+
+    console.error("Avatar image references failed; retrying without clothing item images:", error.message ?? error);
+    data = await requestAvatarImageEdit({
+      clothingImageReferences: [],
+      imageBuffer,
+      mimeType,
+      prompt
+    });
+  }
+
+  const imageData = data.data?.[0]?.b64_json;
+  if (typeof imageData !== "string" || !imageData.trim()) {
+    console.error("OpenAI image response without b64_json:", JSON.stringify(data, null, 2));
+    throw new Error("OpenAI image response did not include image data");
+  }
+
+  return {
+    imageBase64: imageData,
+    mimeType: "image/png",
+    promptSummary
+  };
+}
+
+async function requestAvatarImageEdit({
+  clothingImageReferences,
+  imageBuffer,
+  mimeType,
+  prompt
+}) {
   const formData = new FormData();
   formData.set("model", openAIImageModel);
   formData.set("prompt", prompt);
@@ -2190,6 +2308,14 @@ async function generateAvatarOutfitPreview(requestBody) {
   formData.set("background", "opaque");
   formData.set("output_format", "png");
   formData.append("image", new Blob([imageBuffer], { type: mimeType }), `fitcheck-avatar-reference.${fileExtension(mimeType)}`);
+
+  clothingImageReferences.forEach((reference) => {
+    formData.append(
+      "image",
+      new Blob([reference.buffer], { type: reference.mimeType }),
+      `fitcheck-clothing-reference-${reference.index}.${fileExtension(reference.mimeType)}`
+    );
+  });
 
   const openAIResponse = await fetch("https://api.openai.com/v1/images/edits", {
     method: "POST",
@@ -2204,16 +2330,24 @@ async function generateAvatarOutfitPreview(requestBody) {
     throw httpError(openAIResponse.status, data.error?.message ?? "OpenAI image request failed");
   }
 
-  const imageData = data.data?.[0]?.b64_json;
-  if (typeof imageData !== "string" || !imageData.trim()) {
-    console.error("OpenAI image response without b64_json:", JSON.stringify(data, null, 2));
-    throw new Error("OpenAI image response did not include image data");
+  return data;
+}
+
+function clothingImageReference(item, index) {
+  const imageBase64 = String(item?.imageBase64 ?? "").trim();
+  if (!imageBase64 || !/^[A-Za-z0-9+/=]+$/.test(imageBase64)) {
+    return null;
   }
 
+  const requestedMimeType = String(item?.imageMimeType ?? "image/png").toLowerCase();
+  const mimeType = ["image/jpeg", "image/png", "image/webp"].includes(requestedMimeType)
+    ? requestedMimeType
+    : "image/png";
+
   return {
-    imageBase64: imageData,
-    mimeType: "image/png",
-    promptSummary
+    buffer: Buffer.from(imageBase64, "base64"),
+    index,
+    mimeType
   };
 }
 
@@ -2230,7 +2364,8 @@ function buildAvatarPrompt({
   isRaining,
   windMph,
   humidityPercent,
-  usesSavedAvatar
+  usesSavedAvatar,
+  clothingImageReferenceCount
 }) {
   const outfitDescription = outfitItems.length > 0
     ? outfitItems
@@ -2240,6 +2375,7 @@ function buildAvatarPrompt({
             item.category,
             item.color,
             item.pattern,
+            item.imageBase64 ? "closet reference image provided" : "",
             item.notes
           ]
             .map((value) => String(value ?? "").trim())
@@ -2308,6 +2444,7 @@ Weather and setting:
 Rendering instructions:
 - Realistic smartphone-photo look.
 - The clothing should match the closet item descriptions as closely as possible.
+- ${Number(clothingImageReferenceCount) > 0 ? `${Number(clothingImageReferenceCount)} isolated closet item reference image(s) are attached after the avatar image; use them to match the real garment color, material, silhouette, and proportions.` : "No closet item reference images are attached; rely on the item descriptions."}
 - If a detail is unknown, make a conservative, ordinary choice instead of adding bold new clothing.
 - Do not duplicate clothing items or add extra accessories unless the outfit list includes them.
 - Do not substitute a generic gray rainy Pacific Northwest city unless the location and weather actually call for that.

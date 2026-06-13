@@ -19,6 +19,7 @@ import { formatDateTimeWithWeekday } from '../lib/dateFormatting'
 import {
   categoryLabel,
   categoryOptionsForWearer,
+  clothingItemImageURL,
   clothingCategories,
   clothingStatuses,
   defaultClothingItemDraft,
@@ -152,6 +153,8 @@ export function ClosetPanel({
       material: item.material,
       pattern: item.pattern,
       notes: item.notes,
+      imageBase64: item.imageBase64,
+      imageMimeType: item.imageMimeType,
       status: item.status,
     })
     setEditingItemId(item.id)
@@ -957,6 +960,8 @@ function ClothingItemForm({
   onChange: (draft: ClothingItemDraft) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
+  const draftImageURL = clothingItemImageURL(draft)
+
   return (
     <form className="closet-form" onSubmit={onSubmit}>
       <div className="form-title-row">
@@ -970,6 +975,13 @@ function ClothingItemForm({
           </button>
         ) : null}
       </div>
+
+      {draftImageURL ? (
+        <div className="clothing-image-preview">
+          <img alt={`${draft.name || 'Clothing item'} preview`} src={draftImageURL} />
+          <span>Saved item image</span>
+        </div>
+      ) : null}
 
       <label className="form-field">
         <span>Name</span>
@@ -1004,10 +1016,10 @@ function ClothingItemForm({
           <input
             min={1}
             onChange={(event) =>
-              onChange({ ...draft, quantity: Number.parseInt(event.target.value, 10) || 1 })
+              onChange({ ...draft, quantity: quantityInputValue(event.target.value) })
             }
             type="number"
-            value={draft.quantity}
+            value={draft.quantity || ''}
           />
         </label>
       </div>
@@ -1117,12 +1129,17 @@ function ClothingItemCard({
     item.material || null,
     item.pattern || null,
   ].filter(Boolean)
+  const imageURL = clothingItemImageURL(item)
 
   return (
     <article className="closet-item-card">
-      <div className="item-icon" aria-hidden="true">
-        <Package size={20} />
-      </div>
+      {imageURL ? (
+        <img className="item-photo-thumb" alt="" src={imageURL} />
+      ) : (
+        <div className="item-icon" aria-hidden="true">
+          <Package size={20} />
+        </div>
+      )}
       <div className="item-content">
         <div className="item-title-row">
           <div>
@@ -1201,4 +1218,13 @@ function ClothingItemCard({
 
 function formatClosetDate(value: string) {
   return formatDateTimeWithWeekday(value)
+}
+
+function quantityInputValue(value: string) {
+  if (value.trim() === '') {
+    return 0
+  }
+
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
 }

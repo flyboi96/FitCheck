@@ -30,6 +30,7 @@ import { showAppToast } from '../lib/appToasts'
 import { generateAvatarPreview, type AvatarPreview } from '../lib/avatar'
 import {
   categoryOptionsForWearer,
+  clothingItemImageURL,
   clothingStatuses,
   itemCanBeUsedForOutfits,
   saveClothingItem,
@@ -898,41 +899,46 @@ function OutfitResultCard({
       </div>
 
       <div className="outfit-item-list">
-        {recommendation.items.map((item) => (
-          <div className="outfit-item-row" key={item.id}>
-            <div>
-              <strong>{item.name}</strong>
-              <span>
-                {categoryName(item.category)}
-                {item.brand ? ` - ${item.brand}` : ''}
-                {item.material ? ` - ${item.material}` : ''}
-              </span>
-              <small>
-                {item.wearCount}x overall - {item.wearsSinceClean}x since clean
-              </small>
+        {recommendation.items.map((item) => {
+          const imageURL = clothingItemImageURL(item)
+
+          return (
+            <div className={`outfit-item-row${imageURL ? ' has-thumbnail' : ''}`} key={item.id}>
+              {imageURL ? <img className="item-photo-thumb small" alt="" src={imageURL} /> : null}
+              <div>
+                <strong>{item.name}</strong>
+                <span>
+                  {categoryName(item.category)}
+                  {item.brand ? ` - ${item.brand}` : ''}
+                  {item.material ? ` - ${item.material}` : ''}
+                </span>
+                <small>
+                  {item.wearCount}x overall - {item.wearsSinceClean}x since clean
+                </small>
+              </div>
+              <div className="item-inline-actions">
+                <span className="quantity-chip">Qty {item.quantity}</span>
+                <button
+                  type="button"
+                  className="ghost-button icon-sized"
+                  onClick={() => setEditingItem(item)}
+                  aria-label={`Edit ${item.name}`}
+                >
+                  <Edit3 size={18} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button icon-sized"
+                  disabled={isSavingDailyOutfit}
+                  onClick={() => onMoveItemToLaundry(item)}
+                  aria-label={`Move ${item.name} to laundry`}
+                >
+                  <Package size={18} aria-hidden="true" />
+                </button>
+              </div>
             </div>
-            <div className="item-inline-actions">
-              <span className="quantity-chip">Qty {item.quantity}</span>
-              <button
-                type="button"
-                className="ghost-button icon-sized"
-                onClick={() => setEditingItem(item)}
-                aria-label={`Edit ${item.name}`}
-              >
-                <Edit3 size={18} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="ghost-button icon-sized"
-                disabled={isSavingDailyOutfit}
-                onClick={() => onMoveItemToLaundry(item)}
-                aria-label={`Move ${item.name} to laundry`}
-              >
-                <Package size={18} aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {editMessage ? <p className="success-message">{editMessage}</p> : null}
@@ -1191,6 +1197,8 @@ function QuickClothingItemEditor({
         material: draft.material.trim(),
         pattern: draft.pattern.trim(),
         notes: draft.notes.trim(),
+        imageBase64: draft.imageBase64.trim(),
+        imageMimeType: draft.imageMimeType.trim(),
         status: draft.status,
       })
     } catch (saveError) {
@@ -1244,10 +1252,10 @@ function QuickClothingItemEditor({
           <input
             min={1}
             onChange={(event) =>
-              setDraft({ ...draft, quantity: Number.parseInt(event.target.value, 10) || 1 })
+              setDraft({ ...draft, quantity: quantityInputValue(event.target.value) })
             }
             type="number"
-            value={draft.quantity}
+            value={draft.quantity || ''}
           />
         </label>
       </div>
@@ -1338,6 +1346,8 @@ function clothingItemDraftFromItem(item: ClothingItem): ClothingItemDraft {
     material: item.material,
     pattern: item.pattern,
     notes: item.notes,
+    imageBase64: item.imageBase64,
+    imageMimeType: item.imageMimeType,
     status: item.status,
   }
 }
@@ -1374,6 +1384,15 @@ function recommendationFromDailyOutfit(
 function numberInput(value: string, fallback: number) {
   const parsed = Number.parseInt(value, 10)
   return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function quantityInputValue(value: string) {
+  if (value.trim() === '') {
+    return 0
+  }
+
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
 }
 
 function scoreClass(score: number) {

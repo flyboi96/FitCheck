@@ -585,6 +585,10 @@ h3 {
   background: var(--surface);
 }
 
+.object-card.has-thumbnail {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
 .object-card-main {
   display: grid;
   gap: 3px;
@@ -928,6 +932,20 @@ h3 {
   background: var(--surface);
 }
 
+.item-photo-thumb {
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  object-fit: cover;
+}
+
+.item-photo-thumb.small {
+  width: 44px;
+  height: 44px;
+}
+
 .item-icon {
   display: grid;
   place-items: center;
@@ -942,6 +960,27 @@ h3 {
   display: grid;
   gap: 10px;
   min-width: 0;
+}
+
+.clothing-image-preview {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.clothing-image-preview img {
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  object-fit: cover;
 }
 
 .item-title-row h3,
@@ -1157,11 +1196,17 @@ h3 {
 
 .outfit-item-row {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 12px;
   border-radius: 8px;
   background: var(--panel);
+}
+
+.outfit-item-row.has-thumbnail {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
 .outfit-item-row div {
@@ -1916,5 +1961,16 @@ h3 {
   .outfit-item-row,
   .packing-row {
     display: grid;
+  }
+
+  .outfit-item-row.has-thumbnail,
+  .object-card.has-thumbnail {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .outfit-item-row.has-thumbnail .item-inline-actions,
+  .object-card.has-thumbnail .item-inline-actions {
+    grid-column: 2;
+    justify-content: flex-start;
   }
 }

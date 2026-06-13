@@ -4,7 +4,7 @@ import {
   type ClothingCategory,
   type ClothingItemDraft,
 } from './closet'
-import { imageFileToBase64 } from './images'
+import { compactEncodedImageForFirestore, imageFileToBase64 } from './images'
 import type { WearerProfile } from './profile'
 import { getAIProxySettings } from './settings'
 
@@ -18,6 +18,9 @@ type ClothingDescriptionResponse = {
   occasionSuitability?: string
   activitySuitability?: string
   notes?: string
+  imageBase64?: string
+  imageMimeType?: string
+  imagePromptSummary?: string
 }
 
 export async function describeClothingPhoto({
@@ -62,8 +65,10 @@ export async function describeClothingPhoto({
     data.weatherSuitability ? `Weather: ${data.weatherSuitability}` : null,
     data.occasionSuitability ? `Occasion: ${data.occasionSuitability}` : null,
     data.activitySuitability ? `Activity: ${data.activitySuitability}` : null,
+    data.imagePromptSummary ? `Image: ${data.imagePromptSummary}` : null,
     data.notes,
   ].filter(Boolean)
+  const cleanedImage = await compactImportedClothingImage(data)
 
   return {
     ...defaultClothingItemDraft,
@@ -72,7 +77,32 @@ export async function describeClothingPhoto({
     color: data.color?.trim() || '',
     material: data.material?.trim() || '',
     pattern: data.pattern?.trim() || '',
+    imageBase64: cleanedImage?.base64 ?? '',
+    imageMimeType: cleanedImage?.mimeType ?? '',
     notes: tags.join('\n'),
+  }
+}
+
+async function compactImportedClothingImage(data: ClothingDescriptionResponse) {
+  if (!data.imageBase64) {
+    return null
+  }
+
+  try {
+    return await compactEncodedImageForFirestore(
+      {
+        base64: data.imageBase64,
+        mimeType: data.imageMimeType || 'image/png',
+      },
+      {
+        maxBase64Length: 650_000,
+        maxDimension: 720,
+        minDimension: 360,
+        quality: 0.74,
+      },
+    )
+  } catch {
+    return null
   }
 }
 

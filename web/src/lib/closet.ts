@@ -49,6 +49,8 @@ export type ClothingItem = {
   material: string
   pattern: string
   notes: string
+  imageBase64: string
+  imageMimeType: string
   status: ClothingStatus
   wearCount: number
   lastWornAt: string
@@ -110,6 +112,8 @@ export const defaultClothingItemDraft: ClothingItemDraft = {
   material: '',
   pattern: '',
   notes: '',
+  imageBase64: '',
+  imageMimeType: '',
   status: 'active',
 }
 
@@ -162,6 +166,8 @@ function normalizeDraft(draft: ClothingItemDraft) {
     material: draft.material.trim(),
     pattern: draft.pattern.trim(),
     notes: draft.notes.trim(),
+    imageBase64: draft.imageBase64.trim(),
+    imageMimeType: draft.imageMimeType.trim(),
     status: draft.status,
   }
 
@@ -183,6 +189,8 @@ function normalizeItem(id: string, data: Record<string, unknown>): ClothingItem 
     material: stringValue(data.material),
     pattern: stringValue(data.pattern),
     notes: stringValue(data.notes),
+    imageBase64: stringValue(data.imageBase64),
+    imageMimeType: stringValue(data.imageMimeType),
     status: statusValue(data.status ?? data.statusRawValue),
     wearCount: Math.max(0, Math.floor(numberValue(data.wearCount, 0))),
     lastWornAt: stringValue(data.lastWornAt),
@@ -216,6 +224,18 @@ export function itemCanBeUsedForOutfits(item: ClothingItem, includeUnavailable =
   }
 
   return item.status === 'active' || item.status === 'wearing'
+}
+
+export function clothingItemImageURL(
+  item: Pick<ClothingItem, 'imageBase64' | 'imageMimeType'> | Pick<ClothingItemDraft, 'imageBase64' | 'imageMimeType'>,
+) {
+  const imageBase64 = item.imageBase64.trim()
+
+  if (!imageBase64) {
+    return ''
+  }
+
+  return `data:${item.imageMimeType || 'image/png'};base64,${imageBase64}`
 }
 
 export function subscribeToClothingItems(
